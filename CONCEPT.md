@@ -108,17 +108,3 @@ Block 2: | - . |  (4分音符分のタイ + 休符)
 1. Block 1解析: `^` 生成。Duration = 2拍 (この時点)。State = On(EventID: X)。
 2. Block 2解析: 先頭が `-`。前のStateがOn(EventID: X)なので、EventID: X のDurationに1拍加算。Total Duration = 3拍。
 3. Block 2続き: 次が `.`。ここでState = Off。
-
-## Next Step
-
-- モジュール系
-    - Velocityなど
-
-- 各トラックに同様に記述できるようにする
-- グローバルなモジュールも記述できるようにする
-    - テンポなど
-
-- ループ系
-    - 楽譜に倣う
-    - 回数指定もできると良さそう
-    - :|など？

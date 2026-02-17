@@ -87,7 +87,7 @@ fn main() -> Result<()> {
             let events = compiler.compile(&song).map_err(|e| miette!("Compiler error: {}", e))?;
 
             let mut player = player::Player::new(port)?;
-            player.play(&events, song.metadata.bpm)?;
+            player.play(&events, &song.metadata)?;
         }
     }
 

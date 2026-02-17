@@ -40,6 +40,10 @@ pub struct Frontmatter {
     pub title: Option<String>,
     #[allow(dead_code)]
     pub author: Option<String>,
+    #[serde(default, rename = "loop")]
+    pub r#loop: bool,
+    #[allow(dead_code)]
+    pub loop_range: Option<String>,
 }
 
 fn default_signature() -> String { "4/4".to_string() }
