@@ -2,10 +2,10 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Note,               // ^
-    Rest,               // .
-    Sustain,            // -
-    Group(Vec<Token>),  // [...]
+    Note,              // ^
+    Rest,              // .
+    Sustain,           // -
+    Group(Vec<Token>), // [...]
 }
 
 #[derive(Debug, Clone)]
@@ -46,8 +46,12 @@ pub struct Frontmatter {
     pub loop_range: Option<String>,
 }
 
-fn default_signature() -> String { "4/4".to_string() }
-fn default_unit() -> String { "bar".to_string() }
+fn default_signature() -> String {
+    "4/4".to_string()
+}
+fn default_unit() -> String {
+    "bar".to_string()
+}
 
 #[derive(Debug)]
 pub struct Song {

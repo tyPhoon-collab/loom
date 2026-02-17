@@ -1,4 +1,4 @@
-use crate::token::{Token, Track, Song};
+use crate::token::{Song, Token, Track};
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ impl Compiler {
         // If unit is bar, block = 4.0.
         // If unit is beat, block = 1.0.
         let sig_parts: Vec<&str> = song.metadata.signature.split('/').collect();
-        let num: f64 = sig_parts.get(0).unwrap_or(&"4").parse().unwrap_or(4.0);
+        let num: f64 = sig_parts.first().unwrap_or(&"4").parse().unwrap_or(4.0);
         // let denom: f64 = sig_parts.get(1).unwrap_or(&"4").parse().unwrap_or(4.0);
 
         let unit_per_block = if song.metadata.unit == "beat" {
@@ -30,9 +30,7 @@ impl Compiler {
             num // In 4/4, a bar is 4 beats. In 3/4, 3 beats.
         };
 
-        Self {
-            unit_per_block,
-        }
+        Self { unit_per_block }
     }
 
     pub fn compile(&self, song: &Song) -> Result<Vec<MidiEvent>> {
@@ -77,6 +75,7 @@ impl Compiler {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_tokens(
         &self,
         tokens: &[Token],
@@ -88,13 +87,13 @@ impl Compiler {
         last_event_idx: &mut Option<usize>,
     ) {
         if tokens.is_empty() {
-             // Empty block just advances time (done by caller)
-             // But sustain state? If empty, does it sustain?
-             // CONCEPT.md says "Space ... visual only".
-             // Empty tokens means NO events.
-             // If implicit sustain is desired, one must write `-`.
-             // So empty list -> do nothing.
-             return;
+            // Empty block just advances time (done by caller)
+            // But sustain state? If empty, does it sustain?
+            // CONCEPT.md says "Space ... visual only".
+            // Empty tokens means NO events.
+            // If implicit sustain is desired, one must write `-`.
+            // So empty list -> do nothing.
+            return;
         }
 
         let len = tokens.len() as f64;
@@ -125,7 +124,7 @@ impl Compiler {
                     if let Some(idx) = *last_event_idx {
                         // Mutate the event inside the vector
                         if let Some(event) = events.get_mut(idx) {
-                             event.duration += duration_per_token;
+                            event.duration += duration_per_token;
                         }
                     } else {
                         // No previous note to sustain. Ignore or warn?

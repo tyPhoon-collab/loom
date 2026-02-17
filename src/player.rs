@@ -1,6 +1,6 @@
 use crate::compiler::MidiEvent;
 use midir::{MidiOutput, MidiOutputConnection};
-use miette::{IntoDiagnostic, Result, miette};
+use miette::{miette, IntoDiagnostic, Result};
 use std::{cmp::Ordering, thread, time::Duration};
 
 pub struct Player {
@@ -29,22 +29,35 @@ impl Player {
         let ports = midi_out.ports();
 
         println!("Available ports:");
-        for i in 0..ports.len() {
-             println!("  {}: {}", i, midi_out.port_name(&ports[i]).unwrap_or_default());
+        for (i, port) in ports.iter().enumerate() {
+            println!("  {}: {}", i, midi_out.port_name(port).unwrap_or_default());
         }
 
         let port = ports.get(port_index).ok_or_else(|| {
-            miette!("Port index {} is out of range. Please choose from the list above.", port_index)
+            miette!(
+                "Port index {} is out of range. Please choose from the list above.",
+                port_index
+            )
         })?;
 
-        println!("Connecting to port {}: {}", port_index, midi_out.port_name(port).unwrap_or_default());
+        println!(
+            "Connecting to port {}: {}",
+            port_index,
+            midi_out.port_name(port).unwrap_or_default()
+        );
 
-        let conn = midi_out.connect(port, "loom-conn").map_err(|e| miette!("Connection error: {}", e))?;
+        let conn = midi_out
+            .connect(port, "loom-conn")
+            .map_err(|e| miette!("Connection error: {}", e))?;
 
         Ok(Self { conn })
     }
 
-    pub fn play(&mut self, compiled_events: &[MidiEvent], metadata: &crate::token::Frontmatter) -> Result<()> {
+    pub fn play(
+        &mut self,
+        compiled_events: &[MidiEvent],
+        metadata: &crate::token::Frontmatter,
+    ) -> Result<()> {
         let bpm = metadata.bpm;
         let loop_flag = metadata.r#loop;
 
@@ -52,7 +65,10 @@ impl Player {
             parse_loop_range(range_str, &metadata.unit, &metadata.signature)?
         } else {
             // Default: 0 to max time
-            let max_time = compiled_events.iter().map(|e| e.time + e.duration).fold(0.0, f64::max);
+            let max_time = compiled_events
+                .iter()
+                .map(|e| e.time + e.duration)
+                .fold(0.0, f64::max);
             (0.0, max_time)
         };
 
@@ -72,7 +88,10 @@ impl Player {
             }
         }
 
-        println!("Playing at {} BPM... ({} beats segment)", bpm, loop_duration_beats);
+        println!(
+            "Playing at {} BPM... ({} beats segment)",
+            bpm, loop_duration_beats
+        );
         if metadata.loop_range.is_some() {
             println!("Range: {} beats to {} beats", start_beat, end_beat);
         }
@@ -102,9 +121,7 @@ impl Player {
             }
 
             // Sort by time
-            play_events.sort_by(|a, b| {
-                a.time.partial_cmp(&b.time).unwrap_or(Ordering::Equal)
-            });
+            play_events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(Ordering::Equal));
 
             // Play segment
             let mut current_beat = 0.0;
@@ -151,7 +168,10 @@ fn parse_loop_range(range_str: &str, default_unit: &str, signature: &str) -> Res
     let parts: Vec<&str> = range_str.split('~').collect();
 
     if parts.len() != 2 {
-        return Err(miette!("Invalid loop_range format. Expected 'start ~ end' (e.g. '1 ~ 4'), got '{}'", range_str));
+        return Err(miette!(
+            "Invalid loop_range format. Expected 'start ~ end' (e.g. '1 ~ 4'), got '{}'",
+            range_str
+        ));
     }
 
     let start_val = parts[0].trim().parse::<f64>().into_diagnostic()?;
@@ -171,7 +191,12 @@ fn get_beats_per_unit(unit: &str, signature: &str) -> f64 {
     match unit.to_lowercase().as_str() {
         "bar" => {
             // parse signature "4/4" -> 4 beats
-            let top: f64 = signature.split('/').next().unwrap_or("4").parse().unwrap_or(4.0);
+            let top: f64 = signature
+                .split('/')
+                .next()
+                .unwrap_or("4")
+                .parse()
+                .unwrap_or(4.0);
             top
         }
         "beat" => 1.0,
@@ -181,10 +206,29 @@ fn get_beats_per_unit(unit: &str, signature: &str) -> f64 {
 
 fn convert_note_to_midi(note_name: &str) -> u8 {
     match note_name.to_lowercase().as_str() {
-        "c3" => 60, "c#3" => 61, "d3" => 62, "d#3" => 63, "e3" => 64, "f3" => 65, "f#3" => 66, "g3" => 67, "g#3" => 68, "a3" => 69, "a#3" => 70, "b3" => 71,
+        "c3" => 60,
+        "c#3" => 61,
+        "d3" => 62,
+        "d#3" => 63,
+        "e3" => 64,
+        "f3" => 65,
+        "f#3" => 66,
+        "g3" => 67,
+        "g#3" => 68,
+        "a3" => 69,
+        "a#3" => 70,
+        "b3" => 71,
         "c4" => 72,
-        "c2" => 48, "d2" => 50, "e2" => 52, "f2" => 53, "g2" => 55, "a2" => 57, "b2" => 59,
-        "kick" => 36, "snare" => 38, "hi-hat" | "hihat" => 42,
+        "c2" => 48,
+        "d2" => 50,
+        "e2" => 52,
+        "f2" => 53,
+        "g2" => 55,
+        "a2" => 57,
+        "b2" => 59,
+        "kick" => 36,
+        "snare" => 38,
+        "hi-hat" | "hihat" => 42,
         _ => 60,
     }
 }

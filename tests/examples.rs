@@ -1,5 +1,5 @@
-use loom::parser;
 use loom::compiler;
+use loom::parser;
 use std::fs;
 use std::path::Path;
 
@@ -29,7 +29,11 @@ fn test_examples() {
                     Ok(song) => {
                         let compiler_inst = compiler::Compiler::new(&song);
                         let compile_res = compiler_inst.compile(&song);
-                        assert!(compile_res.is_err(), "Example {} should have failed compilation", filename);
+                        assert!(
+                            compile_res.is_err(),
+                            "Example {} should have failed compilation",
+                            filename
+                        );
                     }
                     Err(_) => {
                         // Success: it failed as expected
@@ -38,7 +42,9 @@ fn test_examples() {
             } else {
                 let song = res.expect(&format!("Failed to parse example: {}", filename));
                 let compiler = compiler::Compiler::new(&song);
-                let events = compiler.compile(&song).expect(&format!("Failed to compile example: {}", filename));
+                let events = compiler
+                    .compile(&song)
+                    .expect(&format!("Failed to compile example: {}", filename));
 
                 // Snapshot test
                 insta::with_settings!({

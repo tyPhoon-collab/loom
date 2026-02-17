@@ -1,12 +1,13 @@
+#![allow(unused_assignments)]
 use crate::token::{Block, Frontmatter, Line, Song, Token, Track};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take_until, take_while, take_while1},
-    character::complete::{alpha1, alphanumeric1, char, digit1, line_ending, multispace0, not_line_ending, space0, space1},
-    combinator::{eof, map, map_res, opt, recognize, value, all_consuming},
-    multi::{many0, many1, separated_list0},
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    bytes::complete::{tag, take_until, take_while1},
+    character::complete::{char, digit1, line_ending, not_line_ending, space0},
+    combinator::{eof, map, opt, value},
+    multi::{many0, many1},
+    sequence::{delimited, preceded, terminated},
     IResult,
 };
 use thiserror::Error;
@@ -22,7 +23,7 @@ pub enum ParseError {
         src: NamedSource,
         #[label("Here")]
         span: SourceSpan,
-        kind: String, // Debug string of nom error kind
+        kind: String,
     },
 
     #[error("YAML Frontmatter error")]
@@ -79,24 +80,19 @@ fn parse_token(input: &str) -> IResult<&str, Token> {
 }
 
 // --- Block Parser ---
-pub fn parse_block_content(input: &str) -> IResult<&str, Block> {
+pub(crate) fn parse_block_content(input: &str) -> IResult<&str, Block> {
     map(
         terminated(
             many0(parse_token),
-            space0 // Consume trailing
+            space0, // Consume trailing
         ),
         |tokens| Block { tokens },
     )(input)
 }
 
-pub fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
+pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
     let (input, _) = char('|')(input)?;
-    many1(
-        terminated(
-            parse_block_content,
-            char('|')
-        )
-    )(input)
+    many1(terminated(parse_block_content, char('|')))(input)
 }
 
 // --- Line Types ---
@@ -124,24 +120,30 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
 
     let channel = channel_str.parse::<u8>().unwrap_or(1);
 
-    Ok((input, ParsedLine::TrackHeader {
-        name: name.trim().to_string(),
-        channel
-    }))
+    Ok((
+        input,
+        ParsedLine::TrackHeader {
+            name: name.trim().to_string(),
+            channel,
+        },
+    ))
 }
 
-pub fn parse_key(input: &str) -> IResult<&str, &str> {
+pub(crate) fn parse_key(input: &str) -> IResult<&str, &str> {
     take_while1(|c: char| c != '|' && c != '\n' && c != '\r')(input)
 }
 
-pub fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
+pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, key_raw) = parse_key(input)?;
     let (input, blocks) = parse_line_blocks(input)?;
 
-    Ok((input, ParsedLine::Pattern {
-        key: key_raw.trim().to_string(),
-        blocks
-    }))
+    Ok((
+        input,
+        ParsedLine::Pattern {
+            key: key_raw.trim().to_string(),
+            blocks,
+        },
+    ))
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -155,7 +157,7 @@ fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
         parse_comment,
         parse_track_header,
         parse_empty_line,
-        parse_pattern_line
+        parse_pattern_line,
     ))(input)
 }
 
@@ -183,12 +185,12 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
         match parse_frontmatter(input) {
             Ok(res) => res,
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                 let offset = e.input.as_ptr() as usize - source.as_ptr() as usize;
-                 return Err(ParseError::YamlError {
-                     src: NamedSource::new("input", source.clone()), // Clone here
-                     span: (offset, 10).into(),
-                     msg: "Invalid Frontmatter YAML".to_string(),
-                 });
+                let offset = e.input.as_ptr() as usize - source.as_ptr() as usize;
+                return Err(ParseError::YamlError {
+                    src: NamedSource::new("input", source.clone()), // Clone here
+                    span: (offset, 10).into(),
+                    msg: "Invalid Frontmatter YAML".to_string(),
+                });
             }
             Err(_) => panic!("Incomplete input"),
         }
@@ -201,24 +203,28 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
 
     // Line by line parsing
 
-    for (_line_idx, line) in input.lines().enumerate() {
+    for line in input.lines() {
         let trimmed = line.trim();
 
         match parse_line_entry(trimmed) {
-            Ok((_, parsed)) => {
-                match parsed {
-                   ParsedLine::TrackHeader { name, channel } => {
-                       if let Some(t) = current_track.take() { tracks.push(t); }
-                       current_track = Some(Track { name, channel, lines: Vec::new() });
-                   }
-                   ParsedLine::Pattern { key, blocks } => {
-                       if let Some(ref mut t) = current_track {
-                           t.lines.push(Line { note: key, blocks });
-                       }
-                   }
-                   ParsedLine::Comment | ParsedLine::Empty => {}
+            Ok((_, parsed)) => match parsed {
+                ParsedLine::TrackHeader { name, channel } => {
+                    if let Some(t) = current_track.take() {
+                        tracks.push(t);
+                    }
+                    current_track = Some(Track {
+                        name,
+                        channel,
+                        lines: Vec::new(),
+                    });
                 }
-            }
+                ParsedLine::Pattern { key, blocks } => {
+                    if let Some(ref mut t) = current_track {
+                        t.lines.push(Line { note: key, blocks });
+                    }
+                }
+                ParsedLine::Comment | ParsedLine::Empty => {}
+            },
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
                 let offset = line.as_ptr() as usize - source.as_ptr() as usize;
 

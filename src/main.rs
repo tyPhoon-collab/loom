@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
-use miette::{IntoDiagnostic, Result, miette};
+use loom::{compiler, parser, player};
+use miette::{miette, IntoDiagnostic, Result};
 use std::fs;
 use std::path::PathBuf;
 use tabled::{Table, Tabled};
-use loom::{parser, compiler, player};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -61,7 +61,9 @@ fn main() -> Result<()> {
             let content = fs::read_to_string(&input).into_diagnostic()?;
             let song = parser::parse_song(content)?;
             let compiler_inst = compiler::Compiler::new(&song);
-            let events = compiler_inst.compile(&song).map_err(|e| miette!("Compiler error: {}", e))?;
+            let events = compiler_inst
+                .compile(&song)
+                .map_err(|e| miette!("Compiler error: {}", e))?;
 
             // Output Table
             let mut rows = Vec::new();
@@ -80,7 +82,9 @@ fn main() -> Result<()> {
             let content = fs::read_to_string(&input).into_diagnostic()?;
             let song = parser::parse_song(content)?;
             let compiler_inst = compiler::Compiler::new(&song);
-            let events = compiler_inst.compile(&song).map_err(|e| miette!("Compiler error: {}", e))?;
+            let events = compiler_inst
+                .compile(&song)
+                .map_err(|e| miette!("Compiler error: {}", e))?;
 
             let mut player_inst = player::Player::new(port)?;
             player_inst.play(&events, &song.metadata)?;
