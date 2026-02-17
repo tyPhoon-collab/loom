@@ -1,5 +1,5 @@
 #![allow(unused_assignments)]
-use crate::token::{Block, Frontmatter, Line, Song, Token, Track};
+use crate::token::{Block, Frontmatter, Line, Note, Song, Token, Track};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::{
     branch::alt,
@@ -10,6 +10,7 @@ use nom::{
     sequence::{delimited, preceded, terminated},
     IResult,
 };
+use std::str::FromStr;
 use thiserror::Error;
 
 // --- Errors ---
@@ -99,7 +100,7 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
 
 pub(crate) enum ParsedLine {
     TrackHeader { name: String, channel: u8 },
-    Pattern { key: String, blocks: Vec<Block> },
+    Pattern { key: Note, blocks: Vec<Block> },
     Comment,
     Empty,
 }
@@ -137,13 +138,11 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, key_raw) = parse_key(input)?;
     let (input, blocks) = parse_line_blocks(input)?;
 
-    Ok((
-        input,
-        ParsedLine::Pattern {
-            key: key_raw.trim().to_string(),
-            blocks,
-        },
-    ))
+    let key = Note::from_str(key_raw.trim()).map_err(|_| {
+        nom::Err::Failure(nom::error::Error::new(key_raw, nom::error::ErrorKind::Tag))
+    })?;
+
+    Ok((input, ParsedLine::Pattern { key, blocks }))
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {

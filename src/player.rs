@@ -100,7 +100,7 @@ impl Player {
             // Flatten into (NoteOn / NoteOff) events
             let mut play_events = Vec::new();
             for e in &filtered_events {
-                let note_num = convert_note_to_midi(&e.note);
+                let note_num = e.note;
                 let channel = (e.channel - 1).min(15);
 
                 play_events.push(PlayEvent {
@@ -201,34 +201,5 @@ fn get_beats_per_unit(unit: &str, signature: &str) -> f64 {
         }
         "beat" => 1.0,
         _ => 4.0, // default to bar
-    }
-}
-
-fn convert_note_to_midi(note_name: &str) -> u8 {
-    match note_name.to_lowercase().as_str() {
-        "c3" => 60,
-        "c#3" => 61,
-        "d3" => 62,
-        "d#3" => 63,
-        "e3" => 64,
-        "f3" => 65,
-        "f#3" => 66,
-        "g3" => 67,
-        "g#3" => 68,
-        "a3" => 69,
-        "a#3" => 70,
-        "b3" => 71,
-        "c4" => 72,
-        "c2" => 48,
-        "d2" => 50,
-        "e2" => 52,
-        "f2" => 53,
-        "g2" => 55,
-        "a2" => 57,
-        "b2" => 59,
-        "kick" => 36,
-        "snare" => 38,
-        "hi-hat" | "hihat" => 42,
-        _ => 60,
     }
 }

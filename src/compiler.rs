@@ -1,4 +1,4 @@
-use crate::token::{Song, Token, Track};
+use crate::token::{Note, Song, Token, Track};
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -6,7 +6,7 @@ pub struct MidiEvent {
     pub time: f64,     // Absolute time in beats
     pub duration: f64, // Duration in beats
     pub channel: u8,
-    pub note: String,
+    pub note: u8,
     pub velocity: u8,
 }
 
@@ -82,7 +82,7 @@ impl Compiler {
         start_time: f64,
         total_duration: f64,
         channel: u8,
-        note_key: &str,
+        note_key: &Note,
         events: &mut Vec<MidiEvent>,
         last_event_idx: &mut Option<usize>,
     ) {
@@ -109,7 +109,7 @@ impl Compiler {
                         time: token_time,
                         duration: duration_per_token, // Default duration
                         channel,
-                        note: note_key.to_string(),
+                        note: note_key.to_midi(),
                         velocity: 100,
                     };
                     events.push(event);

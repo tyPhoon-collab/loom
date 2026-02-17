@@ -1,3 +1,4 @@
+pub use crate::note::Note;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,7 +16,7 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub struct Line {
-    pub note: String, // e.g. "c3", "kick"
+    pub note: Note,
     pub blocks: Vec<Block>,
 }
 

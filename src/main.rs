@@ -33,7 +33,7 @@ struct MidiEventRow {
     #[tabled(rename = "CH")]
     channel: u8,
     #[tabled(rename = "Note")]
-    note: String,
+    note: u8,
     // velocity: u8,
     #[tabled(rename = "Time")]
     time: String,

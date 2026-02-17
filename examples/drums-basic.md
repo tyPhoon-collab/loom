@@ -12,4 +12,4 @@ title: "Drum Pattern"
 
 kick  | ^ .  ^      . ^ . ^ . |
 snare | . . [^ ^ ^] . . . ^ . |
-hi-hat| . ^  .      ^ . ^ . ^ |
+hihat | . ^  .      ^ . ^ . ^ |
