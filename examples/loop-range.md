@@ -1,7 +1,9 @@
 ---
 bpm: 120
-title: "07. Loop Test"
+title: "Loop Range"
 loop: true
+unit: bar
+loop_range: "1 ~ 1"
 ---
 
 # Piano: 1

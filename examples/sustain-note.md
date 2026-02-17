@@ -1,6 +1,6 @@
 ---
 bpm: 60
-title: "03. Stateful Sustain (Ties)"
+title: "Sustain Note"
 ---
 
 # Bass: 2

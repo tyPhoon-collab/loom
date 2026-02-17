@@ -14,3 +14,6 @@ thiserror = "1.0"
 colored = "2.0"
 tabled = "0.15"
 midir = "0.9"
+
+[dev-dependencies]
+insta = { version = "1.34", features = ["yaml"] }

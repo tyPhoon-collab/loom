@@ -1,6 +1,6 @@
 ---
 bpm: 144
-title: "05. Chord"
+title: "Chord Progression"
 ---
 
 # Piano: 1

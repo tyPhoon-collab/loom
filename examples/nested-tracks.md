@@ -1,6 +1,6 @@
 ---
 bpm: 90
-title: "02. Nested Rhythms"
+title: "Nested Rhythms"
 ---
 
 # Percussion: 10

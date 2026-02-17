@@ -1,0 +1,62 @@
+---
+source: tests/examples.rs
+expression: events
+---
+[
+    MidiEvent {
+        time: 0.0,
+        duration: 7.0,
+        channel: 2,
+        note: "c2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 0.0,
+        duration: 2.0,
+        channel: 2,
+        note: "g2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 1.0,
+        duration: 1.0,
+        channel: 2,
+        note: "d2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 2.0,
+        duration: 3.0,
+        channel: 2,
+        note: "e2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 2.0,
+        duration: 2.0,
+        channel: 2,
+        note: "g2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 3.0,
+        duration: 1.0,
+        channel: 2,
+        note: "d2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 4.0,
+        duration: 2.0,
+        channel: 2,
+        note: "g2",
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 5.0,
+        duration: 3.0,
+        channel: 2,
+        note: "d2",
+        velocity: 100,
+    },
+]

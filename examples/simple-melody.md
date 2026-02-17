@@ -2,7 +2,7 @@
 bpm: 100
 signature: 4/4
 unit: bar
-title: "01. Simple Scale"
+title: "Simple Melody"
 ---
 
 # Piano: 1

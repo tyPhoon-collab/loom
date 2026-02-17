@@ -2,7 +2,7 @@
 bpm: 112
 signature: 4/4
 unit: bar
-title: "Drums"
+title: "Drum Pattern"
 ---
 
 # Drums: 10

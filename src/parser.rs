@@ -101,7 +101,7 @@ pub fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
 
 // --- Line Types ---
 
-enum ParsedLine {
+pub(crate) enum ParsedLine {
     TrackHeader { name: String, channel: u8 },
     Pattern { key: String, blocks: Vec<Block> },
     Comment,
