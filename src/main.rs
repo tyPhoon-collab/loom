@@ -1,9 +1,10 @@
 mod compiler;
 mod parser;
 mod token;
+mod player; // Add module
 
 use clap::{Parser, Subcommand};
-use miette::{IntoDiagnostic, Result, miette}; // Added miette macro
+use miette::{IntoDiagnostic, Result, miette};
 use std::fs;
 use std::path::PathBuf;
 use tabled::{Table, Tabled};
@@ -20,8 +21,15 @@ struct Cli {
 enum Commands {
     /// Check syntax of Loom file
     Check { input: PathBuf },
-    /// Run Loom file and output MIDI events
+    /// Run Loom file and output MIDI events (Dry run)
     Run { input: PathBuf },
+    /// Real-time MIDI Playback
+    Play {
+        input: PathBuf,
+        /// MIDI output port index
+        #[arg(short, long, default_value_t = 0)]
+        port: usize,
+    },
 }
 
 #[derive(Tabled)]
@@ -55,14 +63,8 @@ fn main() -> Result<()> {
         }
         Commands::Run { input } => {
             let content = fs::read_to_string(&input).into_diagnostic()?;
-
-            // Parse
-            let song = parser::parse_song(content)?; // propagates ParseError -> Miette Report
-
-            // Compile
+            let song = parser::parse_song(content)?;
             let compiler = compiler::Compiler::new(&song);
-
-            // Map Compiler error (anyhow) to Miette
             let events = compiler.compile(&song).map_err(|e| miette!("Compiler error: {}", e))?;
 
             // Output Table
@@ -75,9 +77,17 @@ fn main() -> Result<()> {
                     duration: format!("{:.2}", event.duration),
                 });
             }
-
             let table = Table::new(rows).to_string();
             println!("{}", table);
+        }
+        Commands::Play { input, port } => {
+            let content = fs::read_to_string(&input).into_diagnostic()?;
+            let song = parser::parse_song(content)?;
+            let compiler = compiler::Compiler::new(&song);
+            let events = compiler.compile(&song).map_err(|e| miette!("Compiler error: {}", e))?;
+
+            let mut player = player::Player::new(port)?;
+            player.play(&events, song.metadata.bpm)?;
         }
     }
 

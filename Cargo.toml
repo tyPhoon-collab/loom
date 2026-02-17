@@ -13,3 +13,4 @@ miette = { version = "5.10", features = ["fancy"] }
 thiserror = "1.0"
 colored = "2.0"
 tabled = "0.15"
+midir = "0.9"
