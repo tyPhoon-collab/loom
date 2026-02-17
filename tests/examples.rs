@@ -15,7 +15,7 @@ fn test_examples() {
     for entry in entries {
         let entry = entry.expect("Failed to read entry");
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("md") {
+        if path.extension().and_then(|s| s.to_str()) == Some("loom") {
             let filename = path.file_name().unwrap().to_str().unwrap();
             let content = fs::read_to_string(&path).expect("Failed to read example file");
 

@@ -4,7 +4,7 @@
 
 ## 1. コンセプト
 
-- Markdown風: 見出しでトラック管理、YAML Frontmatterでメタデータ。
+- Markdown風: 見出しでトラック管理、YAML Frontmatterでメタデータ。区別のため、拡張子は`.loom`を採用。
 - 疎なピアノロール (Sparse Piano Roll): 必要な音階行のみ記述。
 - Elastic Grid: `|` で区切られた時間を等分割（Tidal方式）。スペースで見た目を整形しても演奏には影響しない。
 - Nested Cycle: `[]` を使うことで、特定の一拍をさらに等分割（再帰的分割）可能。
