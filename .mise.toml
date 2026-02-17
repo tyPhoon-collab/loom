@@ -1,5 +1,6 @@
 [tools]
 lefthook = "latest"
+just = "latest"
 
 [hooks]
-postinstall = "lefthook install"
+postinstall = "just setup"

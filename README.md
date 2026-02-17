@@ -25,8 +25,23 @@
 
 ## 開発
 
-- miseとrustupのセットアップが必要
-- examples/にサンプルを用意
+### Justfile
+便利なコマンドを `just` で実行できます：
+- `just live <file>`: ライブ演奏モード起動
+- `just save <file>`: MIDI保存
+- `just fmt`: DSL（.loom）のフォーマット
+- `just precommit`: 全てのチェック（clippy, test, fmt）を実行
+
+### セットアップ
+- `mise` と `rustup` のセットアップが必要
+- `examples/` にサンプルを用意
+
+### テックスタック
+- **Language**: Rust
+- **TUI**: ratatui, crossterm
+- **MIDI**: midir, midly
+- **Parser**: nom
+- **CLI**: clap, miette
 
 ## examples
 
