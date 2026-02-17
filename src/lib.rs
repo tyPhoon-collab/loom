@@ -1,6 +1,11 @@
+pub mod app;
 pub mod compiler;
+pub mod event;
+pub mod exporter;
 pub mod formatter;
+pub mod live_player;
 pub mod note;
 pub mod parser;
 pub mod player;
 pub mod token;
+pub mod tui;

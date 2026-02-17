@@ -109,35 +109,68 @@ fn parse_pattern_line_rough(line: &str) -> Option<PatternLine> {
 }
 
 fn tokenize_rough(block_str: &str) -> Vec<String> {
-    // Split by whitespace but keep `[...]` groups together as a single token for alignment.
+    // Split by whitespace AND special characters (^, ., -) to ensure spacing.
+    // Keep `[...]` groups together.
 
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut in_group = false;
 
-    for c in block_str.chars() {
+    // Use peeking iterator or simple state machine
+    let chars: Vec<char> = block_str.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+
+        if in_group {
+            if c == ']' {
+                current.push(c);
+                tokens.push(current.trim().to_string());
+                current.clear();
+                in_group = false;
+            } else {
+                current.push(c);
+            }
+            i += 1;
+            continue;
+        }
+
         if c == '[' {
-            if !current.trim().is_empty() && !in_group {
+            if !current.trim().is_empty() {
                 tokens.push(current.trim().to_string());
                 current.clear();
             }
+            current.push(c);
             in_group = true;
-            current.push(c);
-        } else if c == ']' {
-            current.push(c);
-            in_group = false;
-            tokens.push(current.trim().to_string());
-            current.clear();
-        } else if c.is_whitespace() {
-            if in_group {
-                current.push(c);
-            } else if !current.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        if c.is_whitespace() {
+            if !current.is_empty() {
                 tokens.push(current.clone());
                 current.clear();
             }
-        } else {
-            current.push(c);
+            i += 1;
+            continue;
         }
+
+        // Special characters: ^, ., - should be separate tokens?
+        // Yes, to force spacing: "c3 | ^.. |" -> "c3 | ^ . . |"
+        if c == '^' || c == '.' || c == '-' {
+            if !current.is_empty() {
+                tokens.push(current.clone());
+                current.clear();
+            }
+            tokens.push(c.to_string());
+            i += 1;
+            continue;
+        }
+
+        // Other characters (e.g. part of a longer token if any? unlikely in loom outside of groups)
+        // But let's accumulate them just in case
+        current.push(c);
+        i += 1;
     }
 
     if !current.trim().is_empty() {

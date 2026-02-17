@@ -90,3 +90,61 @@ s | ^ | > another
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
 }
+
+#[test]
+fn test_fmt_alignment_mixed_blocks() {
+    let input = r#"
+g3 | . . ^ |
+e3 | . ^ . |
+c3 | ^ . . |
+c2 | ^ |
+"#;
+
+    let expected = r#"
+g3 | . . ^ |
+e3 | . ^ . |
+c3 | ^ . . |
+c2 | ^     |
+"#;
+    let formatted = formatter::format_string(input);
+    assert_eq!(formatted, expected);
+}
+
+#[test]
+fn test_fmt_empty_and_displaced_blocks() {
+    let input = r#"
+f3 ||^ - -|
+c3 | ^ - - | ..^ |
+e3 | . ^ . | . ^ . |
+g3 | . . ^ | |
+"#;
+
+    let expected = r#"
+f3 |       | ^ - - |
+c3 | ^ - - | . . ^ |
+e3 | . ^ . | . ^ . |
+g3 | . . ^ |       |
+"#;
+    let formatted = formatter::format_string(input);
+    assert_eq!(formatted, expected);
+}
+
+
+#[test]
+fn test_fmt_dense_tokens() {
+    let input = r#"
+# Track: 1
+c3 | ^.. |
+e3 | .^. |
+g3 | ..^ |
+"#;
+
+    let expected = r#"
+# Track: 1
+c3 | ^ . . |
+e3 | . ^ . |
+g3 | . . ^ |
+"#;
+    let formatted = formatter::format_string(input);
+    assert_eq!(formatted, expected);
+}
