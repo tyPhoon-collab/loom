@@ -99,8 +99,14 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
 // --- Line Types ---
 
 pub(crate) enum ParsedLine {
-    TrackHeader { name: String, channel: u8 },
-    Pattern { key: Note, blocks: Vec<Block> },
+    TrackHeader {
+        name: String,
+        channel: u8,
+    },
+    Pattern {
+        notes: Vec<Note>,
+        blocks: Vec<Block>,
+    },
     Comment,
     Empty,
 }
@@ -138,11 +144,26 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, key_raw) = parse_key(input)?;
     let (input, blocks) = parse_line_blocks(input)?;
 
-    let key = Note::from_str(key_raw.trim()).map_err(|_| {
-        nom::Err::Failure(nom::error::Error::new(key_raw, nom::error::ErrorKind::Tag))
-    })?;
+    let mut notes = Vec::new();
+    for part in key_raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let note = Note::from_str(trimmed).map_err(|_| {
+            nom::Err::Failure(nom::error::Error::new(key_raw, nom::error::ErrorKind::Tag))
+        })?;
+        notes.push(note);
+    }
 
-    Ok((input, ParsedLine::Pattern { key, blocks }))
+    if notes.is_empty() {
+        return Err(nom::Err::Failure(nom::error::Error::new(
+            key_raw,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+
+    Ok((input, ParsedLine::Pattern { notes, blocks }))
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -217,9 +238,9 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                         lines: Vec::new(),
                     });
                 }
-                ParsedLine::Pattern { key, blocks } => {
+                ParsedLine::Pattern { notes, blocks } => {
                     if let Some(ref mut t) = current_track {
-                        t.lines.push(Line { note: key, blocks });
+                        t.lines.push(Line { notes, blocks });
                     }
                 }
                 ParsedLine::Comment | ParsedLine::Empty => {}

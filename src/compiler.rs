@@ -48,15 +48,9 @@ impl Compiler {
 
     fn compile_track(&self, track: &Track, events: &mut Vec<MidiEvent>) -> Result<()> {
         for line in &track.lines {
-            // Per line state (Last note event index for sustain)
-            // Note: Parallel lines (polyphony) are independent rows usually.
-            // But if multiple lines share the same note?
-            // "Note" in Line is just "row header".
-            // So sustain logic is strictly Per Row.
-
             let mut current_time = 0.0;
-            let mut last_event_idx: Option<usize> = None;
-            let note_key = &line.note;
+            // Last note event index PER note in the chord
+            let mut last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
 
             for block in &line.blocks {
                 let block_duration = self.unit_per_block;
@@ -65,9 +59,9 @@ impl Compiler {
                     current_time,
                     block_duration,
                     track.channel,
-                    note_key,
+                    &line.notes,
                     events,
-                    &mut last_event_idx,
+                    &mut last_event_indices,
                 );
                 current_time += block_duration;
             }
@@ -82,17 +76,11 @@ impl Compiler {
         start_time: f64,
         total_duration: f64,
         channel: u8,
-        note_key: &Note,
+        notes: &[Note],
         events: &mut Vec<MidiEvent>,
-        last_event_idx: &mut Option<usize>,
+        last_event_indices: &mut Vec<Option<usize>>,
     ) {
         if tokens.is_empty() {
-            // Empty block just advances time (done by caller)
-            // But sustain state? If empty, does it sustain?
-            // CONCEPT.md says "Space ... visual only".
-            // Empty tokens means NO events.
-            // If implicit sustain is desired, one must write `-`.
-            // So empty list -> do nothing.
             return;
         }
 
@@ -104,43 +92,42 @@ impl Compiler {
 
             match token {
                 Token::Note => {
-                    // New Event
-                    let event = MidiEvent {
-                        time: token_time,
-                        duration: duration_per_token, // Default duration
-                        channel,
-                        note: note_key.to_midi(),
-                        velocity: 100,
-                    };
-                    events.push(event);
-                    *last_event_idx = Some(events.len() - 1);
+                    // Start new events for ALL notes in the chord
+                    for (nth, note) in notes.iter().enumerate() {
+                        let event = MidiEvent {
+                            time: token_time,
+                            duration: duration_per_token,
+                            channel,
+                            note: note.to_midi(),
+                            velocity: 100,
+                        };
+                        events.push(event);
+                        last_event_indices[nth] = Some(events.len() - 1);
+                    }
                 }
                 Token::Rest => {
-                    // Stop sustaining
-                    *last_event_idx = None;
+                    // Stop sustaining ALL notes in the chord
+                    for idx in last_event_indices.iter_mut() {
+                        *idx = None;
+                    }
                 }
                 Token::Sustain => {
-                    // Extend previous
-                    if let Some(idx) = *last_event_idx {
-                        // Mutate the event inside the vector
-                        if let Some(event) = events.get_mut(idx) {
+                    // Extend previous events for ALL notes in the chord
+                    for idx_opt in last_event_indices.iter().flatten() {
+                        if let Some(event) = events.get_mut(*idx_opt) {
                             event.duration += duration_per_token;
                         }
-                    } else {
-                        // No previous note to sustain. Ignore or warn?
-                        // Ignore for now.
                     }
                 }
                 Token::Group(sub_tokens) => {
-                    // Recursive
                     self.process_tokens(
                         sub_tokens,
                         token_time,
                         duration_per_token,
                         channel,
-                        note_key,
+                        notes,
                         events,
-                        last_event_idx,
+                        last_event_indices,
                     );
                 }
             }

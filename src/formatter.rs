@@ -236,35 +236,55 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     let mut out = String::new();
     let mut patterns = patterns.to_vec();
 
-    // Sort by pitch (Descending: High -> Low)
-    // We need to parse keys to Notes to compare them.
-    // If parsing fails, we treat it as lowest priority (or keep relative order?)
-    // Let's use a stable sort with a cached key.
+    // Sort by pitch (Descending: Highest note of the chord determines the row order)
     patterns.sort_by(|a, b| {
-        let note_a = crate::note::Note::from_str(&a.key);
-        let note_b = crate::note::Note::from_str(&b.key);
+        let parse_midi_max = |key: &str| -> Option<u8> {
+            key.split(',')
+                .filter_map(|s| crate::note::Note::from_str(s.trim()).ok())
+                .map(|n| n.to_midi())
+                .max()
+        };
 
-        match (note_a, note_b) {
-            (Ok(na), Ok(nb)) => {
-                let midi_a = na.to_midi();
-                let midi_b = nb.to_midi();
-                // Descending order (b.cmp(a))
-                midi_b.cmp(&midi_a)
+        match (parse_midi_max(&a.key), parse_midi_max(&b.key)) {
+            (Some(max_a), Some(max_b)) => {
+                // Descending order for rows (Highest top)
+                max_b.cmp(&max_a)
             }
-            (Ok(_), Err(_)) => std::cmp::Ordering::Less, // Valid notes come first (top)
-            (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
-            (Err(_), Err(_)) => std::cmp::Ordering::Equal,
+            (Some(_), None) => std::cmp::Ordering::Less, // Valid notes top
+            (None, Some(_)) => std::cmp::Ordering::Greater, // Invalid notes bottom
+            (None, None) => std::cmp::Ordering::Equal,   // Maintain original order
         }
     });
 
-    // 1. Calculate max key width
-    // Use `patterns` (the sorted vector) instead of the argument slice which is shadowed/moved?
-    // Actually the argument `patterns` is a slice `&[&PatternLine]`.
-    // `patterns.to_vec()` creates `Vec<&PatternLine>`.
-    // We sort this new Vec.
-    // Then we use this sorted Vec for iteration.
+    // Calculate sorted keys and max width
+    let mut sorted_keys = Vec::new();
+    for p in &patterns {
+        let mut ns = p
+            .key
+            .split(',')
+            .filter_map(|s| {
+                let trimmed = s.trim();
+                crate::note::Note::from_str(trimmed)
+                    .ok()
+                    .map(|n| (n, trimmed.to_string()))
+            })
+            .collect::<Vec<_>>();
 
-    let max_key_width = patterns.iter().map(|p| p.key.len()).max().unwrap_or(0);
+        if ns.is_empty() {
+            sorted_keys.push(p.key.clone());
+        } else {
+            // Sort notes within each chord ascendingly (Low -> High)
+            ns.sort_by(|(n1, _), (n2, _)| n1.to_midi().cmp(&n2.to_midi()));
+            let sk = ns
+                .iter()
+                .map(|(_, original)| original.clone())
+                .collect::<Vec<_>>()
+                .join(",");
+            sorted_keys.push(sk);
+        }
+    }
+
+    let max_key_width = sorted_keys.iter().map(|k| k.len()).max().unwrap_or(0);
 
     // 2. Logic to align blocks and tokens
     // Calculate max width for each token column across all patterns
@@ -291,9 +311,11 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     }
 
     // 3. Print
-    for p in patterns {
+    for (i, p) in patterns.iter().enumerate() {
+        let sorted_key = &sorted_keys[i];
+
         // Key
-        write!(out, "{:width$} |", p.key, width = max_key_width).unwrap();
+        write!(out, "{:width$} |", sorted_key, width = max_key_width).unwrap();
 
         for (b_idx, block) in p.blocks.iter().enumerate() {
             let token_widths = &block_token_widths[b_idx];

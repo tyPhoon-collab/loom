@@ -18,17 +18,20 @@ fmt-rust:
     cargo fmt
 
 # Loom Commands
-fmt-loom file:
-    cargo run -- fmt {{file}}
+fmt-loom file *args:
+    cargo run -- fmt {{file}} {{args}}
 
-live file:
-    cargo run -- live {{file}}
+live file *args:
+    cargo run -- live {{file}} {{args}}
 
-parse file:
-    cargo run -- parse {{file}}
+play file *args:
+    cargo run -- play {{file}} {{args}}
 
-save file output="output.mid":
-    cargo run -- save {{file}} {{output}}
+parse file *args:
+    cargo run -- parse {{file}} {{args}}
+
+save file output="output.mid" *args:
+    cargo run -- save {{file}} {{output}} {{args}}
 
 # Pre-commit checks
 precommit:

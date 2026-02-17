@@ -16,7 +16,7 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub struct Line {
-    pub note: Note,
+    pub notes: Vec<Note>,
     pub blocks: Vec<Block>,
 }
 

@@ -61,6 +61,26 @@ kick  | ^ |
 }
 
 #[test]
+fn test_fmt_multi_note() {
+    let input = r#"
+c3,e3,g3 | ^ |
+c3,g3 | . ^ |
+e3,c3 | ^ . |
+"#;
+
+    // Expected:
+    // 1. Notes sorted internally: e3,c3 -> c3,e3
+    // 2. Rows sorted by highest note (G3 top, then E3)
+    let expected = r#"
+c3,e3,g3 | ^   |
+c3,g3    | . ^ |
+c3,e3    | ^ . |
+"#;
+    let formatted = formatter::format_string(input);
+    assert_eq!(formatted, expected);
+}
+
+#[test]
 fn test_preserve_comments() {
     let input = "> comment\n# Track: 1\n";
     let formatted = formatter::format_string(input);
