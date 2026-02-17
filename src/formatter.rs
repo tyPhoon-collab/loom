@@ -1,4 +1,5 @@
 use std::fmt::Write as FmtWrite;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum RawLine {
@@ -233,8 +234,36 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     }
 
     let mut out = String::new();
+    let mut patterns = patterns.to_vec();
+
+    // Sort by pitch (Descending: High -> Low)
+    // We need to parse keys to Notes to compare them.
+    // If parsing fails, we treat it as lowest priority (or keep relative order?)
+    // Let's use a stable sort with a cached key.
+    patterns.sort_by(|a, b| {
+        let note_a = crate::note::Note::from_str(&a.key);
+        let note_b = crate::note::Note::from_str(&b.key);
+
+        match (note_a, note_b) {
+            (Ok(na), Ok(nb)) => {
+                let midi_a = na.to_midi();
+                let midi_b = nb.to_midi();
+                // Descending order (b.cmp(a))
+                midi_b.cmp(&midi_a)
+            }
+            (Ok(_), Err(_)) => std::cmp::Ordering::Less, // Valid notes come first (top)
+            (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+            (Err(_), Err(_)) => std::cmp::Ordering::Equal,
+        }
+    });
 
     // 1. Calculate max key width
+    // Use `patterns` (the sorted vector) instead of the argument slice which is shadowed/moved?
+    // Actually the argument `patterns` is a slice `&[&PatternLine]`.
+    // `patterns.to_vec()` creates `Vec<&PatternLine>`.
+    // We sort this new Vec.
+    // Then we use this sorted Vec for iteration.
+
     let max_key_width = patterns.iter().map(|p| p.key.len()).max().unwrap_or(0);
 
     // 2. Logic to align blocks and tokens
@@ -244,7 +273,7 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     // widths[block_index][token_index] = max_width
     let mut block_token_widths: Vec<Vec<usize>> = vec![Vec::new(); max_blocks];
 
-    for p in patterns {
+    for p in &patterns {
         for (b_idx, block) in p.blocks.iter().enumerate() {
             if b_idx >= max_blocks {
                 break;

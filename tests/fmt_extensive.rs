@@ -10,8 +10,8 @@ snare  |  . . | . ^|
 
     let expected = r#"
 # Track: 1
-kick  | ^ . | ^ . |
 snare | . . | . ^ |
+kick  | ^ . | ^ . |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -27,8 +27,8 @@ snare | ^ | |
 
     let expected = r#"
 # Track: 1
-kick  |   | ^ |
 snare | ^ |   |
+kick  |   | ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -50,8 +50,8 @@ snare | [^ ^ ^] |
 
     let expected = r#"
 # Track: 1
-kick  | ^       |
 snare | [^ ^ ^] |
+kick  | ^       |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -120,15 +120,14 @@ g3 | . . ^ | |
 "#;
 
     let expected = r#"
-f3 |       | ^ - - |
-c3 | ^ - - | . . ^ |
-e3 | . ^ . | . ^ . |
 g3 | . . ^ |       |
+f3 |       | ^ - - |
+e3 | . ^ . | . ^ . |
+c3 | ^ - - | . . ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
 }
-
 
 #[test]
 fn test_fmt_dense_tokens() {
@@ -141,9 +140,9 @@ g3 | ..^ |
 
     let expected = r#"
 # Track: 1
-c3 | ^ . . |
-e3 | . ^ . |
 g3 | . . ^ |
+e3 | . ^ . |
+c3 | ^ . . |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);

@@ -31,7 +31,9 @@ impl LivePlayer {
     }
 
     pub fn update(&self, events: Vec<MidiEvent>, metadata: Frontmatter) {
-        let _ = self.command_sender.send(PlayerCommand::UpdateSequence(events, metadata));
+        let _ = self
+            .command_sender
+            .send(PlayerCommand::UpdateSequence(events, metadata));
     }
 
     pub fn play(&self) {
@@ -64,8 +66,12 @@ struct ActiveNote {
 fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()> {
     let midi_out = MidiOutput::new("Loom Live").into_diagnostic()?;
     let ports = midi_out.ports();
-    let port = ports.get(port_index).ok_or_else(|| miette!("Invalid port index"))?;
-    let mut conn = midi_out.connect(port, "loom-live").map_err(|e| miette!("Connection error: {}", e))?;
+    let port = ports
+        .get(port_index)
+        .ok_or_else(|| miette!("Invalid port index"))?;
+    let mut conn = midi_out
+        .connect(port, "loom-live")
+        .map_err(|e| miette!("Connection error: {}", e))?;
 
     let mut state = PlayerState {
         events: Vec::new(),
@@ -88,7 +94,8 @@ fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()>
                     if state.is_playing {
                         let old_bpm = state.metadata.bpm.max(1) as f64;
                         let old_beats_per_sec = old_bpm / 60.0;
-                        state.seq_offset += state.start_time.elapsed().as_secs_f64() * old_beats_per_sec;
+                        state.seq_offset +=
+                            state.start_time.elapsed().as_secs_f64() * old_beats_per_sec;
                         state.start_time = Instant::now();
                     }
 
@@ -110,7 +117,8 @@ fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()>
                         // Calculate offset to resume later
                         let bpm = state.metadata.bpm.max(1) as f64;
                         let beats_per_sec = bpm / 60.0;
-                        state.seq_offset += state.start_time.elapsed().as_secs_f64() * beats_per_sec;
+                        state.seq_offset +=
+                            state.start_time.elapsed().as_secs_f64() * beats_per_sec;
 
                         silence_all(&mut conn, &mut active_notes);
                     }
@@ -129,15 +137,20 @@ fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()>
             let beats_per_sec = bpm / 60.0;
             let total_beats = (elapsed.as_secs_f64() * beats_per_sec) + state.seq_offset;
 
-            let max_beat = state.events.iter().map(|e| e.time + e.duration).fold(0.0, f64::max).max(4.0);
+            let max_beat = state
+                .events
+                .iter()
+                .map(|e| e.time + e.duration)
+                .fold(0.0, f64::max)
+                .max(4.0);
 
             // Handle Loop
             let current_beat = if state.metadata.r#loop {
-                 total_beats % max_beat
+                total_beats % max_beat
             } else {
                 if total_beats > max_beat {
                     state.is_playing = false;
-                     // All notes off
+                    // All notes off
                     active_notes.clear();
                     for i in 0..16 {
                         let _ = conn.send(&[0xB0 | i, 123, 0]);

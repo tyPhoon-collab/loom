@@ -25,18 +25,13 @@ impl EventHandler {
 
         // 1. Input Thread
         let input_sender = sender.clone();
-        thread::spawn(move || {
-            loop {
-                if event::poll(tick_rate).unwrap() {
-                    match event::read().unwrap() {
-                        CrosstermEvent::Key(key) => {
-                            input_sender.send(Event::Key(key)).unwrap();
-                        }
-                        _ => {}
-                    }
-                } else {
-                    input_sender.send(Event::Tick).unwrap();
+        thread::spawn(move || loop {
+            if event::poll(tick_rate).unwrap() {
+                if let CrosstermEvent::Key(key) = event::read().unwrap() {
+                    input_sender.send(Event::Key(key)).unwrap();
                 }
+            } else {
+                input_sender.send(Event::Tick).unwrap();
             }
         });
 
@@ -51,14 +46,14 @@ impl EventHandler {
                 }
                 Err(e) => eprintln!("Watch error: {:?}", e),
             }
-        }).expect("Watcher failed");
-
-        watcher.watch(&path, RecursiveMode::NonRecursive).expect("Watch failed");
-
-        Ok(Self {
-            receiver,
-            watcher,
         })
+        .expect("Watcher failed");
+
+        watcher
+            .watch(&path, RecursiveMode::NonRecursive)
+            .expect("Watch failed");
+
+        Ok(Self { receiver, watcher })
     }
 
     pub fn next(&self) -> Result<Event> {

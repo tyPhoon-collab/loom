@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use crate::event::{Event, EventHandler};
 use crate::live_player::LivePlayer;
-use crate::event::{EventHandler, Event};
+use crate::{compiler, parser};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
-use std::time::Duration;
-use crate::{parser, compiler};
 use std::fs;
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct App {
     pub should_quit: bool,
@@ -35,13 +35,18 @@ impl App {
         })
     }
 
-    pub fn run<B: ratatui::backend::Backend>(&mut self, terminal: &mut ratatui::Terminal<B>) -> Result<()> {
+    pub fn run<B: ratatui::backend::Backend>(
+        &mut self,
+        terminal: &mut ratatui::Terminal<B>,
+    ) -> Result<()> {
         self.player.play();
         self.is_playing = true;
 
         loop {
             // map_err because B::Error might not satisfy IntoDiagnostic bounds (Send+Sync)
-            terminal.draw(|f| self.ui(f)).map_err(|e| miette::miette!("Draw error: {:?}", e))?;
+            terminal
+                .draw(|f| self.ui(f))
+                .map_err(|e| miette::miette!("Draw error: {:?}", e))?;
 
             match self.event_handler.next()? {
                 Event::Key(key) => {
@@ -64,15 +69,15 @@ impl App {
                                 if let Err(e) = fs::write(&self.path, &formatted) {
                                     self.status_message = format!("Format save error: {}", e);
                                 } else {
-                                     // Prevent infinite loop?
-                                     // The write triggers a new event.
-                                     // Next event: read -> formatted == content -> no write.
-                                     // So it is safe (idempotent).
+                                    // Prevent infinite loop?
+                                    // The write triggers a new event.
+                                    // Next event: read -> formatted == content -> no write.
+                                    // So it is safe (idempotent).
                                 }
                             }
                         }
                         Err(e) => {
-                             self.status_message = format!("Compilation failed! {}", e);
+                            self.status_message = format!("Compilation failed! {}", e);
                         }
                     }
                 }
@@ -98,14 +103,10 @@ impl App {
                         player.update(events, song.metadata);
                         Ok((bpm, msg))
                     }
-                    Err(e) => {
-                        Err(miette::miette!("Compile error: {}", e))
-                    }
+                    Err(e) => Err(miette::miette!("Compile error: {}", e)),
                 }
             }
-            Err(e) => {
-                Err(miette::miette!("Parse error: {}", e))
-            }
+            Err(e) => Err(miette::miette!("Parse error: {}", e)),
         }
     }
 
@@ -132,8 +133,8 @@ impl App {
     fn ui(&self, f: &mut ratatui::Frame) {
         use ratatui::{
             layout::{Constraint, Direction, Layout},
+            style::{Color, Style},
             widgets::{Block, Borders, Paragraph},
-            style::{Style, Color},
         };
 
         let chunks = Layout::default()
@@ -159,15 +160,17 @@ impl App {
             if self.is_playing { "PLAYING" } else { "PAUSED" }
         ))
         .block(Block::default().title("Info").borders(Borders::ALL))
-        .style(if self.status_message.contains("error") || self.status_message.contains("failed") {
-            Style::default().fg(Color::Red)
-        } else {
-            Style::default().fg(Color::Green)
-        });
+        .style(
+            if self.status_message.contains("error") || self.status_message.contains("failed") {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::Green)
+            },
+        );
         f.render_widget(status, chunks[1]);
 
         let footer = Paragraph::new("q: Quit | Space: Play/Pause")
-             .block(Block::default().borders(Borders::ALL));
+            .block(Block::default().borders(Borders::ALL));
         f.render_widget(footer, chunks[2]);
     }
 }
