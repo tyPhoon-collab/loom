@@ -26,6 +26,14 @@ enum Commands {
         #[arg(short, long, default_value_t = 0)]
         port: usize,
     },
+    /// Format Loom file
+    Fmt {
+        /// Input file. If not provided, reads from stdin.
+        input: Option<PathBuf>,
+        /// Check mode: exits with 1 if formatting changes content
+        #[arg(long, short)]
+        check: bool,
+    },
 }
 
 #[derive(Tabled)]
@@ -88,6 +96,47 @@ fn main() -> Result<()> {
 
             let mut player_inst = player::Player::new(port)?;
             player_inst.play(&events, &song.metadata)?;
+        }
+        Commands::Fmt { input, check } => {
+            use loom::formatter;
+            use std::io::{self, Read};
+
+            let (content, path_str) = match &input {
+                Some(path) => (
+                    fs::read_to_string(path).into_diagnostic()?,
+                    path.display().to_string(),
+                ),
+                None => {
+                    let mut buffer = String::new();
+                    io::stdin().read_to_string(&mut buffer).into_diagnostic()?;
+                    (buffer, "<stdin>".to_string())
+                }
+            };
+
+            let formatted = formatter::format_string(&content);
+
+            if check {
+                if content != formatted {
+                    eprintln!("Difference found in {}", path_str);
+                    std::process::exit(1);
+                }
+            } else {
+                // If input was file, write back to file?
+                // Standard behavior for `fmt <file>` is usually overwrite?
+                // `cargo fmt` overwrites. `prettier <file>` usually writes to stdout unless --write.
+                // Let's follow `cargo fmt` / `go fmt` style if file is provided: OVERWRITE.
+                // If stdin, write to stdout.
+
+                match input {
+                    Some(path) => {
+                        fs::write(&path, formatted).into_diagnostic()?;
+                        eprintln!("Formatted {}", path.display());
+                    }
+                    None => {
+                        print!("{}", formatted);
+                    }
+                }
+            }
         }
     }
 
