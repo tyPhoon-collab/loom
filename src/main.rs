@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use loom::{compiler, parser, player};
+use loom::dsl::parser;
+use loom::{compiler, player};
 use miette::{miette, IntoDiagnostic, Result};
 use std::fs;
 use std::path::PathBuf;
@@ -111,8 +112,8 @@ fn main() -> Result<()> {
             player_inst.play(&events, &song.metadata)?;
         }
         Commands::Live { input, port } => {
-            use loom::app::App;
-            use loom::tui;
+            use loom::interface::app::App;
+            use loom::interface::tui;
 
             // Initialize App
             let mut app = App::new(input, port)?;
@@ -122,9 +123,6 @@ fn main() -> Result<()> {
 
             // Run App
             let res = app.run(&mut terminal);
-
-            // Restore TUI
-            tui::restore()?;
 
             if let Err(e) = res {
                 eprintln!("Error: {:?}", e);
@@ -145,12 +143,12 @@ fn main() -> Result<()> {
                 path
             });
 
-            use loom::exporter;
-            exporter::save_to_midi(&events, &output_path, song.metadata.bpm)?;
+            use loom::midi::file;
+            file::save_to_midi(&events, &output_path, song.metadata.bpm)?;
             println!("💾 Saved MIDI to {}", output_path.display());
         }
         Commands::Fmt { input, check } => {
-            use loom::formatter;
+            use loom::dsl::formatter;
             use std::io::{self, Read};
 
             let (content, path_str) = match &input {

@@ -1,4 +1,4 @@
-pub use crate::note::Note;
+pub use super::note::Note;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,7 +27,7 @@ pub struct Track {
     pub lines: Vec<Line>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
 pub struct Frontmatter {
     #[allow(dead_code)]
     pub bpm: u32,

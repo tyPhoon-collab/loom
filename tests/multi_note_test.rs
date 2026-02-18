@@ -1,5 +1,5 @@
 use loom::compiler::Compiler;
-use loom::parser::parse_song;
+use loom::dsl::parser::parse_song;
 
 #[test]
 fn test_compile_multi_note() {

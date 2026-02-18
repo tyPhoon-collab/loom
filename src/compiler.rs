@@ -1,4 +1,4 @@
-use crate::token::{Note, Song, Token, Track};
+use crate::dsl::token::{Note, Song, Token, Track};
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -50,36 +50,34 @@ impl Compiler {
         for line in &track.lines {
             let mut current_time = 0.0;
             // Last note event index PER note in the chord
-            let mut last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+            let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+
+            let mut line_compiler = LineCompiler {
+                channel: track.channel,
+                notes: &line.notes,
+                events,
+                last_event_indices,
+            };
 
             for block in &line.blocks {
                 let block_duration = self.unit_per_block;
-                self.process_tokens(
-                    &block.tokens,
-                    current_time,
-                    block_duration,
-                    track.channel,
-                    &line.notes,
-                    events,
-                    &mut last_event_indices,
-                );
+                line_compiler.process_tokens(&block.tokens, current_time, block_duration);
                 current_time += block_duration;
             }
         }
         Ok(())
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn process_tokens(
-        &self,
-        tokens: &[Token],
-        start_time: f64,
-        total_duration: f64,
-        channel: u8,
-        notes: &[Note],
-        events: &mut Vec<MidiEvent>,
-        last_event_indices: &mut Vec<Option<usize>>,
-    ) {
+struct LineCompiler<'a> {
+    channel: u8,
+    notes: &'a [Note],
+    events: &'a mut Vec<MidiEvent>,
+    last_event_indices: Vec<Option<usize>>,
+}
+
+impl<'a> LineCompiler<'a> {
+    fn process_tokens(&mut self, tokens: &[Token], start_time: f64, total_duration: f64) {
         if tokens.is_empty() {
             return;
         }
@@ -93,42 +91,34 @@ impl Compiler {
             match token {
                 Token::Note => {
                     // Start new events for ALL notes in the chord
-                    for (nth, note) in notes.iter().enumerate() {
+                    for (nth, note) in self.notes.iter().enumerate() {
                         let event = MidiEvent {
                             time: token_time,
                             duration: duration_per_token,
-                            channel,
+                            channel: self.channel,
                             note: note.to_midi(),
                             velocity: 100,
                         };
-                        events.push(event);
-                        last_event_indices[nth] = Some(events.len() - 1);
+                        self.events.push(event);
+                        self.last_event_indices[nth] = Some(self.events.len() - 1);
                     }
                 }
                 Token::Rest => {
                     // Stop sustaining ALL notes in the chord
-                    for idx in last_event_indices.iter_mut() {
+                    for idx in self.last_event_indices.iter_mut() {
                         *idx = None;
                     }
                 }
                 Token::Sustain => {
                     // Extend previous events for ALL notes in the chord
-                    for idx_opt in last_event_indices.iter().flatten() {
-                        if let Some(event) = events.get_mut(*idx_opt) {
+                    for idx_opt in self.last_event_indices.iter().flatten() {
+                        if let Some(event) = self.events.get_mut(*idx_opt) {
                             event.duration += duration_per_token;
                         }
                     }
                 }
                 Token::Group(sub_tokens) => {
-                    self.process_tokens(
-                        sub_tokens,
-                        token_time,
-                        duration_per_token,
-                        channel,
-                        notes,
-                        events,
-                        last_event_indices,
-                    );
+                    self.process_tokens(sub_tokens, token_time, duration_per_token);
                 }
             }
         }

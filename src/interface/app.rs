@@ -1,6 +1,7 @@
+use crate::compiler;
+use crate::dsl::parser;
 use crate::event::{Event, EventHandler};
 use crate::live_player::LivePlayer;
-use crate::{compiler, parser};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use std::fs;
@@ -64,12 +65,29 @@ impl App {
                             self.status_message = format!("Reloaded! {}", msg);
 
                             // Auto-format if valid
-                            let formatted = crate::formatter::format_string(&content);
+                            let formatted = crate::dsl::formatter::format_string(&content);
                             if content != formatted {
                                 if let Err(e) = fs::write(&self.path, &formatted) {
                                     self.status_message = format!("Format save error: {}", e);
                                 } else {
                                     // Prevent infinite loop?
+                                    // Re-compile to get events for MIDI export
+                                    if let Ok(song) = parser::parse_song(content.clone()) {
+                                        let compiler_inst = crate::compiler::Compiler::new(&song);
+                                        if let Ok(events) = compiler_inst.compile(&song) {
+                                            match crate::midi::file::save_to_midi(
+                                                &events,
+                                                &self.path.with_extension("mid"),
+                                                bpm,
+                                            ) {
+                                                Ok(_) => {}
+                                                Err(e) => {
+                                                    self.status_message =
+                                                        format!("MIDI save error: {}", e);
+                                                }
+                                            }
+                                        }
+                                    }
                                     // The write triggers a new event.
                                     // Next event: read -> formatted == content -> no write.
                                     // So it is safe (idempotent).
@@ -98,6 +116,7 @@ impl App {
                 let compiler_inst = compiler::Compiler::new(&song);
                 match compiler_inst.compile(&song) {
                     Ok(events) => {
+                        let events: Vec<crate::compiler::MidiEvent> = events.to_vec();
                         let bpm = song.metadata.bpm;
                         let msg = format!("{} events, {} BPM", events.len(), bpm);
                         player.update(events, song.metadata);

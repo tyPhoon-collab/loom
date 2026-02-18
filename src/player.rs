@@ -1,160 +1,51 @@
 use crate::compiler::MidiEvent;
-use midir::{MidiOutput, MidiOutputConnection};
-use miette::{miette, IntoDiagnostic, Result};
-use std::{cmp::Ordering, thread, time::Duration};
+use crate::sequencer::{Core, PlaybackState};
+use miette::Result;
+use std::{thread, time::Duration};
 
 pub struct Player {
-    conn: MidiOutputConnection,
-}
-
-#[derive(Debug)]
-struct PlayEvent {
-    time: f64,
-    kind: PlayEventKind,
-    channel: u8,
-    note: u8,
-    velocity: u8,
-}
-
-#[derive(Debug)]
-enum PlayEventKind {
-    NoteOn,
-    NoteOff,
+    // Keep connection here? Or let Core handle it?
+    // Core handles it now. But Player::new was returning Self { conn }.
+    // We need to change Player to holding Core or just a wrapper.
+    core: Core,
 }
 
 impl Player {
     pub fn new(port_index: usize) -> Result<Self> {
-        let midi_out = MidiOutput::new("Loom Output").into_diagnostic()?;
-
-        let ports = midi_out.ports();
-
-        println!("Available ports:");
-        for (i, port) in ports.iter().enumerate() {
-            println!("  {}: {}", i, midi_out.port_name(port).unwrap_or_default());
-        }
-
-        let port = ports.get(port_index).ok_or_else(|| {
-            miette!(
-                "Port index {} is out of range. Please choose from the list above.",
-                port_index
-            )
-        })?;
-
-        println!(
-            "Connecting to port {}: {}",
-            port_index,
-            midi_out.port_name(port).unwrap_or_default()
-        );
-
-        let conn = midi_out
-            .connect(port, "loom-conn")
-            .map_err(|e| miette!("Connection error: {}", e))?;
-
-        Ok(Self { conn })
+        let core = Core::new(port_index, "Loom Output")?;
+        Ok(Self { core })
     }
 
     pub fn play(
         &mut self,
         compiled_events: &[MidiEvent],
-        metadata: &crate::token::Frontmatter,
+        metadata: &crate::dsl::token::Frontmatter,
     ) -> Result<()> {
-        let bpm = metadata.bpm;
-        let loop_flag = metadata.r#loop;
+        println!("Playing at {} BPM...", metadata.bpm);
 
-        let (start_beat, end_beat) = if let Some(ref range_str) = metadata.loop_range {
-            parse_loop_range(range_str, &metadata.unit, &metadata.signature)?
-        } else {
-            // Default: 0 to max time
-            let max_time = compiled_events
-                .iter()
-                .map(|e| e.time + e.duration)
-                .fold(0.0, f64::max);
-            (0.0, max_time)
-        };
+        // Load data
+        self.core.load(compiled_events.to_vec(), metadata.clone());
 
-        let loop_duration_beats = end_beat - start_beat;
-
-        // Filter and offset events
-        let mut filtered_events = Vec::new();
-        for e in compiled_events {
-            if e.time >= start_beat && e.time < end_beat {
-                let mut new_e = e.clone();
-                new_e.time -= start_beat;
-                // Clamp duration to end of range
-                if new_e.time + new_e.duration > loop_duration_beats {
-                    new_e.duration = loop_duration_beats - new_e.time;
-                }
-                filtered_events.push(new_e);
+        // Setup loop range if provided
+        if let Some(ref range_str) = metadata.loop_range {
+            if let Ok((start, end)) =
+                parse_loop_range(range_str, &metadata.unit, &metadata.signature)
+            {
+                self.core.set_loop_range(start, end);
+                println!("Loop Range: {} ~ {} beats", start, end);
             }
         }
 
-        println!(
-            "Playing at {} BPM... ({} beats segment)",
-            bpm, loop_duration_beats
-        );
-        if metadata.loop_range.is_some() {
-            println!("Range: {} beats to {} beats", start_beat, end_beat);
-        }
+        self.core.play();
+
+        let tick_rate = Duration::from_millis(5);
 
         loop {
-            // Flatten into (NoteOn / NoteOff) events
-            let mut play_events = Vec::new();
-            for e in &filtered_events {
-                let note_num = e.note;
-                let channel = (e.channel - 1).min(15);
-
-                play_events.push(PlayEvent {
-                    time: e.time,
-                    kind: PlayEventKind::NoteOn,
-                    channel,
-                    note: note_num,
-                    velocity: 100,
-                });
-
-                play_events.push(PlayEvent {
-                    time: e.time + e.duration,
-                    kind: PlayEventKind::NoteOff,
-                    channel,
-                    note: note_num,
-                    velocity: 0,
-                });
-            }
-
-            // Sort by time
-            play_events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(Ordering::Equal));
-
-            // Play segment
-            let mut current_beat = 0.0;
-            let ms_per_beat = 60000.0 / bpm as f64;
-
-            for event in play_events {
-                let delta = event.time - current_beat;
-                if delta > 0.001 {
-                    let sleep_ms = delta * ms_per_beat;
-                    thread::sleep(Duration::from_millis(sleep_ms as u64));
-                    current_beat = event.time;
-                }
-
-                let status = match event.kind {
-                    PlayEventKind::NoteOn => 0x90 | event.channel,
-                    PlayEventKind::NoteOff => 0x80 | event.channel,
-                };
-                let _ = self.conn.send(&[status, event.note, event.velocity]);
-            }
-
-            // Sleep until the end of the segment duration
-            let final_delta = loop_duration_beats - current_beat;
-            if final_delta > 0.001 {
-                thread::sleep(Duration::from_millis((final_delta * ms_per_beat) as u64));
-            }
-
-            if !loop_flag {
+            let state = self.core.tick();
+            if state == PlaybackState::Stopped {
                 break;
             }
-            println!("Looping...");
-            // Send All Notes Off roughly?
-            // Or just rely on the NoteOffs we sent.
-            // Since we clamped durations, all NoteOffs should have been sent before loop_duration_beats.
+            thread::sleep(tick_rate);
         }
 
         println!("Done.");
@@ -162,8 +53,10 @@ impl Player {
     }
 }
 
-// Helper to parse "1 ~ 4"
+// Helper to parse "1 ~ 4" from metadata
 fn parse_loop_range(range_str: &str, default_unit: &str, signature: &str) -> Result<(f64, f64)> {
+    use miette::{miette, IntoDiagnostic};
+
     // Split by '~'
     let parts: Vec<&str> = range_str.split('~').collect();
 

@@ -1,5 +1,5 @@
 use loom::compiler;
-use loom::parser;
+use loom::dsl::parser;
 use std::fs;
 use std::path::Path;
 

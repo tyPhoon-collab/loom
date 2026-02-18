@@ -1,4 +1,4 @@
-use loom::formatter;
+use loom::dsl::formatter;
 
 #[test]
 fn test_basic_vertical_alignment() {

@@ -1,5 +1,5 @@
 #![allow(unused_assignments)]
-use crate::token::{Block, Frontmatter, Line, Note, Song, Token, Track};
+use super::token::{Block, Frontmatter, Line, Note, Song, Token, Track};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::{
     branch::alt,

@@ -240,8 +240,8 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     patterns.sort_by(|a, b| {
         let parse_midi_max = |key: &str| -> Option<u8> {
             key.split(',')
-                .filter_map(|s| crate::note::Note::from_str(s.trim()).ok())
-                .map(|n| n.to_midi())
+                .filter_map(|s| crate::dsl::note::Note::from_str(s.trim()).ok())
+                .map(|n: crate::dsl::note::Note| n.to_midi())
                 .max()
         };
 
@@ -264,7 +264,7 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
             .split(',')
             .filter_map(|s| {
                 let trimmed = s.trim();
-                crate::note::Note::from_str(trimmed)
+                crate::dsl::note::Note::from_str(trimmed)
                     .ok()
                     .map(|n| (n, trimmed.to_string()))
             })
@@ -274,10 +274,12 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
             sorted_keys.push(p.key.clone());
         } else {
             // Sort notes within each chord ascendingly (Low -> High)
-            ns.sort_by(|(n1, _), (n2, _)| n1.to_midi().cmp(&n2.to_midi()));
+            ns.sort_by(|(n1, _): &(crate::dsl::note::Note, _), (n2, _)| {
+                n1.to_midi().cmp(&n2.to_midi())
+            });
             let sk = ns
                 .iter()
-                .map(|(_, original)| original.clone())
+                .map(|(_, original): &(crate::dsl::note::Note, String)| original.clone())
                 .collect::<Vec<_>>()
                 .join(",");
             sorted_keys.push(sk);
