@@ -74,6 +74,8 @@ pub struct Frontmatter {
     #[allow(dead_code)]
     #[serde(default = "default_bpm")]
     pub bpm: u32,
+    #[serde(default)]
+    pub pitch: i32,
     #[serde(default = "default_signature")]
     #[allow(dead_code)]
     pub signature: String,
@@ -105,6 +107,7 @@ impl Default for Frontmatter {
     fn default() -> Self {
         Self {
             bpm: default_bpm(),
+            pitch: 0,
             signature: default_signature(),
             unit: default_unit(),
             title: None,

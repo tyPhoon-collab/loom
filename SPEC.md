@@ -55,3 +55,4 @@ If frontmatter is omitted, the following defaults are used:
 - `bpm`: 120
 - `signature`: "4/4"
 - `unit`: "bar"
+- `pitch`: 0

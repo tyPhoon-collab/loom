@@ -48,7 +48,7 @@ impl Compiler {
         let mut events = Vec::new();
 
         for track in &song.tracks {
-            self.compile_track(track, &mut events)?;
+            self.compile_track(track, &mut events, song.metadata.pitch)?;
         }
 
         // Sort events by time
@@ -57,7 +57,12 @@ impl Compiler {
         Ok(events)
     }
 
-    fn compile_track(&self, track: &Track, events: &mut Vec<MidiEvent>) -> Result<()> {
+    fn compile_track(
+        &self,
+        track: &Track,
+        events: &mut Vec<MidiEvent>,
+        pitch_offset: i32,
+    ) -> Result<()> {
         for line in &track.lines {
             let mut current_time = 0.0;
             // Last note event index PER note in the chord
@@ -68,6 +73,7 @@ impl Compiler {
                 notes: &line.notes,
                 events,
                 last_event_indices,
+                pitch_offset,
             };
 
             let mut repeat_buffer: Vec<&Block> = Vec::new();
@@ -151,6 +157,7 @@ struct LineCompiler<'a> {
     notes: &'a [Note],
     events: &'a mut Vec<MidiEvent>,
     last_event_indices: Vec<Option<usize>>,
+    pitch_offset: i32,
 }
 
 impl<'a> LineCompiler<'a> {
@@ -169,11 +176,17 @@ impl<'a> LineCompiler<'a> {
                 Token::Note => {
                     // Start new events for ALL notes in the chord
                     for (nth, note) in self.notes.iter().enumerate() {
+                        let midi_val = match note {
+                            Note::Pitch { .. } => {
+                                (note.to_midi() as i32 + self.pitch_offset).clamp(0, 127) as u8
+                            }
+                            Note::Drum(_) => note.to_midi(),
+                        };
                         let event = MidiEvent {
                             time: token_time,
                             duration: duration_per_token,
                             channel: self.channel,
-                            note: note.to_midi(),
+                            note: midi_val,
                             velocity: 100,
                         };
                         self.events.push(event);
@@ -181,16 +194,14 @@ impl<'a> LineCompiler<'a> {
                     }
                 }
                 Token::Rest => {
-                    // Stop sustaining ALL notes in the chord
-                    for idx in self.last_event_indices.iter_mut() {
-                        *idx = None;
+                    for (nth, _) in self.notes.iter().enumerate() {
+                        self.last_event_indices[nth] = None;
                     }
                 }
                 Token::Sustain => {
-                    // Extend previous events for ALL notes in the chord
-                    for idx_opt in self.last_event_indices.iter().flatten() {
-                        if let Some(event) = self.events.get_mut(*idx_opt) {
-                            event.duration += duration_per_token;
+                    for (nth, _) in self.notes.iter().enumerate() {
+                        if let Some(idx) = self.last_event_indices[nth] {
+                            self.events[idx].duration += duration_per_token;
                         }
                     }
                 }
