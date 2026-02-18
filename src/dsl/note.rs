@@ -7,6 +7,24 @@ pub enum Note {
     Drum(String),
 }
 
+impl std::fmt::Display for Note {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Note::Pitch { name, octave } => {
+                let mut chars = name.chars();
+                if let Some(first) = chars.next() {
+                    let first_upper = first.to_uppercase().to_string();
+                    let rest = chars.collect::<String>();
+                    write!(f, "{}{}{}", first_upper, rest, octave)
+                } else {
+                    write!(f, "{}", octave)
+                }
+            }
+            Note::Drum(alias) => write!(f, "{}", alias),
+        }
+    }
+}
+
 impl Note {
     pub fn to_midi(&self) -> u8 {
         match self {
@@ -62,24 +80,23 @@ impl FromStr for Note {
     type Err = miette::Report;
 
     fn from_str(s: &str) -> Result<Self> {
-        let s = s.to_lowercase();
-
-        // Check Drum Aliases
-        match s.as_str() {
+        // 1. Check Drum Aliases (Case-Sensitive)
+        match s {
             "bd" | "kick" | "bassdrum" | "sd" | "snare" | "rim" | "rs" | "sidestick" | "clap"
             | "handclap" | "cp" | "hc" | "hihat" | "hihatclosed" | "ho" | "hihatopen" | "hp"
             | "hihatpedal" | "crash" | "ride" | "splash" | "china" | "ht" | "himidtom" | "mt"
             | "lowmidtom" | "lt" | "lowtom" | "ft" | "highfloortom" | "cb" | "cowbell" | "tamb"
             | "tambourine" => {
-                return Ok(Note::Drum(s));
+                return Ok(Note::Drum(s.to_string()));
             }
             _ => {}
         }
 
-        // Parse Pitch
+        // 2. Parse Pitch (Case-Insensitive for the pitch name part)
+        let s_lower = s.to_lowercase();
         let mut pitch_part = String::new();
         let mut octave_part = String::new();
-        let mut chars = s.chars().peekable();
+        let mut chars = s_lower.chars().peekable();
 
         while let Some(&c) = chars.peek() {
             if c.is_alphabetic() || c == '#' || c == 'b' {

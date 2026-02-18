@@ -1,4 +1,4 @@
-use crate::dsl::token::{Note, Song, Token, Track};
+use crate::dsl::token::{Bar, Block, Note, Song, Token, Track};
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
@@ -70,10 +70,76 @@ impl Compiler {
                 last_event_indices,
             };
 
+            let mut repeat_buffer: Vec<&Block> = Vec::new();
+            let mut in_repeat = false;
+
             for block in &line.blocks {
+                // Check Start Bar
+                match block.start_bar {
+                    Bar::RepeatStart => {
+                        repeat_buffer.clear();
+                        in_repeat = true;
+                    }
+                    Bar::RepeatEnd => {
+                        if in_repeat {
+                            for buffered_block in &repeat_buffer {
+                                let block_duration = self.unit_per_block;
+                                line_compiler.process_tokens(
+                                    &buffered_block.tokens,
+                                    current_time,
+                                    block_duration,
+                                );
+                                current_time += block_duration;
+                            }
+                            repeat_buffer.clear();
+                            in_repeat = false;
+                        }
+                    }
+                    Bar::Double => {
+                        if in_repeat {
+                            for buffered_block in &repeat_buffer {
+                                let block_duration = self.unit_per_block;
+                                line_compiler.process_tokens(
+                                    &buffered_block.tokens,
+                                    current_time,
+                                    block_duration,
+                                );
+                                current_time += block_duration;
+                            }
+                            repeat_buffer.clear();
+                        }
+                        in_repeat = true;
+                    }
+                    Bar::Standard => {}
+                }
+
+                // Process Current Block
                 let block_duration = self.unit_per_block;
                 line_compiler.process_tokens(&block.tokens, current_time, block_duration);
                 current_time += block_duration;
+
+                // Buffer Current Block
+                if in_repeat {
+                    repeat_buffer.push(block);
+                }
+            }
+
+            // Handle Line End Bar
+            match line.end_bar {
+                Bar::RepeatEnd | Bar::Double => {
+                    if in_repeat {
+                        for buffered_block in &repeat_buffer {
+                            let block_duration = self.unit_per_block;
+                            line_compiler.process_tokens(
+                                &buffered_block.tokens,
+                                current_time,
+                                block_duration,
+                            );
+                            current_time += block_duration;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())

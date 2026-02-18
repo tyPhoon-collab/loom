@@ -1,0 +1,10 @@
+> Test: Complex Mixed Repeat Notation
+> This file tests multiple repeat sections mixed with standard bars.
+
+# Melody: 1
+E4 | ^ ^ |: ^ . | ^ ^ :|: ^ ^ | ^ ^ :| ^ ^ |
+C4 | ^ ^ |: ^ . | ^ ^ :|: ^ ^ | ^ ^ :| ^ ^ |
+
+# Bass: 2
+G2 | ^ - |: ^ . | ^ . :| ^ - |: ^ . | ^ . :|
+C2 | ^ - |: ^ . | ^ . :| ^ - |: ^ . | ^ . :|

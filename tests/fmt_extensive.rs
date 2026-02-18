@@ -21,14 +21,14 @@ kick  | ^ . | ^ . |
 fn test_fmt_empty_blocks() {
     let input = r#"
 # Track: 1
-kick | | ^ |
-snare | ^ | |
+E4 | | ^ |
+C4 | ^ | |
 "#;
 
     let expected = r#"
 # Track: 1
-snare | ^ |   |
-kick  |   | ^ |
+E4 | | ^ |
+C4 | ^ | |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -38,20 +38,14 @@ kick  |   | ^ |
 fn test_fmt_groups() {
     let input = r#"
 # Track: 1
-kick  | ^ |
-snare | [^ ^ ^] |
+C4  | ^ |
+E4 | [^ ^ ^] |
 "#;
-
-    // kick  | ^       |
-    // snare | [^ ^ ^] |
-    // ^ has width 1. [^ ^ ^] has width 7.
-    // max width 7.
-    // kick gets padded.
 
     let expected = r#"
 # Track: 1
-snare | [^ ^ ^] |
-kick  | ^       |
+E4 | [^ ^ ^] |
+C4 | ^       |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -61,14 +55,14 @@ kick  | ^       |
 fn test_mixed_block_counts() {
     let input = r#"
 # Track: 1
-short | ^ |
-long  | ^ | ^ |
+C4 | ^ |
+D4  | ^ | ^ |
 "#;
 
     let expected = r#"
 # Track: 1
-short | ^ |
-long  | ^ | ^ |
+D4 | ^ | ^ |
+C4 | ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -79,13 +73,13 @@ fn test_trailing_comment_alignment() {
     // Comments are preserved but not necessarily aligned with each other (current logic only aligns pattern parts)
     let input = r#"
 # Track: 1
-k | ^ | > comment
-s | ^ | > another
+C4 | ^ | > comment
+D4 | ^ | > another
 "#;
     let expected = r#"
 # Track: 1
-k | ^ | > comment
-s | ^ | > another
+D4 | ^ | > another
+C4 | ^ | > comment
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -94,17 +88,17 @@ s | ^ | > another
 #[test]
 fn test_fmt_alignment_mixed_blocks() {
     let input = r#"
-g3 | . . ^ |
-e3 | . ^ . |
-c3 | ^ . . |
-c2 | ^ |
+G3 | . . ^ |
+E3 | . ^ . |
+C3 | ^ . . |
+C2 | ^ |
 "#;
 
     let expected = r#"
-g3 | . . ^ |
-e3 | . ^ . |
-c3 | ^ . . |
-c2 | ^     |
+G3 | . . ^ |
+E3 | . ^ . |
+C3 | ^ . . |
+C2 | ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -113,17 +107,17 @@ c2 | ^     |
 #[test]
 fn test_fmt_empty_and_displaced_blocks() {
     let input = r#"
-f3 ||^ - -|
-c3 | ^ - - | ..^ |
-e3 | . ^ . | . ^ . |
-g3 | . . ^ | |
+F3 ||^ - -|
+C3 | ^ - - | ..^ |
+E3 | . ^ . | . ^ . |
+G3 | . . ^ | |
 "#;
 
     let expected = r#"
-g3 | . . ^ |       |
-f3 |       | ^ - - |
-e3 | . ^ . | . ^ . |
-c3 | ^ - - | . . ^ |
+G3 | . . ^ | |
+F3 | | ^ - - |
+E3 | . ^ . | . ^ . |
+C3 | ^ - - | . . ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -133,16 +127,16 @@ c3 | ^ - - | . . ^ |
 fn test_fmt_dense_tokens() {
     let input = r#"
 # Track: 1
-c3 | ^.. |
-e3 | .^. |
-g3 | ..^ |
+C3 | ^.. |
+E3 | .^. |
+G3 | ..^ |
 "#;
 
     let expected = r#"
 # Track: 1
-g3 | . . ^ |
-e3 | . ^ . |
-c3 | ^ . . |
+G3 | . . ^ |
+E3 | . ^ . |
+C3 | ^ . . |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);

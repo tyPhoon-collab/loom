@@ -29,8 +29,29 @@ impl std::fmt::Display for Token {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Bar {
+    Standard,    // |
+    RepeatStart, // |:
+    RepeatEnd,   // :|
+    Double,      // :|:
+}
+
+impl std::fmt::Display for Bar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Bar::Standard => "|",
+            Bar::RepeatStart => "|:",
+            Bar::RepeatEnd => ":|",
+            Bar::Double => ":|:",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Block {
+    pub start_bar: Bar,
     pub tokens: Vec<Token>,
 }
 
@@ -38,6 +59,7 @@ pub struct Block {
 pub struct Line {
     pub notes: Vec<Note>,
     pub blocks: Vec<Block>,
+    pub end_bar: Bar,
 }
 
 #[derive(Debug, Clone)]
@@ -47,9 +69,10 @@ pub struct Track {
     pub lines: Vec<Line>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Frontmatter {
     #[allow(dead_code)]
+    #[serde(default = "default_bpm")]
     pub bpm: u32,
     #[serde(default = "default_signature")]
     #[allow(dead_code)]
@@ -67,11 +90,29 @@ pub struct Frontmatter {
     pub loop_range: Option<String>,
 }
 
+fn default_bpm() -> u32 {
+    120
+}
+
 fn default_signature() -> String {
     "4/4".to_string()
 }
 fn default_unit() -> String {
     "bar".to_string()
+}
+
+impl Default for Frontmatter {
+    fn default() -> Self {
+        Self {
+            bpm: default_bpm(),
+            signature: default_signature(),
+            unit: default_unit(),
+            title: None,
+            author: None,
+            r#loop: false,
+            loop_range: None,
+        }
+    }
 }
 
 #[derive(Debug)]

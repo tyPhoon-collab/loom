@@ -11,7 +11,7 @@ snare|. .|
     let expected = r#"
 # Drums: 1
 snare | . . |
-kick  | ^   |
+kick  | ^ |
 "#;
 
     let formatted = formatter::format_string(input);
@@ -29,9 +29,9 @@ g3 | ^ |
 
     // Expected: High -> Low (G3, E3, C3)
     let expected = r#"
-g3 | ^ |
-e3 | ^ |
-c3 | ^ |
+G3 | ^ |
+E3 | ^ |
+C3 | ^ |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);
@@ -50,7 +50,7 @@ hihat | ^ |
     // Snare (38)
     // Hihat (42)
     //
-    // Sorted High -> Low: Hihat, Snare, Kick
+    // Sorted High -> Low: hihat, snare, kick
     let expected = r#"
 hihat | ^ |
 snare | ^ |
@@ -69,12 +69,12 @@ e3,c3 | ^ . |
 "#;
 
     // Expected:
-    // 1. Notes sorted internally: e3,c3 -> c3,e3
+    // 1. Notes sorted internally: e3,c3 -> C3,E3
     // 2. Rows sorted by highest note (G3 top, then E3)
     let expected = r#"
-c3,e3,g3 | ^   |
-c3,g3    | . ^ |
-c3,e3    | ^ . |
+C3,E3,G3 | ^ |
+C3,G3    | . ^ |
+C3,E3    | ^ . |
 "#;
     let formatted = formatter::format_string(input);
     assert_eq!(formatted, expected);

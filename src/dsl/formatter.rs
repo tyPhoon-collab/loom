@@ -109,6 +109,8 @@ fn format_patterns(patterns: &[&ParsedLine]) -> String {
     }
 
     let mut out = String::new();
+    // let mut patterns = patterns.to_vec(); // No need to clone reference list if we don't reorder it?
+    // Ah, we sort it. So we need a mutable vector of references.
     let mut patterns = patterns.to_vec();
 
     // Sort by pitch
@@ -135,6 +137,7 @@ fn format_patterns(patterns: &[&ParsedLine]) -> String {
 
     // Calculate sorted keys and max width
     let mut sorted_keys = Vec::new();
+    // Calculate key widths
     for p in &patterns {
         if let ParsedLine::Pattern { key, .. } = p {
             let mut ns = key
@@ -153,7 +156,7 @@ fn format_patterns(patterns: &[&ParsedLine]) -> String {
                 ns.sort_by(|(n1, _), (n2, _)| n1.to_midi().cmp(&n2.to_midi()));
                 let sk = ns
                     .iter()
-                    .map(|(_, original)| original.clone())
+                    .map(|(n, _)| n.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
                 sorted_keys.push(sk);
@@ -164,6 +167,12 @@ fn format_patterns(patterns: &[&ParsedLine]) -> String {
     let max_key_width = sorted_keys.iter().map(|k| k.len()).max().unwrap_or(0);
 
     // Calculate block widths
+    // We need to handle blocks properly.
+    // Each block has a start_bar.
+    // We align blocks by index.
+    // Block 0: bar formatted width + space + token formatted width...
+
+    // Max blocks
     let max_blocks = patterns
         .iter()
         .map(|p| match p {
@@ -173,54 +182,143 @@ fn format_patterns(patterns: &[&ParsedLine]) -> String {
         .max()
         .unwrap_or(0);
 
-    let mut block_token_widths: Vec<Vec<usize>> = vec![Vec::new(); max_blocks];
+    // For each block index, we need:
+    // 1. Max width of the start bar (e.g. `|` is 1, `|:` is 2)
+    // 2. Max width of each token in that block?
+    // Actually, alignment is usually:
+    // Key | Token Token | Token |
+    // With `|:` it might be:
+    // Key |: Token Token | Token |
+    // Key |  Token Token | Token |
+    // So the "Bar" column should be aligned too?
+    // Let's assume yes.
 
-    for p in &patterns {
-        if let ParsedLine::Pattern { blocks, .. } = p {
-            for (b_idx, block) in blocks.iter().enumerate() {
-                if b_idx >= max_blocks {
-                    break;
-                }
+    // Structure: [Block 0 Bar Width, Block 0 Tokens Widths...] ?
+    // Simplification:
+    // Column 0: Bar (max width amongst all lines for block 0)
+    // Column 1..N: Tokens (max width for token i in block 0)
 
-                for (t_idx, token) in block.tokens.iter().enumerate() {
-                    if t_idx >= block_token_widths[b_idx].len() {
-                        block_token_widths[b_idx].push(0);
+    // We need to know max tokens in block 0 across all lines too.
+
+    let mut block_info = Vec::new(); // Vec of (bar_width, Vec<token_width>)
+
+    for i in 0..max_blocks {
+        let mut max_bar_width = 0;
+        let mut max_tokens = 0;
+
+        // First pass: find max bar width and max token count for this block index
+        for p in &patterns {
+            if let ParsedLine::Pattern { blocks, .. } = p {
+                if let Some(block) = blocks.get(i) {
+                    let w = block.start_bar.to_string().len();
+                    if w > max_bar_width {
+                        max_bar_width = w;
                     }
-                    let token_len = token.to_string().len();
-                    if token_len > block_token_widths[b_idx][t_idx] {
-                        block_token_widths[b_idx][t_idx] = token_len;
+                    if block.tokens.len() > max_tokens {
+                        max_tokens = block.tokens.len();
                     }
                 }
             }
         }
+
+        // Second pass: find max width for each token index
+        let mut token_widths = vec![0; max_tokens];
+        for p in &patterns {
+            if let ParsedLine::Pattern { blocks, .. } = p {
+                if let Some(block) = blocks.get(i) {
+                    for (t_idx, t) in block.tokens.iter().enumerate() {
+                        let s = t.to_string();
+                        if s.len() > token_widths[t_idx] {
+                            token_widths[t_idx] = s.len();
+                        }
+                    }
+                }
+            }
+        }
+
+        block_info.push((max_bar_width, token_widths));
     }
 
     // Print
     for (i, p) in patterns.iter().enumerate() {
         if let ParsedLine::Pattern {
             blocks,
+            end_bar,
             trailing_comment,
             ..
         } = p
         {
             let sorted_key = &sorted_keys[i];
 
-            write!(out, "{:width$} |", sorted_key, width = max_key_width).unwrap();
+            // Print Key
+            write!(out, "{:width$}", sorted_key, width = max_key_width).unwrap();
 
+            // Print Blocks
             for (b_idx, block) in blocks.iter().enumerate() {
-                let token_widths = &block_token_widths[b_idx];
+                // Space before bar
+                write!(out, " ").unwrap();
 
-                for (t_idx, width) in token_widths.iter().enumerate() {
-                    let token_str = block
-                        .tokens
-                        .get(t_idx)
-                        .map(|t| t.to_string())
-                        .unwrap_or_default();
-                    write!(out, " {:width$}", token_str, width = width).unwrap();
+                let (bar_w, token_ws) = &block_info[b_idx];
+                let b_str = block.start_bar.to_string();
+
+                // Print Bar (Right aligned or Left? Usually bars are left aligned or center?
+                // `| ` vs `|:`. If max is 2, `|` should probably be `| ` or ` |`?
+                // Sheet music: strict alignment.
+                // Let's right align bar: ` |` vs `|:`.
+                // Or left: `| ` vs `|:`.
+                // If we have `|` and `|:`, left align makes sense?
+                // `|:`
+                // `| `
+                write!(out, "{:width$}", b_str, width = bar_w).unwrap();
+
+                // Print Tokens
+                for (t_idx, token) in block.tokens.iter().enumerate() {
+                    let w = token_ws[t_idx];
+                    write!(out, " {:width$}", token.to_string(), width = w).unwrap();
                 }
-
-                write!(out, " |").unwrap();
             }
+
+            // Handle Closing Bar?
+            // The parser does NOT currently store the final closing bar in a way that is associated with a block.
+            // And `blocks` only hold `start_bar`.
+            // So we effectively lose the final `|` or `:|` in the current `Vec<Block>` structure if we purely iterate blocks.
+            // BUT, `parse_line_blocks` loop breaks when `next_bar` is not found.
+            // Wait, if `parse_line_blocks` stops, it means the last thing parsed was tokens.
+            // If the line ends with `|`, that `|` triggered the START of a new block?
+            // No, `parse_line_blocks` Structure:
+            // 1. Parse Bar (Start of Block 0)
+            // 2. Parse Tokens (Content of Block 0)
+            // 3. Parse Bar (End of Block 0 / Start of Block 1).
+            // ...
+            // If line is `| A | B |`:
+            // 1. `|` (Start B0)
+            // 2. `A`
+            // 3. `|` (End B0 / Start B1). push Block0.
+            // 4. `B`
+            // 5. `|` (End B1 / Start B2). push Block1.
+            // 6. Tokens empty? (If `|` is at end of line)
+            // 7. Parse Bar -> Error (EOF).
+            // Loop breaks.
+            // We have Block0, Block1.
+            // But Block1's `start_bar` is the middle `|`.
+            // Where is the FINAL `|`?
+            // It was consumed by `parse_bar` in step 5?
+            // Step 5 parsed `|`. `current_bar` becomes `|`.
+            // Step 6 `parse_block_tokens` parses empty?
+            // `parse_block_tokens` uses `many0`, so it matches empty.
+            // Then `parse_bar` checks for EOF?
+            // If EOF, `parse_bar` fails.
+            // So loop breaks.
+            // But we have `current_bar` set to the final `|`!
+            // But we didn't push a block for it because the loop broke?
+            // Wait, if `parse_block_tokens` returns empty tokens, and then `parse_bar` fails (EOF),
+            // We break.
+            // So `blocks` has Block0, Block1.
+            // But `current_bar` is holding the final `|`.
+            // We need to return it!
+
+            // Print Closing Bar
+            write!(out, " {}", end_bar).unwrap();
 
             if let Some(comment) = trailing_comment {
                 write!(out, " > {}", comment).unwrap();

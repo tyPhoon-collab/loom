@@ -1,12 +1,12 @@
 #![allow(unused_assignments)]
-use super::token::{Block, Frontmatter, Line, Note, Song, Token, Track};
+use super::token::{Bar, Block, Frontmatter, Line, Note, Song, Token, Track};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until, take_while1},
     character::complete::{char, digit1, line_ending, not_line_ending, space0},
     combinator::{eof, map, opt, value},
-    multi::{many0, many1},
+    multi::many0,
     sequence::{delimited, preceded, terminated},
     IResult,
 };
@@ -81,19 +81,69 @@ fn parse_token(input: &str) -> IResult<&str, Token> {
 }
 
 // --- Block Parser ---
-pub(crate) fn parse_block_content(input: &str) -> IResult<&str, Block> {
-    map(
-        terminated(
-            many0(parse_token),
-            space0, // Consume trailing
-        ),
-        |tokens| Block { tokens },
-    )(input)
+// function removed
+
+fn parse_block_tokens_only(input: &str) -> IResult<&str, Vec<Token>> {
+    terminated(many0(parse_token), space0)(input)
 }
 
-pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
-    let (input, _) = char('|')(input)?;
-    many1(terminated(parse_block_content, char('|')))(input)
+// --- Bar Parser ---
+fn parse_bar(input: &str) -> IResult<&str, Bar> {
+    alt((
+        value(Bar::Double, tag(":|:")),
+        value(Bar::RepeatEnd, tag(":|")),
+        value(Bar::RepeatStart, tag("|:")),
+        value(Bar::Standard, char('|')),
+    ))(input)
+}
+
+pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)> {
+    let (input, first_bar) = parse_bar(input)?;
+
+    let mut blocks = Vec::new();
+    let mut current_input = input;
+    let mut current_bar = first_bar;
+
+    loop {
+        // Parse content (tokens)
+        let (input_after_tokens, tokens) = parse_block_tokens_only(current_input)?;
+
+        // Look for the next bar
+        match parse_bar(input_after_tokens) {
+            Ok((rest, next_bar)) => {
+                // dbg!(&next_bar);
+                blocks.push(Block {
+                    start_bar: current_bar,
+                    tokens,
+                });
+                current_input = rest;
+                current_bar = next_bar;
+            }
+            Err(_) => {
+                // In strict mode, if we have content, we MUST have a closing bar.
+                // If tokens are not empty and we fail to parse a bar, it's an error.
+                if !tokens.is_empty() {
+                    use nom::error::{Error, ErrorKind};
+                    return Err(nom::Err::Failure(Error::new(
+                        input_after_tokens,
+                        ErrorKind::Tag,
+                    )));
+                }
+                // If tokens are empty, it means we are at the end of the line (or just whitespace).
+                // The `current_bar` is the "end bar" of the previous block,
+                // OR it is the final bar of the sequence.
+                // E.g. `| A |`:
+                // 1. `|` (Start)
+                // 2. `A` -> `|` (Next). push Block(|, A). current=|.
+                // 3. `Empty` -> Error(EOF). Break.
+                // Return blocks=[Block(|, A)], end_bar=|.
+
+                break;
+            }
+        }
+    }
+
+    Ok((current_input, (blocks, current_bar)))
 }
 
 // --- Line Types ---
@@ -106,14 +156,11 @@ pub enum ParsedLine {
         channel: u8,
     },
     Pattern {
-        key: String, // Original key string for formatting preservation? Or reconstruction?
-        // If we use Note objects, we might lose original casing or aliases if not careful.
-        // But Formatter usually normalizes.
-        // The user previously wanted to preserve implementation...
-        // Wait, `formatter.rs` logic preserves key unless it's sorted?
-        // `formatter.rs` sorts keys.
-        notes: Option<Vec<Note>>,
+        key: String,
+        // Strict parsing: notes are required.
+        notes: Vec<Note>,
         blocks: Vec<Block>,
+        end_bar: Bar,
         trailing_comment: Option<String>,
     },
     Comment(String),
@@ -151,7 +198,7 @@ pub(crate) fn parse_key(input: &str) -> IResult<&str, &str> {
 
 pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, key_raw) = parse_key(input)?;
-    let (input, blocks) = parse_line_blocks(input)?;
+    let (input, (blocks, end_bar)) = parse_line_blocks(input)?;
 
     // Check for trailing comment
     let (input, _) = space0(input)?;
@@ -177,15 +224,23 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
         valid_notes = false;
     }
 
-    Ok((
-        input,
-        ParsedLine::Pattern {
-            key: key_raw.trim().to_string(),
-            notes: if valid_notes { Some(notes) } else { None },
-            blocks,
-            trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
-        },
-    ))
+    match valid_notes {
+        true => Ok((
+            input,
+            ParsedLine::Pattern {
+                key: key_raw.trim().to_string(),
+                notes,
+                blocks,
+                end_bar,
+                trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
+            },
+        )),
+        false => {
+            // For strict mode, we return an error here.
+            use nom::error::{Error, ErrorKind};
+            Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))
+        }
+    }
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -261,22 +316,16 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     });
                 }
                 ParsedLine::Pattern {
-                    notes, blocks, key, ..
+                    notes,
+                    blocks,
+                    end_bar,
+                    ..
                 } => {
-                    if let Some(notes_vec) = notes {
-                        if let Some(ref mut t) = current_track {
-                            t.lines.push(Line {
-                                notes: notes_vec,
-                                blocks,
-                            });
-                        }
-                    } else {
-                        // For compilation, invalid notes in pattern is an error.
-                        let offset = line.as_ptr() as usize - source.as_ptr() as usize;
-                        return Err(ParseError::NomError {
-                            src: NamedSource::new("input", source.clone()),
-                            span: (offset, line.len()).into(),
-                            kind: format!("Invalid notes in key: {}", key),
+                    if let Some(ref mut t) = current_track {
+                        t.lines.push(Line {
+                            notes,
+                            blocks,
+                            end_bar,
                         });
                     }
                 }
