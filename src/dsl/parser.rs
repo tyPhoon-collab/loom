@@ -98,23 +98,32 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, Vec<Block>> {
 
 // --- Line Types ---
 
-pub(crate) enum ParsedLine {
+#[derive(Debug, Clone)]
+pub enum ParsedLine {
+    Frontmatter(String),
     TrackHeader {
         name: String,
         channel: u8,
     },
     Pattern {
-        notes: Vec<Note>,
+        key: String, // Original key string for formatting preservation? Or reconstruction?
+        // If we use Note objects, we might lose original casing or aliases if not careful.
+        // But Formatter usually normalizes.
+        // The user previously wanted to preserve implementation...
+        // Wait, `formatter.rs` logic preserves key unless it's sorted?
+        // `formatter.rs` sorts keys.
+        notes: Option<Vec<Note>>,
         blocks: Vec<Block>,
+        trailing_comment: Option<String>,
     },
-    Comment,
+    Comment(String),
     Empty,
 }
 
 fn parse_comment(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = char('>')(input)?;
-    let (input, _) = not_line_ending(input)?; // consumes rest of line
-    Ok((input, ParsedLine::Comment))
+    let (input, content) = not_line_ending(input)?;
+    Ok((input, ParsedLine::Comment(content.trim().to_string())))
 }
 
 fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
@@ -144,26 +153,39 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, key_raw) = parse_key(input)?;
     let (input, blocks) = parse_line_blocks(input)?;
 
+    // Check for trailing comment
+    let (input, _) = space0(input)?;
+    let (input, trailing_comment) = opt(preceded(char('>'), not_line_ending))(input)?;
+
     let mut notes = Vec::new();
+    let mut valid_notes = true;
     for part in key_raw.split(',') {
         let trimmed = part.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let note = Note::from_str(trimmed).map_err(|_| {
-            nom::Err::Failure(nom::error::Error::new(key_raw, nom::error::ErrorKind::Tag))
-        })?;
-        notes.push(note);
+        match Note::from_str(trimmed) {
+            Ok(note) => notes.push(note),
+            Err(_) => {
+                valid_notes = false;
+                break;
+            }
+        }
     }
 
     if notes.is_empty() {
-        return Err(nom::Err::Failure(nom::error::Error::new(
-            key_raw,
-            nom::error::ErrorKind::Tag,
-        )));
+        valid_notes = false;
     }
 
-    Ok((input, ParsedLine::Pattern { notes, blocks }))
+    Ok((
+        input,
+        ParsedLine::Pattern {
+            key: key_raw.trim().to_string(),
+            notes: if valid_notes { Some(notes) } else { None },
+            blocks,
+            trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
+        },
+    ))
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -172,7 +194,7 @@ fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
     Ok((input, ParsedLine::Empty))
 }
 
-fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
+pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     alt((
         parse_comment,
         parse_track_header,
@@ -238,12 +260,27 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                         lines: Vec::new(),
                     });
                 }
-                ParsedLine::Pattern { notes, blocks } => {
-                    if let Some(ref mut t) = current_track {
-                        t.lines.push(Line { notes, blocks });
+                ParsedLine::Pattern {
+                    notes, blocks, key, ..
+                } => {
+                    if let Some(notes_vec) = notes {
+                        if let Some(ref mut t) = current_track {
+                            t.lines.push(Line {
+                                notes: notes_vec,
+                                blocks,
+                            });
+                        }
+                    } else {
+                        // For compilation, invalid notes in pattern is an error.
+                        let offset = line.as_ptr() as usize - source.as_ptr() as usize;
+                        return Err(ParseError::NomError {
+                            src: NamedSource::new("input", source.clone()),
+                            span: (offset, line.len()).into(),
+                            kind: format!("Invalid notes in key: {}", key),
+                        });
                     }
                 }
-                ParsedLine::Comment | ParsedLine::Empty => {}
+                ParsedLine::Comment(_) | ParsedLine::Empty | ParsedLine::Frontmatter(_) => {}
             },
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
                 let offset = line.as_ptr() as usize - source.as_ptr() as usize;

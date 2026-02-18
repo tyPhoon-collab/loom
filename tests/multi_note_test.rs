@@ -10,7 +10,7 @@ bpm: 120
 c3,e3 | ^ |
 "#;
     let song = parse_song(source.to_string()).unwrap();
-    let compiler = Compiler::new(&song);
+    let compiler = Compiler::new(&song).unwrap();
     let events = compiler.compile(&song).unwrap();
 
     // C3=60, E3=64
@@ -30,7 +30,7 @@ bpm: 120
 c3,e3 | ^ - |
 "#;
     let song = parse_song(source.to_string()).unwrap();
-    let compiler = Compiler::new(&song);
+    let compiler = Compiler::new(&song).unwrap();
     let events = compiler.compile(&song).unwrap();
 
     assert_eq!(events.len(), 2);

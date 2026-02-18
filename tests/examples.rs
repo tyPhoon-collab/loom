@@ -8,10 +8,6 @@ fn test_examples() {
     let examples_dir = Path::new("examples");
     let entries = fs::read_dir(examples_dir).expect("Failed to read examples directory");
 
-    // The requested change `for entry in pub(crate) enum ParsedLine {` is syntactically incorrect
-    // as `pub(crate) enum ParsedLine` is a type definition, not an iterator.
-    // To maintain syntactic correctness as per instructions, the original line is kept.
-    // If the intent was to add a new enum, please specify its correct placement.
     for entry in entries {
         let entry = entry.expect("Failed to read entry");
         let path = entry.path();
@@ -27,7 +23,8 @@ fn test_examples() {
                 // Should fail at either parse or compile step (currently mostly parse)
                 match res {
                     Ok(song) => {
-                        let compiler_inst = compiler::Compiler::new(&song);
+                        let compiler_inst =
+                            compiler::Compiler::new(&song).expect("Failed to create compiler");
                         let compile_res = compiler_inst.compile(&song);
                         assert!(
                             compile_res.is_err(),
@@ -41,7 +38,7 @@ fn test_examples() {
                 }
             } else {
                 let song = res.expect(&format!("Failed to parse example: {}", filename));
-                let compiler = compiler::Compiler::new(&song);
+                let compiler = compiler::Compiler::new(&song).expect("Failed to create compiler");
                 let events = compiler
                     .compile(&song)
                     .expect(&format!("Failed to compile example: {}", filename));

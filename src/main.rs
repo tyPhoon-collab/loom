@@ -82,7 +82,7 @@ fn main() -> Result<()> {
         Commands::Parse { input } => {
             let content = fs::read_to_string(&input).into_diagnostic()?;
             let song = parser::parse_song(content)?;
-            let compiler_inst = compiler::Compiler::new(&song);
+            let compiler_inst = compiler::Compiler::new(&song)?;
             let events = compiler_inst
                 .compile(&song)
                 .map_err(|e| miette!("Compiler error: {}", e))?;
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         Commands::Play { input, port } => {
             let content = fs::read_to_string(&input).into_diagnostic()?;
             let song = parser::parse_song(content)?;
-            let compiler_inst = compiler::Compiler::new(&song);
+            let compiler_inst = compiler::Compiler::new(&song)?;
             let events = compiler_inst
                 .compile(&song)
                 .map_err(|e| miette!("Compiler error: {}", e))?;
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
         Commands::Save { input, output } => {
             let content = fs::read_to_string(&input).into_diagnostic()?;
             let song = parser::parse_song(content)?;
-            let compiler_inst = compiler::Compiler::new(&song);
+            let compiler_inst = compiler::Compiler::new(&song)?;
             let events = compiler_inst
                 .compile(&song)
                 .map_err(|e| miette!("Compiler error: {}", e))?;

@@ -1,5 +1,13 @@
 use crate::dsl::token::{Note, Song, Token, Track};
-use anyhow::Result;
+use miette::{Diagnostic, Result};
+use thiserror::Error;
+
+#[derive(Error, Debug, Diagnostic)]
+pub enum CompileError {
+    #[error("Compilation error: {0}")]
+    #[diagnostic(code(loom::compiler::base))]
+    Base(String),
+}
 
 #[derive(Debug, Clone)]
 pub struct MidiEvent {
@@ -15,22 +23,25 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(song: &Song) -> Self {
+    pub fn new(song: &Song) -> Result<Self> {
         // Simple logic: signature 4/4 -> 4 beats per bar.
         // If unit is bar, block = 4.0.
         // If unit is beat, block = 1.0.
         let sig_parts: Vec<&str> = song.metadata.signature.split('/').collect();
-        let num: f64 = sig_parts.first().unwrap_or(&"4").parse().unwrap_or(4.0);
-        // let denom: f64 = sig_parts.get(1).unwrap_or(&"4").parse().unwrap_or(4.0);
+        let num: f64 = sig_parts
+            .first()
+            .unwrap_or(&"4")
+            .parse()
+            .map_err(|_| CompileError::Base("Invalid signature numerator".to_string()))?;
 
         let unit_per_block = if song.metadata.unit == "beat" {
             1.0
         } else {
             // "bar"
-            num // In 4/4, a bar is 4 beats. In 3/4, 3 beats.
+            num
         };
 
-        Self { unit_per_block }
+        Ok(Self { unit_per_block })
     }
 
     pub fn compile(&self, song: &Song) -> Result<Vec<MidiEvent>> {

@@ -1,27 +1,9 @@
+use crate::dsl::parser::{self, ParsedLine};
 use std::fmt::Write as FmtWrite;
 use std::str::FromStr;
 
-#[derive(Debug)]
-pub enum RawLine {
-    Frontmatter(String),
-    TrackHeader(String), // "# Name: Channel"
-    Pattern(PatternLine),
-    Comment(String),
-    Empty,
-    Other(String), // Fallback
-}
-
-#[derive(Debug)]
-pub struct PatternLine {
-    pub key: String,
-    pub blocks: Vec<Vec<String>>,         // [Block][TokenString]
-    pub trailing_comment: Option<String>, // Inline comment like "kick |...| > comment"
-}
-
-/// Parse the entire source into a list of RawLines for formatting.
-/// We use a custom lighter parser here because we need to preserve comments and structure,
-/// which the main parser might discard or normalize too much.
-pub fn parse_for_formatting(input: &str) -> Vec<RawLine> {
+/// Parse the entire source into a list of ParsedLine for formatting.
+pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
     let mut lines = Vec::new();
     let mut in_frontmatter = false;
     let mut frontmatter_buffer = String::new();
@@ -29,7 +11,7 @@ pub fn parse_for_formatting(input: &str) -> Vec<RawLine> {
     for (i, line) in input.lines().enumerate() {
         let trimmed = line.trim();
 
-        // Frontmatter handling
+        // Frontmatter handling (Manual handling as parser might expect full string)
         if i == 0 && trimmed == "---" {
             in_frontmatter = true;
             frontmatter_buffer.push_str(line);
@@ -41,159 +23,46 @@ pub fn parse_for_formatting(input: &str) -> Vec<RawLine> {
             frontmatter_buffer.push('\n');
             if trimmed == "---" {
                 in_frontmatter = false;
-                lines.push(RawLine::Frontmatter(frontmatter_buffer.clone()));
+                lines.push(ParsedLine::Frontmatter(frontmatter_buffer.clone()));
                 frontmatter_buffer.clear();
             }
             continue;
         }
 
-        if trimmed.is_empty() {
-            lines.push(RawLine::Empty);
-            continue;
-        }
-
-        if trimmed.starts_with('>') {
-            lines.push(RawLine::Comment(trimmed.to_string()));
-            continue;
-        }
-
-        if trimmed.starts_with('#') {
-            lines.push(RawLine::TrackHeader(trimmed.to_string()));
-            continue;
-        }
-
-        // Try to parse as pattern: "key | ... | > comment?"
-        if let Some(pattern_line) = parse_pattern_line_rough(trimmed) {
-            lines.push(RawLine::Pattern(pattern_line));
-        } else {
-            lines.push(RawLine::Other(line.to_string()));
+        // Use the strict parser for each line
+        match parser::parse_line_entry(trimmed) {
+            Ok((_, parsed)) => lines.push(parsed),
+            Err(_) => {
+                // Fallback for lines that don't match (shouldn't happen with strict parser unless syntax error)
+                // For formatting, maybe we want to preserve as Comment or just skip?
+                // Let's treat as empty or simple comment to preserve content?
+                // Actually, if it's invalid, we might want to leave it as is.
+                // But we don't have "Other" variant in ParsedLine anymore.
+                // Let's assume it's a comment for now or just log.
+                // Since this is a formatter, crashing or dropping lines is bad.
+                // But we are refining the parser.
+                // Let's use a "Comment" fallback for now if it doesn't parse.
+                lines.push(ParsedLine::Comment(line.to_string()));
+            }
         }
     }
 
     lines
 }
 
-fn parse_pattern_line_rough(line: &str) -> Option<PatternLine> {
-    // 1. Extract Comment
-    let (content, comment) = if let Some(idx) = line.find('>') {
-        let (c, m) = line.split_at(idx);
-        (c.trim(), Some(m.trim().to_string()))
-    } else {
-        (line, None)
-    };
-
-    // 2. Extract Key
-    let pipe_start = content.find('|')?;
-    let key = content[..pipe_start].trim().to_string();
-
-    // 3. Extract Blocks
-    let pipe_end = content.rfind('|')?;
-    if pipe_start >= pipe_end {
-        return None;
-    }
-
-    let blocks_content = &content[pipe_start + 1..pipe_end];
-    let raw_blocks: Vec<&str> = blocks_content.split('|').collect();
-
-    let mut blocks = Vec::new();
-    for raw_block in raw_blocks {
-        // Tokenize by splitting by whitespace, respecting groups `[...]`
-        let tokens = tokenize_rough(raw_block);
-        blocks.push(tokens);
-    }
-
-    Some(PatternLine {
-        key,
-        blocks,
-        trailing_comment: comment,
-    })
-}
-
-fn tokenize_rough(block_str: &str) -> Vec<String> {
-    // Split by whitespace AND special characters (^, ., -) to ensure spacing.
-    // Keep `[...]` groups together.
-
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let mut in_group = false;
-
-    // Use peeking iterator or simple state machine
-    let chars: Vec<char> = block_str.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-
-        if in_group {
-            if c == ']' {
-                current.push(c);
-                tokens.push(current.trim().to_string());
-                current.clear();
-                in_group = false;
-            } else {
-                current.push(c);
-            }
-            i += 1;
-            continue;
-        }
-
-        if c == '[' {
-            if !current.trim().is_empty() {
-                tokens.push(current.trim().to_string());
-                current.clear();
-            }
-            current.push(c);
-            in_group = true;
-            i += 1;
-            continue;
-        }
-
-        if c.is_whitespace() {
-            if !current.is_empty() {
-                tokens.push(current.clone());
-                current.clear();
-            }
-            i += 1;
-            continue;
-        }
-
-        // Special characters: ^, ., - should be separate tokens?
-        // Yes, to force spacing: "c3 | ^.. |" -> "c3 | ^ . . |"
-        if c == '^' || c == '.' || c == '-' {
-            if !current.is_empty() {
-                tokens.push(current.clone());
-                current.clear();
-            }
-            tokens.push(c.to_string());
-            i += 1;
-            continue;
-        }
-
-        // Other characters (e.g. part of a longer token if any? unlikely in loom outside of groups)
-        // But let's accumulate them just in case
-        current.push(c);
-        i += 1;
-    }
-
-    if !current.trim().is_empty() {
-        tokens.push(current.trim().to_string());
-    }
-
-    tokens
-}
-
 pub fn format_string(input: &str) -> String {
     let lines = parse_for_formatting(input);
     let mut output = String::new();
 
-    let mut pattern_buffer: Vec<&PatternLine> = Vec::new();
+    let mut pattern_buffer: Vec<&ParsedLine> = Vec::new();
 
     for line in &lines {
         match line {
-            RawLine::Pattern(p) => {
-                pattern_buffer.push(p);
+            ParsedLine::Pattern { .. } => {
+                pattern_buffer.push(line);
             }
             _ => {
-                // If we have buffered patterns, flush them formatted
+                // If we have buffered patterns, flush them formatting
                 if !pattern_buffer.is_empty() {
                     output.push_str(&format_patterns(&pattern_buffer));
                     pattern_buffer.clear();
@@ -201,20 +70,26 @@ pub fn format_string(input: &str) -> String {
 
                 // Print the current non-pattern line
                 match line {
-                    RawLine::Frontmatter(s) => output.push_str(s), // already has newline usually?
-                    RawLine::TrackHeader(s) => {
-                        writeln!(output, "{}", s).unwrap();
+                    ParsedLine::Frontmatter(s) => output.push_str(s),
+                    ParsedLine::TrackHeader { name, channel } => {
+                        writeln!(output, "# {}: {}", name, channel).unwrap();
                     }
-                    RawLine::Comment(s) => {
-                        writeln!(output, "{}", s).unwrap();
+                    ParsedLine::Comment(s) => {
+                        // Ensure comment starts with > if strictly parsed as comment,
+                        // but if it was a fallback line, it might not.
+                        // parse_comment consumes '>', so 's' content relies on that.
+                        // But fallback puts full line.
+                        if s.trim().starts_with('>') {
+                            writeln!(output, "{}", s).unwrap();
+                        } else {
+                            // Reconstruct comment
+                            writeln!(output, "> {}", s).unwrap();
+                        }
                     }
-                    RawLine::Empty => {
+                    ParsedLine::Empty => {
                         writeln!(output).unwrap();
                     }
-                    RawLine::Other(s) => {
-                        writeln!(output, "{}", s).unwrap();
-                    }
-                    RawLine::Pattern(_) => unreachable!(),
+                    ParsedLine::Pattern { .. } => unreachable!(),
                 }
             }
         }
@@ -228,7 +103,7 @@ pub fn format_string(input: &str) -> String {
     output
 }
 
-fn format_patterns(patterns: &[&PatternLine]) -> String {
+fn format_patterns(patterns: &[&ParsedLine]) -> String {
     if patterns.is_empty() {
         return String::new();
     }
@@ -236,108 +111,123 @@ fn format_patterns(patterns: &[&PatternLine]) -> String {
     let mut out = String::new();
     let mut patterns = patterns.to_vec();
 
-    // Sort by pitch (Descending: Highest note of the chord determines the row order)
+    // Sort by pitch
     patterns.sort_by(|a, b| {
+        let (key_a, key_b) = match (a, b) {
+            (ParsedLine::Pattern { key: k1, .. }, ParsedLine::Pattern { key: k2, .. }) => (k1, k2),
+            _ => return std::cmp::Ordering::Equal,
+        };
+
         let parse_midi_max = |key: &str| -> Option<u8> {
             key.split(',')
                 .filter_map(|s| crate::dsl::note::Note::from_str(s.trim()).ok())
-                .map(|n: crate::dsl::note::Note| n.to_midi())
+                .map(|n| n.to_midi())
                 .max()
         };
 
-        match (parse_midi_max(&a.key), parse_midi_max(&b.key)) {
-            (Some(max_a), Some(max_b)) => {
-                // Descending order for rows (Highest top)
-                max_b.cmp(&max_a)
-            }
-            (Some(_), None) => std::cmp::Ordering::Less, // Valid notes top
-            (None, Some(_)) => std::cmp::Ordering::Greater, // Invalid notes bottom
-            (None, None) => std::cmp::Ordering::Equal,   // Maintain original order
+        match (parse_midi_max(key_a), parse_midi_max(key_b)) {
+            (Some(max_a), Some(max_b)) => max_b.cmp(&max_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
         }
     });
 
     // Calculate sorted keys and max width
     let mut sorted_keys = Vec::new();
     for p in &patterns {
-        let mut ns = p
-            .key
-            .split(',')
-            .filter_map(|s| {
-                let trimmed = s.trim();
-                crate::dsl::note::Note::from_str(trimmed)
-                    .ok()
-                    .map(|n| (n, trimmed.to_string()))
-            })
-            .collect::<Vec<_>>();
+        if let ParsedLine::Pattern { key, .. } = p {
+            let mut ns = key
+                .split(',')
+                .filter_map(|s| {
+                    let trimmed = s.trim();
+                    crate::dsl::note::Note::from_str(trimmed)
+                        .ok()
+                        .map(|n| (n, trimmed.to_string()))
+                })
+                .collect::<Vec<_>>();
 
-        if ns.is_empty() {
-            sorted_keys.push(p.key.clone());
-        } else {
-            // Sort notes within each chord ascendingly (Low -> High)
-            ns.sort_by(|(n1, _): &(crate::dsl::note::Note, _), (n2, _)| {
-                n1.to_midi().cmp(&n2.to_midi())
-            });
-            let sk = ns
-                .iter()
-                .map(|(_, original): &(crate::dsl::note::Note, String)| original.clone())
-                .collect::<Vec<_>>()
-                .join(",");
-            sorted_keys.push(sk);
+            if ns.is_empty() {
+                sorted_keys.push(key.clone());
+            } else {
+                ns.sort_by(|(n1, _), (n2, _)| n1.to_midi().cmp(&n2.to_midi()));
+                let sk = ns
+                    .iter()
+                    .map(|(_, original)| original.clone())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                sorted_keys.push(sk);
+            }
         }
     }
 
     let max_key_width = sorted_keys.iter().map(|k| k.len()).max().unwrap_or(0);
 
-    // 2. Logic to align blocks and tokens
-    // Calculate max width for each token column across all patterns
-    let max_blocks = patterns.iter().map(|p| p.blocks.len()).max().unwrap_or(0);
+    // Calculate block widths
+    let max_blocks = patterns
+        .iter()
+        .map(|p| match p {
+            ParsedLine::Pattern { blocks, .. } => blocks.len(),
+            _ => 0,
+        })
+        .max()
+        .unwrap_or(0);
 
-    // widths[block_index][token_index] = max_width
     let mut block_token_widths: Vec<Vec<usize>> = vec![Vec::new(); max_blocks];
 
     for p in &patterns {
-        for (b_idx, block) in p.blocks.iter().enumerate() {
-            if b_idx >= max_blocks {
-                break;
-            }
-
-            for (t_idx, token) in block.iter().enumerate() {
-                if t_idx >= block_token_widths[b_idx].len() {
-                    block_token_widths[b_idx].push(0);
+        if let ParsedLine::Pattern { blocks, .. } = p {
+            for (b_idx, block) in blocks.iter().enumerate() {
+                if b_idx >= max_blocks {
+                    break;
                 }
-                if token.len() > block_token_widths[b_idx][t_idx] {
-                    block_token_widths[b_idx][t_idx] = token.len();
+
+                for (t_idx, token) in block.tokens.iter().enumerate() {
+                    if t_idx >= block_token_widths[b_idx].len() {
+                        block_token_widths[b_idx].push(0);
+                    }
+                    let token_len = token.to_string().len();
+                    if token_len > block_token_widths[b_idx][t_idx] {
+                        block_token_widths[b_idx][t_idx] = token_len;
+                    }
                 }
             }
         }
     }
 
-    // 3. Print
+    // Print
     for (i, p) in patterns.iter().enumerate() {
-        let sorted_key = &sorted_keys[i];
+        if let ParsedLine::Pattern {
+            blocks,
+            trailing_comment,
+            ..
+        } = p
+        {
+            let sorted_key = &sorted_keys[i];
 
-        // Key
-        write!(out, "{:width$} |", sorted_key, width = max_key_width).unwrap();
+            write!(out, "{:width$} |", sorted_key, width = max_key_width).unwrap();
 
-        for (b_idx, block) in p.blocks.iter().enumerate() {
-            let token_widths = &block_token_widths[b_idx];
+            for (b_idx, block) in blocks.iter().enumerate() {
+                let token_widths = &block_token_widths[b_idx];
 
-            for (t_idx, width) in token_widths.iter().enumerate() {
-                // Get token if exists
-                let token_str = block.get(t_idx).map(|s| s.as_str()).unwrap_or("");
+                for (t_idx, width) in token_widths.iter().enumerate() {
+                    let token_str = block
+                        .tokens
+                        .get(t_idx)
+                        .map(|t| t.to_string())
+                        .unwrap_or_default();
+                    write!(out, " {:width$}", token_str, width = width).unwrap();
+                }
 
-                // Left-align with leading space
-                write!(out, " {:width$}", token_str, width = width).unwrap();
+                write!(out, " |").unwrap();
             }
 
-            write!(out, " |").unwrap();
-        }
+            if let Some(comment) = trailing_comment {
+                write!(out, " > {}", comment).unwrap();
+            }
 
-        if let Some(comment) = &p.trailing_comment {
-            write!(out, " {}", comment).unwrap();
+            writeln!(out).unwrap();
         }
-
-        writeln!(out).unwrap();
     }
 
     out

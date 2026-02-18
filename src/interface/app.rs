@@ -70,27 +70,23 @@ impl App {
                                 if let Err(e) = fs::write(&self.path, &formatted) {
                                     self.status_message = format!("Format save error: {}", e);
                                 } else {
-                                    // Prevent infinite loop?
                                     // Re-compile to get events for MIDI export
                                     if let Ok(song) = parser::parse_song(content.clone()) {
-                                        let compiler_inst = crate::compiler::Compiler::new(&song);
-                                        if let Ok(events) = compiler_inst.compile(&song) {
-                                            match crate::midi::file::save_to_midi(
-                                                &events,
-                                                &self.path.with_extension("mid"),
-                                                bpm,
-                                            ) {
-                                                Ok(_) => {}
-                                                Err(e) => {
+                                        if let Ok(compiler_inst) =
+                                            crate::compiler::Compiler::new(&song)
+                                        {
+                                            if let Ok(events) = compiler_inst.compile(&song) {
+                                                if let Err(e) = crate::midi::file::save_to_midi(
+                                                    &events,
+                                                    &self.path.with_extension("mid"),
+                                                    bpm,
+                                                ) {
                                                     self.status_message =
                                                         format!("MIDI save error: {}", e);
                                                 }
                                             }
                                         }
                                     }
-                                    // The write triggers a new event.
-                                    // Next event: read -> formatted == content -> no write.
-                                    // So it is safe (idempotent).
                                 }
                             }
                         }
@@ -112,9 +108,8 @@ impl App {
 
     fn compile_and_update(content: &str, player: &LivePlayer) -> Result<(u32, String)> {
         match parser::parse_song(content.to_string()) {
-            Ok(song) => {
-                let compiler_inst = compiler::Compiler::new(&song);
-                match compiler_inst.compile(&song) {
+            Ok(song) => match compiler::Compiler::new(&song) {
+                Ok(compiler_inst) => match compiler_inst.compile(&song) {
                     Ok(events) => {
                         let events: Vec<crate::compiler::MidiEvent> = events.to_vec();
                         let bpm = song.metadata.bpm;
@@ -123,8 +118,9 @@ impl App {
                         Ok((bpm, msg))
                     }
                     Err(e) => Err(miette::miette!("Compile error: {}", e)),
-                }
-            }
+                },
+                Err(e) => Err(miette::miette!("Compiler Init error: {}", e)),
+            },
             Err(e) => Err(miette::miette!("Parse error: {}", e)),
         }
     }

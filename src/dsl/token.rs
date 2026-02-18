@@ -9,6 +9,26 @@ pub enum Token {
     Group(Vec<Token>), // [...]
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Note => write!(f, "^"),
+            Token::Rest => write!(f, "."),
+            Token::Sustain => write!(f, "-"),
+            Token::Group(tokens) => {
+                write!(f, "[")?;
+                for (i, t) in tokens.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{}", t)?;
+                }
+                write!(f, "]")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Block {
     pub tokens: Vec<Token>,
