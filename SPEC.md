@@ -56,3 +56,100 @@ If frontmatter is omitted, the following defaults are used:
 - `signature`: "4/4"
 - `unit`: "bar"
 - `pitch`: 0
+
+## 6. Formatter
+
+Default is `equal`
+
+All formatters align by bar in the track, but differ in their token spacing.
+
+> [!IMPORTANT]
+> Formatters **MUST NOT** change the semantics of the score.
+> - Missing blocks are **NOT** automatically padded. If a track has fewer blocks than others, it remains shorter.
+> - The number of bars and blocks is preserved exactly as input.
+
+### Minimize
+
+- Separates tokens with a single space.
+- Left-aligned.
+- Compact and simple implementation.
+
+```
+# Track: 1
+F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
+G4,B4 | ^ ^ ^ ^ ^ |                       |
+G3    | . . ^     |                       |
+F3    |           | ^ - -                 |
+E3    | . ^ .     | . ^ .                 |
+C3    | ^ - -     |                       |
+B2    |           | . . ^                 |
+A2    |           | ^ ^                   |
+G2    | ^ ^       |                       |
+F1    |           | ^                     |
+C1    | ^         |                       |
+```
+
+### Justify
+
+- Distributes tokens with equal spacing within each block (Character-Level Justification).
+- Left-aligned.
+- Designed for readability while maintaining simplicity.
+
+```
+# Track: 1
+F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
+G4,B4 | ^ ^ ^ ^ ^ |                       |
+G3    | .   .   ^ |                       |
+F3    |           | ^         -         - |
+E3    | .   ^   . | .         ^         . |
+C3    | ^   -   - |                       |
+B2    |           | .         .         ^ |
+A2    |           | ^                   ^ |
+G2    | ^       ^ |                       |
+F1    |           | ^                     |
+C1    | ^         |                       |
+```
+
+### Equal
+
+- Distributes tokens based on a fixed grid of slots (determined by the maximum number of tokens in any block in the column).
+- Tokens are assigned to slots based on their index ratio.
+- Ensures vertical alignment of "beats" when token counts match grid size.
+- Useful for structured drum patterns where each "slot" represents a 16th note or similar.
+
+```
+# Track: 1
+F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
+G4,B4 | ^ ^ ^ ^ ^ |                       |
+G3    | .   .   ^ |                       |
+F3    |           | ^   -   -             |
+E3    | .   ^   . | .   ^   .             |
+C3    | ^   -   - |                       |
+B2    |           | .   .   ^             |
+A2    |           | ^       ^             |
+G2    | ^       ^ |                       |
+F1    |           | ^                     |
+C1    | ^         |                       |
+```
+
+### Time
+
+- Positions tokens based on the Least Common Multiple (LCM) of token counts in the block column.
+- Simulates a linear time axis (Piano Roll).
+- Guarantees correct relative timing visualization for polyrhythms (e.g., 2 against 3).
+- May result in wider blocks due to LCM grid resolution.
+
+```
+# Track: 1
+F4,C5 |                                                             | ^           ^           ^           ^           [^ ^ [^ ^ ^]]           |
+G4,B4 | ^           ^           ^           ^           ^           |                                                                         |
+G3    | .                   .                   ^                   |                                                                         |
+F3    |                                                             | ^                   -                   -                               |
+E3    | .                   ^                   .                   | .                   ^                   .                               |
+C3    | ^                   -                   -                   |                                                                         |
+B2    |                                                             | .                   .                   ^                               |
+A2    |                                                             | ^                             ^                                         |
+G2    | ^                             ^                             |                                                                         |
+F1    |                                                             | ^                                                                       |
+C1    | ^                                                           |                                                                         |
+```

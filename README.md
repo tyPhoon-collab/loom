@@ -35,6 +35,7 @@
 ### セットアップ
 - `mise` と `rustup` のセットアップが必要
 - `examples/` にサンプルを用意
+- `tests/fixtures/` にゴールデンテストを用意
 
 ### テックスタック
 - **Language**: Rust
