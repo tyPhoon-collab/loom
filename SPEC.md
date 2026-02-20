@@ -22,11 +22,10 @@ PatternLine = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , Commen
 RowHeader   = NoteList | DrumName ;
 NoteList    = NoteName , { "," , NoteName } ;
 NoteName    = ( "a"..."g" | "A"..."G" ) , [ "#" | "b" ] , digit ;
-DrumName    = "bd" | "kick" | "bassdrum" | "sd" | "snare" | "rim" | "rs" | "sidestick"
-            | "clap" | "handclap" | "cp" | "hc" | "hihat" | "hihatclosed" | "ho"
-            | "hihatopen" | "hp" | "hihatpedal" | "crash" | "ride" | "splash" | "china"
-            | "ht" | "himidtom" | "mt" | "lowmidtom" | "lt" | "lowtom" | "ft"
-            | "highfloortom" | "cb" | "cowbell" | "tamb" | "tambourine" ;
+DrumName    = "bd" | "kick" | "sn" | "snare" | "rs" | "rim" | "cp" | "clap"
+            | "hh" | "hc" | "hihat" | "oh" | "ho" | "hp"
+            | "cr" | "crash" | "rd" | "ride" | "splash" | "china"
+            | "ht" | "mt" | "lt" | "ft" | "cb" | "tamb" ;
 
 > [!NOTE]
 > - **NoteName** is case-insensitive (e.g., `c4` and `C4` are the same).

@@ -48,28 +48,28 @@ impl Note {
             }
             Note::Drum(alias) => match alias.as_str() {
                 // Kick
-                "bd" | "kick" | "bassdrum" => 36,
+                "bd" | "kick" => 36,
                 // Snare
-                "sd" | "snare" => 38,
-                "rim" | "rs" | "sidestick" => 37,
-                "clap" | "handclap" | "cp" => 39,
+                "sn" | "snare" => 38,
+                "rs" | "rim" => 37,
+                "cp" | "clap" => 39,
                 // Hi-hat
-                "hc" | "hihat" | "hihatclosed" => 42,
-                "ho" | "hihatopen" => 46,
-                "hp" | "hihatpedal" => 44,
+                "hh" | "hc" | "hihat" => 42,
+                "oh" | "ho" => 46,
+                "hp" => 44,
                 // Cymbals
-                "crash" => 49,
-                "ride" => 51,
+                "cr" | "crash" => 49,
+                "rd" | "ride" => 51,
                 "splash" => 55,
                 "china" => 52,
                 // Toms
-                "ht" | "himidtom" => 48,
-                "mt" | "lowmidtom" => 47,
-                "lt" | "lowtom" => 45,
-                "ft" | "highfloortom" => 43,
+                "ht" => 48,
+                "mt" => 47,
+                "lt" => 45,
+                "ft" => 43,
                 // Others
-                "cb" | "cowbell" => 56,
-                "tamb" | "tambourine" => 54,
+                "cb" => 56,
+                "tamb" => 54,
                 _ => 36, // Fallback - should not happen if parsed correctly
             },
         }
@@ -82,11 +82,9 @@ impl FromStr for Note {
     fn from_str(s: &str) -> Result<Self> {
         // 1. Check Drum Aliases (Case-Sensitive)
         match s {
-            "bd" | "kick" | "bassdrum" | "sd" | "snare" | "rim" | "rs" | "sidestick" | "clap"
-            | "handclap" | "cp" | "hc" | "hihat" | "hihatclosed" | "ho" | "hihatopen" | "hp"
-            | "hihatpedal" | "crash" | "ride" | "splash" | "china" | "ht" | "himidtom" | "mt"
-            | "lowmidtom" | "lt" | "lowtom" | "ft" | "highfloortom" | "cb" | "cowbell" | "tamb"
-            | "tambourine" => {
+            "bd" | "kick" | "sn" | "snare" | "rs" | "rim" | "cp" | "clap" | "hh" | "hc"
+            | "hihat" | "oh" | "ho" | "hp" | "cr" | "crash" | "rd" | "ride" | "splash"
+            | "china" | "ht" | "mt" | "lt" | "ft" | "cb" | "tamb" => {
                 return Ok(Note::Drum(s.to_string()));
             }
             _ => {}
