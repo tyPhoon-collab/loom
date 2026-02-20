@@ -46,7 +46,7 @@ Group       = "[" , { Token | space } , "]" ;
 - `space`: Horizontal whitespace.
 - `yaml_content`: Valid YAML string.
 - `name`: Track name (string).
-- `channel`: MIDI channel (1-16).
+- `channel`: MIDI channel (1-16). Note: Following the General MIDI standard, channel 10 is reserved for drums/percussion.
 - `character`: Any UTF-8 character except newline.
 - `digit`: `0`..."9".
 - `alphabetic`: `a`..."z" | `A`..."Z".

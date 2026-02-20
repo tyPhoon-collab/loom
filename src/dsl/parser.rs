@@ -181,7 +181,11 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = space0(input)?;
     let (input, channel_str) = digit1(input)?;
 
-    let channel = channel_str.parse::<u8>().unwrap_or(1);
+    let channel = channel_str.parse::<u8>().unwrap_or(0); // 0 is invalid anyway
+    if !(1..=16).contains(&channel) {
+        use nom::error::{Error, ErrorKind};
+        return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
+    }
 
     Ok((
         input,

@@ -196,7 +196,7 @@ impl<'a> LineCompiler<'a> {
                         let event = MidiEvent {
                             time: token_time,
                             duration: duration_per_token,
-                            channel: self.channel,
+                            channel: self.channel - 1,
                             note: midi_val,
                             velocity: 100,
                         };
