@@ -44,10 +44,12 @@ enum Commands {
     Fmt {
         /// Input file. If not provided, reads from stdin.
         input: Option<PathBuf>,
-        /// Check mode: exits with 1 if formatting changes content
+        /// Default formatter check mode
         #[arg(long, short)]
         check: bool,
     },
+    /// List available MIDI output ports
+    Ports,
 }
 
 #[derive(Tabled)]
@@ -179,6 +181,24 @@ fn main() -> Result<()> {
                     None => {
                         print!("{}", formatted);
                     }
+                }
+            }
+        }
+        Commands::Ports => {
+            use midir::MidiOutput;
+
+            let midi_out = MidiOutput::new("Loom MIDI Output").into_diagnostic()?;
+            let out_ports = midi_out.ports();
+
+            if out_ports.is_empty() {
+                println!("No MIDI output ports available.");
+            } else {
+                println!("Available MIDI output ports:");
+                for (i, p) in out_ports.iter().enumerate() {
+                    let port_name = midi_out
+                        .port_name(p)
+                        .unwrap_or_else(|_| "Unknown".to_string());
+                    println!("  {}: {}", i, port_name);
                 }
             }
         }

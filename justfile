@@ -33,6 +33,9 @@ parse file *args:
 save file output="output.mid" *args:
     cargo run -- save {{file}} {{output}} {{args}}
 
+ports:
+    cargo run -- ports
+
 # Pre-commit checks
 precommit:
     lefthook run pre-commit
