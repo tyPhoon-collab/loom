@@ -1,5 +1,49 @@
 use miette::{miette, Result};
+use phf::phf_map;
 use std::str::FromStr;
+
+/// ピッチ名 → 半音オフセット (C=0, C#/Db=1, ..., B=11)
+static PITCH_MAP: phf::Map<&str, u8> = phf_map! {
+    "c" => 0,
+    "c#" | "db" => 1,
+    "d" => 2,
+    "d#" | "eb" => 3,
+    "e" => 4,
+    "f" => 5,
+    "f#" | "gb" => 6,
+    "g" => 7,
+    "g#" | "ab" => 8,
+    "a" => 9,
+    "a#" | "bb" => 10,
+    "b" => 11,
+};
+
+/// ドラムエイリアス → MIDIノート番号 (GM Percussion Map)
+static DRUM_MAP: phf::Map<&str, u8> = phf_map! {
+    // Kick
+    "bd" | "kick" => 36,
+    // Snare
+    "sn" | "snare" => 38,
+    "rs" | "rim" => 37,
+    "cp" | "clap" => 39,
+    // Hi-hat
+    "hh" | "hc" | "hihat" => 42,
+    "oh" | "ho" => 46,
+    "hp" => 44,
+    // Cymbals
+    "cr" | "crash" => 49,
+    "rd" | "ride" => 51,
+    "splash" => 55,
+    "china" => 52,
+    // Toms
+    "ht" => 48,
+    "mt" => 47,
+    "lt" => 45,
+    "ft" => 43,
+    // Others
+    "cb" => 56,
+    "tamb" => 54,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
@@ -29,49 +73,10 @@ impl Note {
     pub fn to_midi(&self) -> u8 {
         match self {
             Note::Pitch { name, octave } => {
-                let offset = match name.as_str() {
-                    "c" => 0,
-                    "c#" | "db" => 1,
-                    "d" => 2,
-                    "d#" | "eb" => 3,
-                    "e" => 4,
-                    "f" => 5,
-                    "f#" | "gb" => 6,
-                    "g" => 7,
-                    "g#" | "ab" => 8,
-                    "a" => 9,
-                    "a#" | "bb" => 10,
-                    "b" => 11,
-                    _ => 0,
-                };
-                ((octave + 2) * 12 + offset).clamp(0, 127) as u8
+                let offset = PITCH_MAP.get(name.as_str()).copied().unwrap_or(0);
+                ((octave + 2) * 12 + offset as i32).clamp(0, 127) as u8
             }
-            Note::Drum(alias) => match alias.as_str() {
-                // Kick
-                "bd" | "kick" => 36,
-                // Snare
-                "sn" | "snare" => 38,
-                "rs" | "rim" => 37,
-                "cp" | "clap" => 39,
-                // Hi-hat
-                "hh" | "hc" | "hihat" => 42,
-                "oh" | "ho" => 46,
-                "hp" => 44,
-                // Cymbals
-                "cr" | "crash" => 49,
-                "rd" | "ride" => 51,
-                "splash" => 55,
-                "china" => 52,
-                // Toms
-                "ht" => 48,
-                "mt" => 47,
-                "lt" => 45,
-                "ft" => 43,
-                // Others
-                "cb" => 56,
-                "tamb" => 54,
-                _ => 36, // Fallback - should not happen if parsed correctly
-            },
+            Note::Drum(alias) => DRUM_MAP.get(alias.as_str()).copied().unwrap_or(36),
         }
     }
 }
@@ -81,13 +86,8 @@ impl FromStr for Note {
 
     fn from_str(s: &str) -> Result<Self> {
         // 1. Check Drum Aliases (Case-Sensitive)
-        match s {
-            "bd" | "kick" | "sn" | "snare" | "rs" | "rim" | "cp" | "clap" | "hh" | "hc"
-            | "hihat" | "oh" | "ho" | "hp" | "cr" | "crash" | "rd" | "ride" | "splash"
-            | "china" | "ht" | "mt" | "lt" | "ft" | "cb" | "tamb" => {
-                return Ok(Note::Drum(s.to_string()));
-            }
-            _ => {}
+        if DRUM_MAP.contains_key(s) {
+            return Ok(Note::Drum(s.to_string()));
         }
 
         // 2. Parse Pitch (Case-Insensitive for the pitch name part)
@@ -116,10 +116,8 @@ impl FromStr for Note {
         }
 
         // Validate pitch_part
-        match pitch_part.as_str() {
-            "c" | "c#" | "db" | "d" | "d#" | "eb" | "e" | "f" | "f#" | "gb" | "g" | "g#" | "ab"
-            | "a" | "a#" | "bb" | "b" => {}
-            _ => return Err(miette!("Invalid pitch name: {}", pitch_part)),
+        if !PITCH_MAP.contains_key(pitch_part.as_str()) {
+            return Err(miette!("Invalid pitch name: {}", pitch_part));
         }
 
         let octave = octave_part.parse::<i32>().unwrap_or(3);
