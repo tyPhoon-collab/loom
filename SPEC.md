@@ -1,6 +1,6 @@
 # Loom DSL Specification
 
-## 1. Top Level
+## Top Level
 ```ebnf
 Song        = [ Frontmatter ] { Track } ;
 Frontmatter = "---" , newline , yaml_content , "---" , newline ;
@@ -8,15 +8,16 @@ Track       = TrackHeader , { Line } ;
 TrackHeader = "#" , space , name , ":" , space , channel , newline ;
 ```
 
-## 2. Lines
+## Lines
 ```ebnf
-Line        = CommentLine | PatternLine | EmptyLine ;
-CommentLine = ">" , { character } , newline ;
-EmptyLine   = { space } , newline ;
+Line         = CommentLine | PatternLine | EmptyLine | TrackWrap ;
+CommentLine  = ">" , { character } , newline ;
+EmptyLine    = { space } , newline ;
+TrackWrap    = "---" , newline ;
 PatternLine = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , CommentLine ] ;
 ```
 
-## 3. Patterns & Tokens
+## Patterns & Tokens
 ```ebnf
 RowHeader   = NoteList | DrumName ;
 NoteList    = NoteName , { "," , NoteName } ;
@@ -40,7 +41,7 @@ Sustain     = "-" ;
 Group       = "[" , { Token | space } , "]" ;
 ```
 
-## 4. Lexical Rules
+## Lexical Rules
 - `newline`: Line ending (`\n`, `\r\n`).
 - `space`: Horizontal whitespace.
 - `yaml_content`: Valid YAML string.
@@ -50,14 +51,21 @@ Group       = "[" , { Token | space } , "]" ;
 - `digit`: `0`..."9".
 - `alphabetic`: `a`..."z" | `A`..."Z".
 
-## 5. Frontmatter Defaults
-If frontmatter is omitted, the following defaults are used:
-- `bpm`: 120
-- `signature`: "4/4"
-- `unit`: "bar"
-- `pitch`: 0
+## Track Wrapping
+Loom allows breaking long timelines across multiple text blocks to improve readability.
+This is achieved using the `TrackWrap` (`---`) within the body.
 
-## 6. Formatter
+```loom
+# Track: 1
+C3 | ^ - - | ^ . . |
+---
+C3 | ^ ^ ^ | ^ ^ ^ |
+```
+This expands to: `C3 | ^ - - | ^ . . | ^ ^ ^ | ^ ^ ^ |`
+
+The active track context is maintained across `---` boundaries. For readability and simplicity, it is recommended to write out an entire track (including all its wrapped sections) before moving on to define the next track, rather than interleaving sections of different tracks.
+
+## Formatter
 
 Default is `equal`
 

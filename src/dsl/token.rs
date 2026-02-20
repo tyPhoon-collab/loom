@@ -63,10 +63,15 @@ pub struct Line {
 }
 
 #[derive(Debug, Clone)]
+pub struct Section {
+    pub lines: Vec<Line>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Track {
     pub name: String,
     pub channel: u8,
-    pub lines: Vec<Line>,
+    pub sections: Vec<Section>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]

@@ -157,7 +157,6 @@ pub enum ParsedLine {
     },
     Pattern {
         key: String,
-        // Strict parsing: notes are required.
         notes: Vec<Note>,
         blocks: Vec<Block>,
         end_bar: Bar,
@@ -165,6 +164,7 @@ pub enum ParsedLine {
     },
     Comment(String),
     Empty,
+    TrackWrap,
 }
 
 fn parse_comment(input: &str) -> IResult<&str, ParsedLine> {
@@ -249,9 +249,17 @@ fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
     Ok((input, ParsedLine::Empty))
 }
 
+fn parse_track_wrap(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = tag("---")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = eof(input)?;
+    Ok((input, ParsedLine::TrackWrap))
+}
+
 pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     alt((
         parse_comment,
+        parse_track_wrap,
         parse_track_header,
         parse_empty_line,
         parse_pattern_line,
@@ -312,8 +320,16 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     current_track = Some(Track {
                         name,
                         channel,
-                        lines: Vec::new(),
+                        sections: vec![crate::dsl::token::Section { lines: Vec::new() }],
                     });
+                }
+                ParsedLine::TrackWrap => {
+                    // Start a new section in the current track
+                    if let Some(ref mut track) = current_track {
+                        track
+                            .sections
+                            .push(crate::dsl::token::Section { lines: Vec::new() });
+                    }
                 }
                 ParsedLine::Pattern {
                     notes,
@@ -321,8 +337,13 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     end_bar,
                     ..
                 } => {
-                    if let Some(ref mut t) = current_track {
-                        t.lines.push(Line {
+                    if let Some(ref mut track) = current_track {
+                        if track.sections.is_empty() {
+                            track
+                                .sections
+                                .push(crate::dsl::token::Section { lines: Vec::new() });
+                        }
+                        track.sections.last_mut().unwrap().lines.push(Line {
                             notes,
                             blocks,
                             end_bar,

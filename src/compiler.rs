@@ -63,90 +63,101 @@ impl Compiler {
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
     ) -> Result<()> {
-        for line in &track.lines {
-            let mut current_time = 0.0;
-            // Last note event index PER note in the chord
-            let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+        let mut section_start_time = 0.0;
 
-            let mut line_compiler = LineCompiler {
-                channel: track.channel,
-                notes: &line.notes,
-                events,
-                last_event_indices,
-                pitch_offset,
-            };
+        for section in &track.sections {
+            let mut section_end_time = section_start_time;
 
-            let mut repeat_buffer: Vec<&Block> = Vec::new();
-            let mut in_repeat = false;
+            for line in &section.lines {
+                let mut current_time = section_start_time;
+                // Last note event index PER note in the chord
+                let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
 
-            for block in &line.blocks {
-                // Check Start Bar
-                match block.start_bar {
-                    Bar::RepeatStart => {
-                        repeat_buffer.clear();
-                        in_repeat = true;
-                    }
-                    Bar::RepeatEnd => {
-                        if in_repeat {
-                            for buffered_block in &repeat_buffer {
-                                let block_duration = self.unit_per_block;
-                                line_compiler.process_tokens(
-                                    &buffered_block.tokens,
-                                    current_time,
-                                    block_duration,
-                                );
-                                current_time += block_duration;
-                            }
+                let mut line_compiler = LineCompiler {
+                    channel: track.channel,
+                    notes: &line.notes,
+                    events,
+                    last_event_indices,
+                    pitch_offset,
+                };
+
+                let mut repeat_buffer: Vec<&Block> = Vec::new();
+                let mut in_repeat = false;
+
+                for block in &line.blocks {
+                    // Check Start Bar
+                    match block.start_bar {
+                        Bar::RepeatStart => {
                             repeat_buffer.clear();
-                            in_repeat = false;
+                            in_repeat = true;
                         }
-                    }
-                    Bar::Double => {
-                        if in_repeat {
-                            for buffered_block in &repeat_buffer {
-                                let block_duration = self.unit_per_block;
-                                line_compiler.process_tokens(
-                                    &buffered_block.tokens,
-                                    current_time,
-                                    block_duration,
-                                );
-                                current_time += block_duration;
+                        Bar::RepeatEnd => {
+                            if in_repeat {
+                                for buffered_block in &repeat_buffer {
+                                    let block_duration = self.unit_per_block;
+                                    line_compiler.process_tokens(
+                                        &buffered_block.tokens,
+                                        current_time,
+                                        block_duration,
+                                    );
+                                    current_time += block_duration;
+                                }
+                                repeat_buffer.clear();
+                                in_repeat = false;
                             }
-                            repeat_buffer.clear();
                         }
-                        in_repeat = true;
+                        Bar::Double => {
+                            if in_repeat {
+                                for buffered_block in &repeat_buffer {
+                                    let block_duration = self.unit_per_block;
+                                    line_compiler.process_tokens(
+                                        &buffered_block.tokens,
+                                        current_time,
+                                        block_duration,
+                                    );
+                                    current_time += block_duration;
+                                }
+                                repeat_buffer.clear();
+                            }
+                            in_repeat = true;
+                        }
+                        Bar::Standard => {}
                     }
-                    Bar::Standard => {}
-                }
 
-                // Process Current Block
-                let block_duration = self.unit_per_block;
-                line_compiler.process_tokens(&block.tokens, current_time, block_duration);
-                current_time += block_duration;
+                    // Process Current Block
+                    let block_duration = self.unit_per_block;
+                    line_compiler.process_tokens(&block.tokens, current_time, block_duration);
+                    current_time += block_duration;
 
-                // Buffer Current Block
-                if in_repeat {
-                    repeat_buffer.push(block);
-                }
-            }
-
-            // Handle Line End Bar
-            match line.end_bar {
-                Bar::RepeatEnd | Bar::Double => {
+                    // Buffer Current Block
                     if in_repeat {
-                        for buffered_block in &repeat_buffer {
-                            let block_duration = self.unit_per_block;
-                            line_compiler.process_tokens(
-                                &buffered_block.tokens,
-                                current_time,
-                                block_duration,
-                            );
-                            current_time += block_duration;
-                        }
+                        repeat_buffer.push(block);
                     }
                 }
-                _ => {}
+
+                // Handle Line End Bar
+                match line.end_bar {
+                    Bar::RepeatEnd | Bar::Double => {
+                        if in_repeat {
+                            for buffered_block in &repeat_buffer {
+                                let block_duration = self.unit_per_block;
+                                line_compiler.process_tokens(
+                                    &buffered_block.tokens,
+                                    current_time,
+                                    block_duration,
+                                );
+                                current_time += block_duration;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                if current_time > section_end_time {
+                    section_end_time = current_time;
+                }
             }
+            section_start_time = section_end_time;
         }
         Ok(())
     }

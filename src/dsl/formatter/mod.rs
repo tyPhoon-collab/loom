@@ -70,6 +70,9 @@ pub fn format_string_with_mode(input: &str, mode: FormattingMode) -> String {
                     ParsedLine::Empty => {
                         writeln!(output).unwrap();
                     }
+                    ParsedLine::TrackWrap => {
+                        writeln!(output, "---").unwrap();
+                    }
                     ParsedLine::Pattern { .. } => unreachable!(),
                 }
             }
