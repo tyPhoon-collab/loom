@@ -1,5 +1,8 @@
 #![allow(unused_assignments)]
-use super::token::{Bar, Block, Frontmatter, Line, Note, Song, Token, Track};
+use super::token::{
+    Bar, Block, Frontmatter, Line, ModifierBlock, ModifierKind, ModifierLine, ModifierValue, Note,
+    Song, Token, Track,
+};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::{
     branch::alt,
@@ -162,6 +165,11 @@ pub enum ParsedLine {
         end_bar: Bar,
         trailing_comment: Option<String>,
     },
+    Modifier {
+        kind: ModifierKind,
+        blocks: Vec<ModifierBlock>,
+        end_bar: Bar,
+    },
     Comment(String),
     Empty,
     TrackWrap,
@@ -260,12 +268,128 @@ fn parse_track_wrap(input: &str) -> IResult<&str, ParsedLine> {
     Ok((input, ParsedLine::TrackWrap))
 }
 
+fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
+    let (input, _) = space0(input)?;
+    let input_trimmed = input.trim_start();
+    if input_trimmed.is_empty() || input_trimmed.starts_with('|') || input_trimmed.starts_with(":|")
+    {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+
+    let (input, is_latch) = opt(char('!'))(input)?;
+    let (input, sign) = opt(alt((char('+'), char('-'))))(input)?;
+    let (input, digits) = digit1(input)?;
+
+    let val: i32 = digits.parse().unwrap_or(0);
+    let val = match sign {
+        Some('-') => -val,
+        _ => val,
+    };
+
+    Ok((
+        input,
+        if is_latch.is_some() {
+            ModifierValue::Latch(val)
+        } else {
+            ModifierValue::Set(val)
+        },
+    ))
+}
+
+fn parse_modifier_block_values(input: &str) -> IResult<&str, Vec<Option<ModifierValue>>> {
+    let mut values = Vec::new();
+    let mut current = input;
+
+    loop {
+        let (rest, _) = space0(current)?;
+        // Check if we hit a bar or end
+        if rest.is_empty() || rest.starts_with('|') || rest.starts_with(":") {
+            current = rest;
+            break;
+        }
+        match parse_modifier_value(rest) {
+            Ok((rest2, val)) => {
+                values.push(Some(val));
+                current = rest2;
+            }
+            Err(_) => {
+                current = rest;
+                break;
+            }
+        }
+    }
+
+    Ok((current, values))
+}
+
+fn parse_modifier_line_blocks(input: &str) -> IResult<&str, (Vec<ModifierBlock>, Bar)> {
+    let (input, first_bar) = parse_bar(input)?;
+    let mut blocks = Vec::new();
+    let mut current_input = input;
+    let mut current_bar = first_bar;
+
+    loop {
+        let (rest, values) = parse_modifier_block_values(current_input)?;
+
+        match parse_bar(rest) {
+            Ok((rest2, next_bar)) => {
+                blocks.push(ModifierBlock {
+                    start_bar: current_bar,
+                    values,
+                });
+                current_input = rest2;
+                current_bar = next_bar;
+            }
+            Err(_) => {
+                break;
+            }
+        }
+    }
+
+    Ok((current_input, (blocks, current_bar)))
+}
+
+fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
+    // Parse modifier kind label: "v" or "p" followed by space and bar
+    let (input, kind_str) = alt((tag("v"), tag("p")))(input)?;
+    let (input, _) = space0(input)?;
+
+    // Must be followed by a bar
+    if !input.starts_with('|') && !input.starts_with(":|") {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+
+    let kind = match kind_str {
+        "v" => ModifierKind::Velocity,
+        "p" => ModifierKind::Pitch,
+        _ => unreachable!(),
+    };
+
+    let (input, (blocks, end_bar)) = parse_modifier_line_blocks(input)?;
+
+    Ok((
+        input,
+        ParsedLine::Modifier {
+            kind,
+            blocks,
+            end_bar,
+        },
+    ))
+}
+
 pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     alt((
         parse_comment,
         parse_track_wrap,
         parse_track_header,
         parse_empty_line,
+        parse_modifier_line,
         parse_pattern_line,
     ))(input)
 }
@@ -351,7 +475,26 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                             notes,
                             blocks,
                             end_bar,
+                            modifiers: Vec::new(),
                         });
+                    }
+                }
+                ParsedLine::Modifier {
+                    kind,
+                    blocks,
+                    end_bar,
+                } => {
+                    // Bind to the last line in the current section
+                    if let Some(ref mut track) = current_track {
+                        if let Some(section) = track.sections.last_mut() {
+                            if let Some(line) = section.lines.last_mut() {
+                                line.modifiers.push(ModifierLine {
+                                    kind,
+                                    blocks,
+                                    end_bar,
+                                });
+                            }
+                        }
                     }
                 }
                 ParsedLine::Comment(_) | ParsedLine::Empty | ParsedLine::Frontmatter(_) => {}

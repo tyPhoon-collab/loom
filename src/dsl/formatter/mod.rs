@@ -43,7 +43,7 @@ pub fn format_string_with_mode(input: &str, mode: FormattingMode) -> String {
 
     for line in &lines {
         match line {
-            ParsedLine::Pattern { .. } => {
+            ParsedLine::Pattern { .. } | ParsedLine::Modifier { .. } => {
                 pattern_buffer.push(line);
             }
             _ => {
@@ -73,7 +73,7 @@ pub fn format_string_with_mode(input: &str, mode: FormattingMode) -> String {
                     ParsedLine::TrackWrap => {
                         writeln!(output, "---").unwrap();
                     }
-                    ParsedLine::Pattern { .. } => unreachable!(),
+                    ParsedLine::Pattern { .. } | ParsedLine::Modifier { .. } => unreachable!(),
                 }
             }
         }

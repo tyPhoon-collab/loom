@@ -1,4 +1,4 @@
-use crate::dsl::token::{Bar, Block, Note, Song, Token, Track};
+use crate::dsl::token::{Bar, Block, ModifierKind, ModifierValue, Note, Song, Token, Track};
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
@@ -22,11 +22,14 @@ pub struct Compiler {
     pub unit_per_block: f64, // e.g. 4.0 for 4/4 bar
 }
 
+/// Resolved modifier values for a line, flattened per block
+struct ResolvedModifiers {
+    velocities: Vec<Vec<i32>>, // per block, per token
+    pitches: Vec<Vec<i32>>,    // per block, per token
+}
+
 impl Compiler {
     pub fn new(song: &Song) -> Result<Self> {
-        // Simple logic: signature 4/4 -> 4 beats per bar.
-        // If unit is bar, block = 4.0.
-        // If unit is beat, block = 1.0.
         let sig_parts: Vec<&str> = song.metadata.signature.split('/').collect();
         let num: f64 = sig_parts
             .first()
@@ -37,7 +40,6 @@ impl Compiler {
         let unit_per_block = if song.metadata.unit == "beat" {
             1.0
         } else {
-            // "bar"
             num
         };
 
@@ -51,10 +53,78 @@ impl Compiler {
             self.compile_track(track, &mut events, song.metadata.pitch)?;
         }
 
-        // Sort events by time
         events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
 
         Ok(events)
+    }
+
+    /// Resolve modifier values for a line into per-block, per-token arrays
+    fn resolve_modifiers(&self, line: &crate::dsl::token::Line) -> ResolvedModifiers {
+        let num_blocks = line.blocks.len();
+
+        // Count tokens per block
+        let tokens_per_block: Vec<usize> = line.blocks.iter().map(|b| b.tokens.len()).collect();
+
+        // Initialize with defaults
+        let mut velocities: Vec<Vec<i32>> = tokens_per_block
+            .iter()
+            .map(|&n| vec![ModifierKind::Velocity.default_value(); n])
+            .collect();
+        let mut pitches: Vec<Vec<i32>> = tokens_per_block
+            .iter()
+            .map(|&n| vec![ModifierKind::Pitch.default_value(); n])
+            .collect();
+
+        for modifier in &line.modifiers {
+            let default_val = modifier.kind.default_value();
+            let target = match modifier.kind {
+                ModifierKind::Velocity => &mut velocities,
+                ModifierKind::Pitch => &mut pitches,
+            };
+
+            let mut latch_value: Option<i32> = None;
+            let mut mod_block_idx = 0;
+
+            for block_idx in 0..num_blocks {
+                let num_tokens = tokens_per_block[block_idx];
+                if num_tokens == 0 {
+                    continue;
+                }
+
+                // Get modifier values for this block (if available)
+                let mod_values = if mod_block_idx < modifier.blocks.len() {
+                    mod_block_idx += 1;
+                    &modifier.blocks[mod_block_idx - 1].values
+                } else {
+                    &vec![]
+                };
+
+                for (token_idx, target_slot) in
+                    target[block_idx].iter_mut().enumerate().take(num_tokens)
+                {
+                    let mod_val = mod_values.get(token_idx).and_then(|v| v.as_ref());
+                    match mod_val {
+                        Some(ModifierValue::Set(v)) => {
+                            *target_slot = *v;
+                            latch_value = None; // One-shot: clear latch
+                        }
+                        Some(ModifierValue::Latch(v)) => {
+                            *target_slot = *v;
+                            latch_value = Some(*v);
+                        }
+                        None => {
+                            // If latched, continue with latch value; otherwise default
+                            *target_slot = latch_value.unwrap_or(default_val);
+                        }
+                    }
+                }
+            }
+        }
+
+        ResolvedModifiers {
+            velocities,
+            pitches,
+        }
     }
 
     fn compile_track(
@@ -70,8 +140,9 @@ impl Compiler {
 
             for line in &section.lines {
                 let mut current_time = section_start_time;
-                // Last note event index PER note in the chord
                 let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+
+                let resolved = self.resolve_modifiers(line);
 
                 let mut line_compiler = LineCompiler {
                     channel: track.channel,
@@ -79,13 +150,15 @@ impl Compiler {
                     events,
                     last_event_indices,
                     pitch_offset,
+                    resolved_velocities: &resolved.velocities,
+                    resolved_pitches: &resolved.pitches,
+                    current_block_idx: 0,
                 };
 
-                let mut repeat_buffer: Vec<&Block> = Vec::new();
+                let mut repeat_buffer: Vec<(usize, &Block)> = Vec::new();
                 let mut in_repeat = false;
 
-                for block in &line.blocks {
-                    // Check Start Bar
+                for (block_idx, block) in line.blocks.iter().enumerate() {
                     match block.start_bar {
                         Bar::RepeatStart => {
                             repeat_buffer.clear();
@@ -93,8 +166,9 @@ impl Compiler {
                         }
                         Bar::RepeatEnd => {
                             if in_repeat {
-                                for buffered_block in &repeat_buffer {
+                                for &(buf_idx, buffered_block) in &repeat_buffer {
                                     let block_duration = self.unit_per_block;
+                                    line_compiler.current_block_idx = buf_idx;
                                     line_compiler.process_tokens(
                                         &buffered_block.tokens,
                                         current_time,
@@ -108,8 +182,9 @@ impl Compiler {
                         }
                         Bar::Double => {
                             if in_repeat {
-                                for buffered_block in &repeat_buffer {
+                                for &(buf_idx, buffered_block) in &repeat_buffer {
                                     let block_duration = self.unit_per_block;
+                                    line_compiler.current_block_idx = buf_idx;
                                     line_compiler.process_tokens(
                                         &buffered_block.tokens,
                                         current_time,
@@ -124,23 +199,22 @@ impl Compiler {
                         Bar::Standard => {}
                     }
 
-                    // Process Current Block
                     let block_duration = self.unit_per_block;
+                    line_compiler.current_block_idx = block_idx;
                     line_compiler.process_tokens(&block.tokens, current_time, block_duration);
                     current_time += block_duration;
 
-                    // Buffer Current Block
                     if in_repeat {
-                        repeat_buffer.push(block);
+                        repeat_buffer.push((block_idx, block));
                     }
                 }
 
-                // Handle Line End Bar
                 match line.end_bar {
                     Bar::RepeatEnd | Bar::Double => {
                         if in_repeat {
-                            for buffered_block in &repeat_buffer {
+                            for &(buf_idx, buffered_block) in &repeat_buffer {
                                 let block_duration = self.unit_per_block;
+                                line_compiler.current_block_idx = buf_idx;
                                 line_compiler.process_tokens(
                                     &buffered_block.tokens,
                                     current_time,
@@ -169,6 +243,9 @@ struct LineCompiler<'a> {
     events: &'a mut Vec<MidiEvent>,
     last_event_indices: Vec<Option<usize>>,
     pitch_offset: i32,
+    resolved_velocities: &'a [Vec<i32>],
+    resolved_pitches: &'a [Vec<i32>],
+    current_block_idx: usize,
 }
 
 impl<'a> LineCompiler<'a> {
@@ -185,20 +262,38 @@ impl<'a> LineCompiler<'a> {
 
             match token {
                 Token::Note => {
-                    // Start new events for ALL notes in the chord
+                    // Get velocity and pitch modifier for this token
+                    let velocity = self
+                        .resolved_velocities
+                        .get(self.current_block_idx)
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .unwrap_or(100)
+                        .clamp(0, 127) as u8;
+
+                    let pitch_mod = self
+                        .resolved_pitches
+                        .get(self.current_block_idx)
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .unwrap_or(0);
+
                     for (nth, note) in self.notes.iter().enumerate() {
                         let midi_val = match note {
                             Note::Pitch { .. } => {
-                                (note.to_midi() as i32 + self.pitch_offset).clamp(0, 127) as u8
+                                (note.to_midi() as i32 + self.pitch_offset + pitch_mod)
+                                    .clamp(0, 127) as u8
                             }
-                            Note::Drum(_) => note.to_midi(),
+                            Note::Drum(_) => {
+                                (note.to_midi() as i32 + pitch_mod).clamp(0, 127) as u8
+                            }
                         };
                         let event = MidiEvent {
                             time: token_time,
                             duration: duration_per_token,
                             channel: self.channel - 1,
                             note: midi_val,
-                            velocity: 100,
+                            velocity,
                         };
                         self.events.push(event);
                         self.last_event_indices[nth] = Some(self.events.len() - 1);

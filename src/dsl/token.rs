@@ -9,6 +9,12 @@ pub enum Token {
     Group(Vec<Token>), // [...]
 }
 
+impl Token {
+    pub fn is_group(&self) -> bool {
+        matches!(self, Token::Group(_))
+    }
+}
+
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -49,6 +55,54 @@ impl std::fmt::Display for Bar {
     }
 }
 
+/// モディファイアの値（ラッチ or ワンショット）
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModifierValue {
+    Set(i32),   // ワンショット: 100, +2, -1
+    Latch(i32), // ラッチ: !80, !+2
+}
+
+/// モディファイアの種類
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModifierKind {
+    Velocity, // v
+    Pitch,    // p
+}
+
+impl std::fmt::Display for ModifierKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ModifierKind::Velocity => "v",
+            ModifierKind::Pitch => "p",
+        };
+        f.pad(s)
+    }
+}
+
+impl ModifierKind {
+    pub fn default_value(&self) -> i32 {
+        match self {
+            ModifierKind::Velocity => 100,
+            ModifierKind::Pitch => 0,
+        }
+    }
+}
+
+/// 1ブロック分のモディファイア値リスト
+#[derive(Debug, Clone)]
+pub struct ModifierBlock {
+    pub start_bar: Bar,
+    pub values: Vec<Option<ModifierValue>>,
+}
+
+/// 1行分のモディファイア
+#[derive(Debug, Clone)]
+pub struct ModifierLine {
+    pub kind: ModifierKind,
+    pub blocks: Vec<ModifierBlock>,
+    pub end_bar: Bar,
+}
+
 #[derive(Debug, Clone)]
 pub struct Block {
     pub start_bar: Bar,
@@ -60,6 +114,7 @@ pub struct Line {
     pub notes: Vec<Note>,
     pub blocks: Vec<Block>,
     pub end_bar: Bar,
+    pub modifiers: Vec<ModifierLine>,
 }
 
 #[derive(Debug, Clone)]

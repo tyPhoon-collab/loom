@@ -40,6 +40,34 @@ Sustain     = "-" ;
 Group       = "[" , { Token | space } , "]" ;
 ```
 
+## Modifier Lines
+
+A modifier line adjusts per-token properties (e.g. velocity, pitch) for the immediately preceding pattern line.
+
+```ebnf
+ModifierLine  = ModifierKind , space , Bar , { ModifierValue | space } , { Bar , { ModifierValue | space } } , Bar ;
+ModifierKind  = "v" | "p" ;
+ModifierValue = [ "!" ] , [ "+" | "-" ] , digits ;
+```
+
+- **`v`** (Velocity): Absolute value (0–127). Default: 100.
+- **`p`** (Pitch): Relative semitone offset (`+N` / `-N`). Default: 0.
+- **`!` prefix (Latch)**: The value persists for subsequent empty slots.
+- **Empty slot**: Uses the latched value if active, otherwise the default.
+
+```loom
+C3 | ^    ^    ^    ^   |
+v  | !80            100 |
+p  | +2                 |
+```
+
+| Slot | Velocity | Pitch | Reason |
+|------|----------|-------|--------|
+| 1    | 80       | +2    | `!80` latch, `+2` one-shot |
+| 2    | 80       | 0     | latch continues, default |
+| 3    | 80       | 0     | latch continues, default |
+| 4    | 100      | 0     | `100` one-shot (latch released) |
+
 ## Lexical Rules
 - `newline`: Line ending (`\n`, `\r\n`).
 - `space`: Horizontal whitespace.
@@ -66,97 +94,5 @@ The active track context is maintained across `---` boundaries. For readability 
 
 ## Formatter
 
-Default is `equal`
+See [FORMATTER.md](FORMATTER.md) for the full formatter specification.
 
-All formatters align by bar in the track, but differ in their token spacing.
-
-> [!IMPORTANT]
-> Formatters **MUST NOT** change the semantics of the score.
-> - Missing blocks are **NOT** automatically padded. If a track has fewer blocks than others, it remains shorter.
-> - The number of bars and blocks is preserved exactly as input.
-
-### Minimize
-
-- Separates tokens with a single space.
-- Left-aligned.
-- Compact and simple implementation.
-
-```
-# Track: 1
-F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
-G4,B4 | ^ ^ ^ ^ ^ |                       |
-G3    | . . ^     |                       |
-F3    |           | ^ - -                 |
-E3    | . ^ .     | . ^ .                 |
-C3    | ^ - -     |                       |
-B2    |           | . . ^                 |
-A2    |           | ^ ^                   |
-G2    | ^ ^       |                       |
-F1    |           | ^                     |
-C1    | ^         |                       |
-```
-
-### Justify
-
-- Distributes tokens with equal spacing within each block (Character-Level Justification).
-- Left-aligned.
-- Designed for readability while maintaining simplicity.
-
-```
-# Track: 1
-F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
-G4,B4 | ^ ^ ^ ^ ^ |                       |
-G3    | .   .   ^ |                       |
-F3    |           | ^         -         - |
-E3    | .   ^   . | .         ^         . |
-C3    | ^   -   - |                       |
-B2    |           | .         .         ^ |
-A2    |           | ^                   ^ |
-G2    | ^       ^ |                       |
-F1    |           | ^                     |
-C1    | ^         |                       |
-```
-
-### Equal
-
-- Distributes tokens based on a fixed grid of slots (determined by the maximum number of tokens in any block in the column).
-- Tokens are assigned to slots based on their index ratio.
-- Ensures vertical alignment of "beats" when token counts match grid size.
-- Useful for structured drum patterns where each "slot" represents a 16th note or similar.
-
-```
-# Track: 1
-F4,C5 |           | ^ ^ ^ ^ [^ ^ [^ ^ ^]] |
-G4,B4 | ^ ^ ^ ^ ^ |                       |
-G3    | .   .   ^ |                       |
-F3    |           | ^   -   -             |
-E3    | .   ^   . | .   ^   .             |
-C3    | ^   -   - |                       |
-B2    |           | .   .   ^             |
-A2    |           | ^       ^             |
-G2    | ^       ^ |                       |
-F1    |           | ^                     |
-C1    | ^         |                       |
-```
-
-### Time
-
-- Positions tokens based on the Least Common Multiple (LCM) of token counts in the block column.
-- Simulates a linear time axis (Piano Roll).
-- Guarantees correct relative timing visualization for polyrhythms (e.g., 2 against 3).
-- May result in wider blocks due to LCM grid resolution.
-
-```
-# Track: 1
-F4,C5 |                                                             | ^           ^           ^           ^           [^ ^ [^ ^ ^]]           |
-G4,B4 | ^           ^           ^           ^           ^           |                                                                         |
-G3    | .                   .                   ^                   |                                                                         |
-F3    |                                                             | ^                   -                   -                               |
-E3    | .                   ^                   .                   | .                   ^                   .                               |
-C3    | ^                   -                   -                   |                                                                         |
-B2    |                                                             | .                   .                   ^                               |
-A2    |                                                             | ^                             ^                                         |
-G2    | ^                             ^                             |                                                                         |
-F1    |                                                             | ^                                                                       |
-C1    | ^                                                           |                                                                         |
-```
