@@ -289,6 +289,10 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
 
     let mut out = String::new();
 
+    // Prepare line contents and their widths (excluding trailing comments)
+    let mut line_infos = Vec::new();
+    let mut max_line_width = 0;
+
     for (i, p) in sorted_patterns.iter().enumerate() {
         if let ParsedLine::Pattern {
             blocks,
@@ -297,37 +301,63 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
             ..
         } = p
         {
+            let mut line_buf = String::new();
             let sorted_key = &sorted_keys[i];
-            write!(out, "{:width$} ", sorted_key, width = max_key_width).unwrap();
+            write!(line_buf, "{:width$} ", sorted_key, width = max_key_width).unwrap();
 
             for (b_idx, block) in blocks.iter().enumerate() {
-                format_block(&mut out, block, &context, b_idx).unwrap();
+                format_block(&mut line_buf, block, &context, b_idx).unwrap();
             }
+            write!(line_buf, "{}", end_bar).unwrap();
 
-            write!(out, "{}", end_bar).unwrap();
-            if let Some(comment) = trailing_comment {
-                write!(out, " > {}", comment).unwrap();
-            }
-            writeln!(out).unwrap();
+            let mut music_part_width = line_buf.len();
+            let mut mods_rendered = Vec::new();
 
             if let Some(mods) = pattern_to_mods.get(&(*p as *const ParsedLine)) {
                 for m in mods.iter() {
                     if let ParsedLine::Modifier {
                         kind,
                         blocks: mod_blocks,
-                        end_bar,
+                        end_bar: m_end_bar,
+                        trailing_comment: m_comment,
                         ..
                     } = m
                     {
-                        write!(out, "{:width$} ", kind, width = max_key_width).unwrap();
+                        let mut m_line_buf = String::new();
+                        write!(m_line_buf, "{:width$} ", kind, width = max_key_width).unwrap();
                         for (b_idx, mblock) in mod_blocks.iter().enumerate() {
-                            format_modifier_block(&mut out, mblock, &context, b_idx).unwrap();
+                            format_modifier_block(&mut m_line_buf, mblock, &context, b_idx)
+                                .unwrap();
                         }
-                        write!(out, "{}", end_bar).unwrap();
-                        writeln!(out).unwrap();
+                        write!(m_line_buf, "{}", m_end_bar).unwrap();
+
+                        music_part_width = music_part_width.max(m_line_buf.len());
+                        mods_rendered.push((m_line_buf, m_comment));
                     }
                 }
             }
+
+            max_line_width = max_line_width.max(music_part_width);
+            line_infos.push((line_buf, trailing_comment, mods_rendered));
+        }
+    }
+
+    // Now output everything with aligned comments
+    for (line_buf, comment, mods) in line_infos {
+        out.push_str(&line_buf);
+        if let Some(c) = comment {
+            let padding = max_line_width.saturating_sub(line_buf.len());
+            write!(out, "{:padding$} > {}", "", c, padding = padding).unwrap();
+        }
+        out.push('\n');
+
+        for (m_buf, m_comment) in mods {
+            out.push_str(&m_buf);
+            if let Some(mc) = m_comment {
+                let padding = max_line_width.saturating_sub(m_buf.len());
+                write!(out, "{:padding$} > {}", "", mc, padding = padding).unwrap();
+            }
+            out.push('\n');
         }
     }
     out

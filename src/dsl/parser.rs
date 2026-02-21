@@ -170,6 +170,7 @@ pub enum ParsedLine {
         kind: ModifierKind,
         blocks: Vec<ModifierBlock>,
         end_bar: Bar,
+        trailing_comment: Option<String>,
     },
     Comment(String),
     Empty,
@@ -378,12 +379,17 @@ fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
 
     let (input, (blocks, end_bar)) = parse_modifier_line_blocks(input)?;
 
+    // Check for trailing comment
+    let (input, _) = space0(input)?;
+    let (input, trailing_comment) = opt(preceded(char('>'), not_line_ending))(input)?;
+
     Ok((
         input,
         ParsedLine::Modifier {
             kind,
             blocks,
             end_bar,
+            trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
         },
     ))
 }
@@ -493,6 +499,7 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     kind,
                     blocks,
                     end_bar,
+                    trailing_comment,
                 } => {
                     // Bind to the last line in the current section
                     if let Some(ref mut track) = current_track {
@@ -502,6 +509,7 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                                     kind,
                                     blocks,
                                     end_bar,
+                                    trailing_comment,
                                 });
                             }
                         }

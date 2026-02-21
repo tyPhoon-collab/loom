@@ -101,6 +101,7 @@ pub struct ModifierLine {
     pub kind: ModifierKind,
     pub blocks: Vec<ModifierBlock>,
     pub end_bar: Bar,
+    pub trailing_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,8 @@
+# Track: 1
+C3 | ^ ^ | > short
+G2 | ^ . | > very long comment here
+# Track: 2
+C4 | ^ ^ ^ | > mid comment
+v  | 60 80 100 |
+# Track: 3
+F3 | ^ | > another
