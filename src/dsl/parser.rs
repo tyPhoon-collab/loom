@@ -37,7 +37,7 @@ use nom::{
     combinator::{eof, map, opt, value},
     multi::many0,
     sequence::{delimited, preceded, terminated},
-    IResult,
+    IResult, Parser,
 };
 use std::str::FromStr;
 
@@ -48,15 +48,15 @@ use std::str::FromStr;
 // --- Token Parsers ---
 
 fn parse_token_note(input: &str) -> IResult<&str, Token> {
-    value(Token::Note, Symbol::Note.char())(input)
+    value(Token::Note, Symbol::Note.char()).parse(input)
 }
 
 fn parse_token_rest(input: &str) -> IResult<&str, Token> {
-    value(Token::Rest, Symbol::Rest.char())(input)
+    value(Token::Rest, Symbol::Rest.char()).parse(input)
 }
 
 fn parse_token_sustain(input: &str) -> IResult<&str, Token> {
-    value(Token::Sustain, Symbol::Sustain.char())(input)
+    value(Token::Sustain, Symbol::Sustain.char()).parse(input)
 }
 
 fn parse_token_group(input: &str) -> IResult<&str, Token> {
@@ -67,7 +67,8 @@ fn parse_token_group(input: &str) -> IResult<&str, Token> {
             Symbol::GroupEnd.char(),
         ),
         Token::Group,
-    )(input)
+    )
+    .parse(input)
 }
 
 fn parse_token(input: &str) -> IResult<&str, Token> {
@@ -79,14 +80,15 @@ fn parse_token(input: &str) -> IResult<&str, Token> {
             parse_token_sustain,
             parse_token_group,
         )),
-    )(input)
+    )
+    .parse(input)
 }
 
 // --- Block Parser ---
 // function removed
 
 fn parse_block_tokens_only(input: &str) -> IResult<&str, Vec<Token>> {
-    terminated(many0(parse_token), space0)(input)
+    terminated(many0(parse_token), space0).parse(input)
 }
 
 // --- Bar Parser ---
@@ -96,7 +98,8 @@ fn parse_bar(input: &str) -> IResult<&str, Bar> {
         value(Bar::RepeatEnd, Symbol::BarRepeatEnd.tag()),
         value(Bar::RepeatStart, Symbol::BarRepeatStart.tag()),
         value(Bar::Standard, Symbol::BarStandard.char()),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)> {
@@ -170,8 +173,8 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
         return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
     }
 
-    let (input, _) = space0(input)?;
-    let (input, muted_flag) = opt(Symbol::TrackHeaderMute.char())(input)?;
+    let (input, _) = space0.parse(input)?;
+    let (input, muted_flag) = opt(Symbol::TrackHeaderMute.char()).parse(input)?;
 
     Ok((
         input,
@@ -184,7 +187,7 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
 }
 
 pub(crate) fn parse_key(input: &str) -> IResult<&str, &str> {
-    take_while1(|c: char| c != Symbol::BarStandard.as_char() && c != '\n' && c != '\r')(input)
+    take_while1(|c: char| c != Symbol::BarStandard.as_char() && c != '\n' && c != '\r').parse(input)
 }
 
 pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -193,7 +196,8 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
 
     // Check for trailing comment
     let (input, _) = space0(input)?;
-    let (input, trailing_comment) = opt(preceded(Symbol::Comment.char(), not_line_ending))(input)?;
+    let (input, trailing_comment) =
+        opt(preceded(Symbol::Comment.char(), not_line_ending)).parse(input)?;
 
     let mut notes = Vec::new();
     let mut valid_notes = true;
@@ -223,7 +227,7 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
                 notes,
                 blocks,
                 end_bar,
-                trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
+                trailing_comment: trailing_comment.map(|s: &str| s.trim().to_string()),
             },
         )),
         false => {
@@ -235,15 +239,15 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
 }
 
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
-    let (input, _) = space0(input)?;
-    let (input, _) = eof(input)?;
+    let (input, _) = space0.parse(input)?;
+    let (input, _) = eof.parse(input)?;
     Ok((input, ParsedLine::Empty))
 }
 
 fn parse_track_wrap(input: &str) -> IResult<&str, ParsedLine> {
-    let (input, _) = Symbol::TrackWrap.tag()(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = eof(input)?;
+    let (input, _) = Symbol::TrackWrap.tag().parse(input)?;
+    let (input, _) = space0.parse(input)?;
+    let (input, _) = eof.parse(input)?;
     Ok((input, ParsedLine::TrackWrap))
 }
 
@@ -260,9 +264,10 @@ fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
         )));
     }
 
-    let (input, is_latch) = opt(Symbol::ModLatch.char())(input)?;
-    let (input, sign) = opt(alt((Symbol::ModPositive.char(), Symbol::Sustain.char())))(input)?;
-    let (input, digits) = digit1(input)?;
+    let (input, is_latch) = opt(Symbol::ModLatch.char()).parse(input)?;
+    let (input, sign) =
+        opt(alt((Symbol::ModPositive.char(), Symbol::Sustain.char()))).parse(input)?;
+    let (input, digits) = digit1.parse(input)?;
 
     let val: i32 = digits.parse().unwrap_or(0);
     let val = match sign {
@@ -285,7 +290,7 @@ fn parse_modifier_block_values(input: &str) -> IResult<&str, Vec<ModifierValue>>
     let mut current = input;
 
     loop {
-        let (rest, _) = space0(current)?;
+        let (rest, _) = space0.parse(current)?;
         // Check if we hit a bar or end
         if rest.is_empty()
             || rest.starts_with(Symbol::BarStandard.as_char())
@@ -338,8 +343,9 @@ fn parse_modifier_line_blocks(input: &str) -> IResult<&str, (Vec<ModifierBlock>,
 
 fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
     // Parse modifier kind label: "v" or "p" followed by space and bar
-    let (input, kind_char) = alt((Symbol::ModVelocity.char(), Symbol::ModPitch.char()))(input)?;
-    let (input, _) = space0(input)?;
+    let (input, kind_char) =
+        alt((Symbol::ModVelocity.char(), Symbol::ModPitch.char())).parse(input)?;
+    let (input, _) = space0.parse(input)?;
 
     // Must be followed by a bar
     if !input.starts_with(Symbol::BarStandard.as_char())
@@ -361,7 +367,8 @@ fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
 
     // Check for trailing comment
     let (input, _) = space0(input)?;
-    let (input, trailing_comment) = opt(preceded(Symbol::Comment.char(), not_line_ending))(input)?;
+    let (input, trailing_comment) =
+        opt(preceded(Symbol::Comment.char(), not_line_ending)).parse(input)?;
 
     Ok((
         input,
@@ -369,7 +376,7 @@ fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
             kind,
             blocks,
             end_bar,
-            trailing_comment: trailing_comment.map(|s| s.trim().to_string()),
+            trailing_comment: trailing_comment.map(|s: &str| s.trim().to_string()),
         },
     ))
 }
@@ -382,17 +389,18 @@ pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
         parse_empty_line,
         parse_modifier_line,
         parse_pattern_line,
-    ))(input)
+    ))
+    .parse(input)
 }
 
 // --- High Level ---
 
 fn parse_frontmatter(input: &str) -> IResult<&str, Frontmatter> {
-    let (input, _) = Symbol::TrackWrap.tag()(input)?;
-    let (input, _) = line_ending(input)?;
-    let (input, yaml_content) = take_until(Symbol::TrackWrap.as_str())(input)?;
-    let (input, _) = Symbol::TrackWrap.tag()(input)?;
-    let (input, _) = opt(line_ending)(input)?;
+    let (input, _) = Symbol::TrackWrap.tag().parse(input)?;
+    let (input, _) = line_ending.parse(input)?;
+    let (input, yaml_content) = take_until(Symbol::TrackWrap.as_str()).parse(input)?;
+    let (input, _) = Symbol::TrackWrap.tag().parse(input)?;
+    let (input, _) = opt(line_ending).parse(input)?;
 
     let fm: Frontmatter = serde_yaml::from_str(yaml_content).map_err(|_| {
         nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
