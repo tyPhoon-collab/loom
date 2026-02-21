@@ -5,7 +5,7 @@
 Song        = [ Frontmatter ] { Track } ;
 Frontmatter = "---" , newline , yaml_content , "---" , newline ;
 Track       = TrackHeader , { Line } ;
-TrackHeader = "#" , space , name , ":" , space , channel , newline ;
+TrackHeader = "#" , space , name , ":" , space , channel , [ space , "x" ] , newline ;
 ```
 
 ## Lines

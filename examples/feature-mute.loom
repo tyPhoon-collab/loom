@@ -1,0 +1,15 @@
+---
+bpm: 120
+title: Mute Feature Example
+---
+
+# Piano: 1
+C3 | ^ ^ ^ ^ | ^ ^ ^ ^ |
+
+# Bass: 2 x
+C2 | ^ . ^ . | ^ . ^ . |
+> This track is muted and will not be exported to MIDI.
+
+# Drums: 10
+kick | ^ . ^ . | ^ . ^ . |
+snare | . ^ . ^ | . ^ . ^ |

@@ -56,8 +56,13 @@ pub fn format_string_with_mode(input: &str, mode: FormattingMode) -> String {
                 // Print the current non-pattern line
                 match line {
                     ParsedLine::Frontmatter(s) => output.push_str(s),
-                    ParsedLine::TrackHeader { name, channel } => {
-                        writeln!(output, "# {}: {}", name, channel).unwrap();
+                    ParsedLine::TrackHeader {
+                        name,
+                        channel,
+                        muted,
+                    } => {
+                        let mute_str = if *muted { " x" } else { "" };
+                        writeln!(output, "# {}: {}{}", name, channel, mute_str).unwrap();
                     }
                     ParsedLine::Comment(s) => {
                         // Ensure comment starts with > if strictly parsed as comment

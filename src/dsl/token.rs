@@ -126,6 +126,7 @@ pub struct Section {
 pub struct Track {
     pub name: String,
     pub channel: u8,
+    pub muted: bool,
     pub sections: Vec<Section>,
 }
 

@@ -50,6 +50,9 @@ impl Compiler {
         let mut events = Vec::new();
 
         for track in &song.tracks {
+            if track.muted {
+                continue;
+            }
             self.compile_track(track, &mut events, song.metadata.pitch)?;
         }
 

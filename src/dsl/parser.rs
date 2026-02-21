@@ -157,6 +157,7 @@ pub enum ParsedLine {
     TrackHeader {
         name: String,
         channel: u8,
+        muted: bool,
     },
     Pattern {
         key: String,
@@ -195,11 +196,15 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
         return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
     }
 
+    let (input, _) = space0(input)?;
+    let (input, muted_flag) = opt(char('x'))(input)?;
+
     Ok((
         input,
         ParsedLine::TrackHeader {
             name: name.trim().to_string(),
             channel,
+            muted: muted_flag.is_some(),
         },
     ))
 }
@@ -441,13 +446,18 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
 
         match parse_line_entry(trimmed) {
             Ok((_, parsed)) => match parsed {
-                ParsedLine::TrackHeader { name, channel } => {
+                ParsedLine::TrackHeader {
+                    name,
+                    channel,
+                    muted,
+                } => {
                     if let Some(t) = current_track.take() {
                         tracks.push(t);
                     }
                     current_track = Some(Track {
                         name,
                         channel,
+                        muted,
                         sections: vec![crate::dsl::token::Section { lines: Vec::new() }],
                     });
                 }
