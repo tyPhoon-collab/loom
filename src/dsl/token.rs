@@ -151,8 +151,6 @@ pub struct Frontmatter {
     pub r#loop: bool,
     #[allow(dead_code)]
     pub loop_range: Option<String>,
-    #[serde(default)]
-    pub formatter: Option<String>,
 }
 
 fn default_bpm() -> u32 {
@@ -177,7 +175,6 @@ impl Default for Frontmatter {
             author: None,
             r#loop: false,
             loop_range: None,
-            formatter: None,
         }
     }
 }

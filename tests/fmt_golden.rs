@@ -1,4 +1,4 @@
-use loom::dsl::formatter::{self, FormattingMode};
+use loom::dsl::formatter;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -26,55 +26,17 @@ fn test_fmt_golden() {
         let file_name = path.file_name().unwrap().to_str().unwrap();
         let input_content = fs::read_to_string(path).unwrap();
 
-        // Test Minimize Mode
-        let expected_minimize_path = expected_dir.join("minimize").join(file_name);
-        if expected_minimize_path.exists() {
-            let expected = fs::read_to_string(&expected_minimize_path).unwrap();
-            let actual =
-                formatter::format_string_with_mode(&input_content, FormattingMode::Minimize);
+        let expected_path = expected_dir.join(file_name);
+        if expected_path.exists() {
+            let actual = formatter::format_string(&input_content);
+            let expected = fs::read_to_string(&expected_path).unwrap();
             if actual.trim() != expected.trim() {
+                println!(
+                    "MISMATCH in {}:\nACTUAL:\n---\n{}\n---\nEXPECTED:\n---\n{}\n---\n",
+                    file_name, actual, expected
+                );
                 failures.push(format!(
-                    "Minimize mode mismatch for {}:\nExpected:\n---\n{}\n---\nActual:\n---\n{}\n---",
-                    file_name, expected, actual
-                ));
-            }
-        }
-
-        // Test Justify Mode
-        let expected_justify_path = expected_dir.join("justify").join(file_name);
-        if expected_justify_path.exists() {
-            let expected = fs::read_to_string(&expected_justify_path).unwrap();
-            let actual =
-                formatter::format_string_with_mode(&input_content, FormattingMode::Justify);
-            if actual.trim() != expected.trim() {
-                failures.push(format!(
-                    "Justify mode mismatch for {}:\nExpected:\n---\n{}\n---\nActual:\n---\n{}\n---",
-                    file_name, expected, actual
-                ));
-            }
-        }
-
-        // Test Equal Mode
-        let expected_equal_path = expected_dir.join("equal").join(file_name);
-        if expected_equal_path.exists() {
-            let expected = fs::read_to_string(&expected_equal_path).unwrap();
-            let actual = formatter::format_string_with_mode(&input_content, FormattingMode::Equal);
-            if actual.trim() != expected.trim() {
-                failures.push(format!(
-                    "Equal mode mismatch for {}:\nExpected:\n---\n{}\n---\nActual:\n---\n{}\n---",
-                    file_name, expected, actual
-                ));
-            }
-        }
-
-        // Test Time Mode
-        let expected_time_path = expected_dir.join("time").join(file_name);
-        if expected_time_path.exists() {
-            let expected = fs::read_to_string(&expected_time_path).unwrap();
-            let actual = formatter::format_string_with_mode(&input_content, FormattingMode::Time);
-            if actual.trim() != expected.trim() {
-                failures.push(format!(
-                    "Time mode mismatch for {}:\nExpected:\n---\n{}\n---\nActual:\n---\n{}\n---",
+                    "Mismatch for {}:\nExpected:\n---\n{}\n---\nActual:\n---\n{}\n---",
                     file_name, expected, actual
                 ));
             }

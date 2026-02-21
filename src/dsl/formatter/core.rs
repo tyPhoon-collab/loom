@@ -1,58 +1,22 @@
 use crate::dsl::parser::ParsedLine;
-use crate::dsl::token::ModifierValue;
+use crate::dsl::token::{Block, ModifierValue};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FormattingMode {
-    Minimize,
-    Justify,
-    Equal,
-    Time,
+// --- Equal Formatter Context ---
+
+struct BlockInfo {
+    bar_width: usize,
+    max_tokens: usize,
+    token_widths: Vec<usize>,
 }
 
-pub trait PatternFormatter {
-    type Context;
-
-    /// Prepare formatting context.
-    /// `min_slot_widths[block_index]` is the minimum width each non-Group slot must have
-    /// (driven by modifier value widths at non-Group positions).
-    fn prepare_context(&self, patterns: &[&ParsedLine], min_slot_widths: &[usize])
-        -> Self::Context;
-
-    fn format_block(
-        &self,
-        buf: &mut String,
-        block: &crate::dsl::token::Block,
-        context: &Self::Context,
-        block_index: usize,
-    ) -> std::fmt::Result;
-
-    /// Returns per-slot widths for modifier value output.
-    /// `token_count` is the parent pattern's token count for this block.
-    fn slot_widths(
-        &self,
-        context: &Self::Context,
-        block_index: usize,
-        token_count: usize,
-    ) -> Vec<usize> {
-        let _ = token_count;
-        let n = self.slot_count(context, block_index);
-        vec![1; n]
-    }
-
-    /// Returns the number of slots for the given block.
-    fn slot_count(&self, context: &Self::Context, block_index: usize) -> usize {
-        let _ = (context, block_index);
-        0
-    }
-
-    /// Returns the bar width for the given block.
-    fn bar_width(&self, context: &Self::Context, block_index: usize) -> usize {
-        let _ = (context, block_index);
-        1
-    }
+struct FormatContext {
+    blocks: Vec<BlockInfo>,
 }
+
+// --- Helpers ---
 
 fn modifier_value_width(val: &ModifierValue) -> usize {
     match val {
@@ -68,10 +32,192 @@ fn modifier_value_str(val: &ModifierValue) -> String {
     }
 }
 
-pub fn format_patterns_generic<F: PatternFormatter>(
-    patterns: &[&ParsedLine],
-    formatter: F,
-) -> String {
+// --- Core Formatting ---
+
+fn prepare_context(patterns: &[&ParsedLine], min_slot_widths: &[usize]) -> FormatContext {
+    let max_blocks = patterns
+        .iter()
+        .map(|p| match p {
+            ParsedLine::Pattern { blocks, .. } => blocks.len(),
+            _ => 0,
+        })
+        .max()
+        .unwrap_or(0);
+
+    let mut block_infos = Vec::new();
+
+    for i in 0..max_blocks {
+        let mut max_bar_width = 0;
+        let mut max_tokens = 0;
+        let min_sw = min_slot_widths.get(i).copied().unwrap_or(1);
+
+        for p in patterns {
+            if let ParsedLine::Pattern { blocks, .. } = p {
+                if let Some(block) = blocks.get(i) {
+                    max_bar_width = max_bar_width.max(block.start_bar.to_string().len());
+                    max_tokens = max_tokens.max(block.tokens.len());
+                }
+            }
+        }
+
+        let mut token_widths = vec![0; max_tokens];
+        for p in patterns {
+            if let ParsedLine::Pattern { blocks, .. } = p {
+                if let Some(block) = blocks.get(i) {
+                    let k = block.tokens.len();
+                    if k == 0 {
+                        continue;
+                    }
+                    let m = max_tokens;
+
+                    if k == 1 {
+                        token_widths[0] = token_widths[0].max(block.tokens[0].to_string().len());
+                    } else {
+                        for (t_idx, t) in block.tokens.iter().enumerate() {
+                            let slot = ((t_idx as f64 * (m - 1) as f64) / ((k - 1) as f64)).round()
+                                as usize;
+                            if slot < max_tokens {
+                                token_widths[slot] = token_widths[slot].max(t.to_string().len());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply modifier min slot widths only to non-Group positions
+        for (slot_idx, tw) in token_widths.iter_mut().enumerate() {
+            let is_group_slot = patterns.iter().any(|p| {
+                if let ParsedLine::Pattern { blocks, .. } = p {
+                    if let Some(block) = blocks.get(i) {
+                        let k = block.tokens.len();
+                        if k == 0 {
+                            return false;
+                        }
+                        let m = max_tokens;
+                        for (t_idx, t) in block.tokens.iter().enumerate() {
+                            let mapped_slot = if k == 1 {
+                                0
+                            } else {
+                                ((t_idx as f64 * (m - 1) as f64) / ((k - 1) as f64)).round()
+                                    as usize
+                            };
+                            if mapped_slot == slot_idx && t.is_group() {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            });
+
+            if !is_group_slot {
+                *tw = (*tw).max(min_sw);
+            }
+        }
+
+        block_infos.push(BlockInfo {
+            bar_width: max_bar_width,
+            max_tokens,
+            token_widths,
+        });
+    }
+
+    FormatContext {
+        blocks: block_infos,
+    }
+}
+
+fn format_block(
+    buf: &mut String,
+    block: &Block,
+    context: &FormatContext,
+    block_index: usize,
+) -> std::fmt::Result {
+    let info = &context.blocks[block_index];
+
+    write!(
+        buf,
+        "{:width$} ",
+        block.start_bar.to_string(),
+        width = info.bar_width
+    )?;
+
+    let k = block.tokens.len();
+    let m = info.max_tokens;
+    let mut token_map = HashMap::new();
+
+    if k > 0 {
+        if k == 1 {
+            token_map.insert(0, &block.tokens[0]);
+        } else {
+            for (t_idx, t) in block.tokens.iter().enumerate() {
+                let slot = ((t_idx as f64 * (m - 1) as f64) / ((k - 1) as f64)).round() as usize;
+                token_map.insert(slot, t);
+            }
+        }
+    }
+
+    for (slot_idx, &slot_w) in info.token_widths.iter().enumerate() {
+        if let Some(token) = token_map.get(&slot_idx) {
+            write!(buf, "{:width$}", token.to_string(), width = slot_w)?;
+        } else {
+            write!(buf, "{:width$}", "", width = slot_w)?;
+        }
+        write!(buf, " ")?;
+    }
+    Ok(())
+}
+
+fn slot_widths(context: &FormatContext, block_index: usize, token_count: usize) -> Vec<usize> {
+    if let Some(info) = context.blocks.get(block_index) {
+        if token_count == 0 {
+            return vec![];
+        }
+        let mut widths = vec![0; token_count];
+        let m = info.max_tokens;
+
+        // Pattern content width including spaces
+        let total_content_width = info.token_widths.iter().map(|w| w + 1).sum::<usize>();
+
+        if token_count == 1 {
+            widths[0] = total_content_width.saturating_sub(1);
+        } else if m <= 1 {
+            widths.fill(info.token_widths.first().copied().unwrap_or(0));
+        } else {
+            let mut last_slot = 0;
+            for t_idx in 0..token_count {
+                let slot =
+                    ((t_idx as f64 * (m - 1) as f64) / ((token_count - 1) as f64)).round() as usize;
+
+                if t_idx > 0 {
+                    let gap_width: usize = info.token_widths[last_slot + 1..slot]
+                        .iter()
+                        .map(|&w| w + 1)
+                        .sum();
+                    widths[t_idx - 1] += gap_width;
+                }
+                widths[t_idx] = info.token_widths[slot];
+                last_slot = slot;
+            }
+            // Add remaining slots after the last token to the last token's width
+            if last_slot < m - 1 {
+                let gap_width: usize = info.token_widths[last_slot + 1..m]
+                    .iter()
+                    .map(|&w| w + 1)
+                    .sum();
+                widths[token_count - 1] += gap_width;
+            }
+        }
+        widths
+    } else {
+        vec![1; token_count]
+    }
+}
+
+// --- Main Entry Point ---
+
+pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
     if patterns.is_empty() {
         return String::new();
     }
@@ -105,15 +251,14 @@ pub fn format_patterns_generic<F: PatternFormatter>(
             }
         }
     }
-
     // Build pointer map from pattern to its modifier lines
     let group_map: std::collections::HashMap<*const ParsedLine, &Vec<&ParsedLine>> = groups
         .iter()
         .map(|(p, mods)| (*p as *const ParsedLine, mods))
         .collect();
 
-    // Compute per-block-column min slot width from modifier values
-    // EXCLUDING modifier values at Group token positions
+    // --- Alignment Calculations ---
+
     let max_blocks = sorted_patterns
         .iter()
         .map(|p| match p {
@@ -124,26 +269,27 @@ pub fn format_patterns_generic<F: PatternFormatter>(
         .unwrap_or(0);
 
     let mut min_slot_widths = vec![1usize; max_blocks];
+    let mut max_block_widths = vec![0usize; max_blocks];
+
     for (p, mods) in &groups {
         if let ParsedLine::Pattern {
             blocks: pattern_blocks,
             ..
         } = p
         {
-            for m in mods {
-                if let ParsedLine::Modifier { blocks, .. } = m {
-                    for (b_idx, mblock) in blocks.iter().enumerate() {
-                        if b_idx < max_blocks {
-                            // Get pattern tokens for this block to check Group positions
-                            let pattern_tokens = pattern_blocks
-                                .get(b_idx)
-                                .map(|b| &b.tokens[..])
-                                .unwrap_or(&[]);
+            for (b_idx, pblock) in pattern_blocks.iter().enumerate() {
+                if b_idx >= max_blocks {
+                    continue;
+                }
 
+                // First, find msw for this block across all its modifiers
+                for m in mods {
+                    if let ParsedLine::Modifier { blocks, .. } = m {
+                        if let Some(mblock) = blocks.get(b_idx) {
                             for (val_idx, val) in mblock.values.iter().enumerate() {
                                 if let Some(v) = val {
-                                    // Exclude Group positions from unified width
-                                    let is_group = pattern_tokens
+                                    let is_group = pblock
+                                        .tokens
                                         .get(val_idx)
                                         .map(|t| t.is_group())
                                         .unwrap_or(false);
@@ -156,11 +302,45 @@ pub fn format_patterns_generic<F: PatternFormatter>(
                         }
                     }
                 }
+
+                // Now compute intrinsic widths using the final msw
+                let msw = min_slot_widths[b_idx];
+                let mut pw = 0;
+                for token in &pblock.tokens {
+                    pw += if token.is_group() {
+                        token.to_string().len()
+                    } else {
+                        token.to_string().len().max(msw)
+                    } + 1;
+                }
+                max_block_widths[b_idx] = max_block_widths[b_idx].max(pw);
+
+                for m in mods {
+                    if let ParsedLine::Modifier { blocks, .. } = m {
+                        if let Some(mblock) = blocks.get(b_idx) {
+                            let mut mw = 0;
+                            for (val_idx, val) in mblock.values.iter().enumerate() {
+                                let val_w = val.as_ref().map(modifier_value_width).unwrap_or(0);
+                                let slot_w = if let Some(t) = pblock.tokens.get(val_idx) {
+                                    if t.is_group() {
+                                        t.to_string().len()
+                                    } else {
+                                        msw
+                                    }
+                                } else {
+                                    msw
+                                };
+                                mw += slot_w.max(val_w) + 1;
+                            }
+                            max_block_widths[b_idx] = max_block_widths[b_idx].max(mw);
+                        }
+                    }
+                }
             }
         }
     }
 
-    let context = formatter.prepare_context(&sorted_patterns, &min_slot_widths);
+    let context = prepare_context(&sorted_patterns, &min_slot_widths);
 
     let mut out = String::new();
 
@@ -176,9 +356,7 @@ pub fn format_patterns_generic<F: PatternFormatter>(
             write!(out, "{:width$} ", sorted_key, width = max_key_width).unwrap();
 
             for (b_idx, block) in blocks.iter().enumerate() {
-                formatter
-                    .format_block(&mut out, block, &context, b_idx)
-                    .unwrap();
+                format_block(&mut out, block, &context, b_idx).unwrap();
             }
 
             write!(out, "{}", end_bar).unwrap();
@@ -199,22 +377,29 @@ pub fn format_patterns_generic<F: PatternFormatter>(
                         write!(out, "{:width$} ", kind, width = max_key_width).unwrap();
 
                         for (b_idx, mblock) in mod_blocks.iter().enumerate() {
-                            let bw = formatter.bar_width(&context, b_idx);
+                            let bw = context
+                                .blocks
+                                .get(b_idx)
+                                .map(|info| info.bar_width)
+                                .unwrap_or(1);
 
                             // Get pattern block tokens for Group detection
                             let pattern_tokens =
                                 blocks.get(b_idx).map(|b| &b.tokens[..]).unwrap_or(&[]);
 
-                            let per_slot_widths =
-                                formatter.slot_widths(&context, b_idx, pattern_tokens.len());
-                            let num_slots = pattern_tokens.len();
+                            let num_slots = pattern_tokens.len().max(
+                                context
+                                    .blocks
+                                    .get(b_idx)
+                                    .map(|info| info.max_tokens)
+                                    .unwrap_or(0),
+                            );
+                            let per_slot_widths = slot_widths(&context, b_idx, num_slots);
 
                             write!(out, "{:width$} ", mblock.start_bar.to_string(), width = bw)
                                 .unwrap();
 
                             for slot_idx in 0..num_slots {
-                                // Use slot_widths from formatter, but for Group positions
-                                // override with the Group's display width if it's larger
                                 let base_sw = per_slot_widths.get(slot_idx).copied().unwrap_or(1);
                                 let sw = if let Some(token) = pattern_tokens.get(slot_idx) {
                                     if token.is_group() {
@@ -225,12 +410,16 @@ pub fn format_patterns_generic<F: PatternFormatter>(
                                 } else {
                                     base_sw
                                 };
-                                let val_s = mblock
-                                    .values
-                                    .get(slot_idx)
-                                    .and_then(|v| v.as_ref())
-                                    .map(modifier_value_str)
-                                    .unwrap_or_default();
+                                let val_s = if slot_idx < pattern_tokens.len() {
+                                    mblock
+                                        .values
+                                        .get(slot_idx)
+                                        .and_then(|v| v.as_ref())
+                                        .map(modifier_value_str)
+                                        .unwrap_or_default()
+                                } else {
+                                    String::new()
+                                };
                                 write!(out, "{:width$} ", val_s, width = sw).unwrap();
                             }
                         }
@@ -247,7 +436,7 @@ pub fn format_patterns_generic<F: PatternFormatter>(
 
 // --- Common Helpers ---
 
-pub(crate) fn sort_patterns<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedLine>, Vec<String>) {
+fn sort_patterns<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedLine>, Vec<String>) {
     let mut patterns = patterns.to_vec();
 
     patterns.sort_by(|a, b| {
@@ -300,6 +489,6 @@ pub(crate) fn sort_patterns<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedL
     (patterns, sorted_keys)
 }
 
-pub(crate) fn calculate_max_key_width(keys: &[String]) -> usize {
+fn calculate_max_key_width(keys: &[String]) -> usize {
     keys.iter().map(|k| k.len()).max().unwrap_or(0)
 }
