@@ -2,8 +2,11 @@
 C3 | ^ ^ |  
 G2 | ^ . |  
 # Track: 2
-C4 | ^ . |     
+C4 | ^ . |    
+---
+---
 > comment with spaces
 ---
 # Track: 3
    E3 | ^ ^ |
+---

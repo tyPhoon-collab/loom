@@ -20,6 +20,13 @@ pub fn format_string(input: &str) -> String {
                 // Explicitly ignore existing empty lines; we will regenerate them
                 continue;
             }
+            ParsedLine::TrackWrap => {
+                if !current_data.is_empty() {
+                    elements.push(OutputElement::Data(current_data));
+                    current_data = Vec::new();
+                }
+                elements.push(OutputElement::Meta(line));
+            }
             _ => {
                 if !current_data.is_empty() {
                     elements.push(OutputElement::Data(current_data));
@@ -32,6 +39,21 @@ pub fn format_string(input: &str) -> String {
     if !current_data.is_empty() {
         elements.push(OutputElement::Data(current_data));
     }
+
+    // Post-process: Keep TrackWrap only between two Data elements
+    let mut final_elements = Vec::with_capacity(elements.len());
+    let mut iter = elements.into_iter().peekable();
+    while let Some(element) = iter.next() {
+        if matches!(element, OutputElement::Meta(ParsedLine::TrackWrap)) {
+            let prev_is_data = matches!(final_elements.last(), Some(OutputElement::Data(_)));
+            let next_is_data = matches!(iter.peek(), Some(OutputElement::Data(_)));
+            if !(prev_is_data && next_is_data) {
+                continue;
+            }
+        }
+        final_elements.push(element);
+    }
+    let elements = final_elements;
 
     // Now write elements with mandatory empty line between them
     for (i, element) in elements.iter().enumerate() {
