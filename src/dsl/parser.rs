@@ -29,7 +29,7 @@ pub enum ParsedLine {
     Empty,
     TrackWrap,
 }
-use miette::NamedSource;
+use miette::Result;
 use nom::{
     branch::alt,
     bytes::complete::{take_until, take_while1},
@@ -167,12 +167,7 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = space0(input)?;
     let (input, channel_str) = digit1(input)?;
 
-    let channel = channel_str.parse::<u8>().unwrap_or(0); // 0 is invalid anyway
-    if !(1..=16).contains(&channel) {
-        use nom::error::{Error, ErrorKind};
-        return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
-    }
-
+    let channel = channel_str.parse::<u8>().unwrap_or(0);
     let (input, _) = space0.parse(input)?;
     let (input, muted_flag) = opt(Symbol::TrackHeaderMute.char()).parse(input)?;
 
@@ -417,12 +412,11 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
         match parse_frontmatter(input) {
             Ok(res) => res,
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                let offset = e.input.as_ptr() as usize - source.as_ptr() as usize;
-                return Err(ParseError::YamlError {
-                    src: NamedSource::new("input", source.clone()), // Clone here
-                    span: (offset, 10).into(),
-                    msg: "Invalid Frontmatter YAML".to_string(),
-                });
+                return Err(ParseError::from_yaml(
+                    e.input,
+                    &source,
+                    "Invalid Frontmatter YAML".to_string(),
+                ));
             }
             Err(_) => panic!("Incomplete input"),
         }
@@ -430,13 +424,20 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
         (input, Frontmatter::default())
     };
 
-    let mut tracks: Vec<Track> = Vec::new();
-    let mut current_track: Option<Track> = None;
+    if metadata.bpm == 0 || metadata.bpm > 999 {
+        return Err(ParseError::from_validation(
+            &source[..3], // Point to the start of frontmatter
+            &source,
+            format!("Invalid BPM: {}", metadata.bpm),
+            Some("BPM must be between 1 and 999. Example: bpm: 120".to_string()),
+        ));
+    }
+
+    let mut builder = SongBuilder::new(&source);
 
     // Line by line parsing
-
-    for line in input.lines() {
-        let trimmed = line.trim();
+    for line_str in input.lines() {
+        let trimmed = line_str.trim();
 
         match parse_line_entry(trimmed) {
             Ok((_, parsed)) => match parsed {
@@ -445,27 +446,10 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     channel,
                     muted,
                 } => {
-                    if let Some(t) = current_track.take() {
-                        tracks.push(t);
-                    }
-                    current_track = Some(Track {
-                        name,
-                        channel,
-                        muted,
-                        sections: vec![crate::dsl::token::Section {
-                            label: None,
-                            lines: Vec::new(),
-                        }],
-                    });
+                    builder.add_track(name, channel, line_str, muted)?;
                 }
                 ParsedLine::TrackWrap => {
-                    // Start a new section in the current track
-                    if let Some(ref mut track) = current_track {
-                        track.sections.push(crate::dsl::token::Section {
-                            label: None,
-                            lines: Vec::new(),
-                        });
-                    }
+                    builder.add_section(line_str)?;
                 }
                 ParsedLine::Pattern {
                     notes,
@@ -473,20 +457,7 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     end_bar,
                     ..
                 } => {
-                    if let Some(ref mut track) = current_track {
-                        if track.sections.is_empty() {
-                            track.sections.push(crate::dsl::token::Section {
-                                label: None,
-                                lines: Vec::new(),
-                            });
-                        }
-                        track.sections.last_mut().unwrap().lines.push(Line {
-                            notes,
-                            blocks,
-                            end_bar,
-                            modifiers: Vec::new(),
-                        });
-                    }
+                    builder.add_pattern(line_str, notes, blocks, end_bar)?;
                 }
                 ParsedLine::Modifier {
                     kind,
@@ -494,38 +465,164 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                     end_bar,
                     trailing_comment,
                 } => {
-                    // Bind to the last line in the current section
-                    if let Some(ref mut track) = current_track {
-                        if let Some(section) = track.sections.last_mut() {
-                            if let Some(line) = section.lines.last_mut() {
-                                line.modifiers.push(ModifierLine {
-                                    kind,
-                                    blocks,
-                                    end_bar,
-                                    trailing_comment,
-                                });
-                            }
-                        }
-                    }
+                    builder.add_modifier(line_str, kind, blocks, end_bar, trailing_comment)?;
                 }
                 ParsedLine::Comment(_) | ParsedLine::Empty | ParsedLine::Frontmatter(_) => {}
             },
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                let offset = line.as_ptr() as usize - source.as_ptr() as usize;
-
-                return Err(ParseError::NomError {
-                    src: NamedSource::new("input", source.clone()),
-                    span: (offset, line.len()).into(),
-                    kind: format!("{:?}", e.code),
-                });
+                return Err(ParseError::from_nom(
+                    line_str,
+                    &source,
+                    format!("{:?}", e.code),
+                ));
             }
             _ => {}
         }
     }
 
-    if let Some(t) = current_track {
-        tracks.push(t);
+    Ok(Song {
+        metadata,
+        tracks: builder.finish(),
+    })
+}
+
+struct SongBuilder<'a> {
+    tracks: Vec<Track>,
+    current_track: Option<Track>,
+    source: &'a str,
+}
+
+impl<'a> SongBuilder<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            tracks: Vec::new(),
+            current_track: None,
+            source,
+        }
     }
 
-    Ok(Song { metadata, tracks })
+    fn add_track(
+        &mut self,
+        name: String,
+        channel: u8,
+        line_str: &str,
+        muted: bool,
+    ) -> Result<(), ParseError> {
+        if !(1..=16).contains(&channel) {
+            return Err(ParseError::from_validation(
+                line_str,
+                self.source,
+                format!("Invalid MIDI channel: {}", channel),
+                Some("MIDI channel must be between 1 and 16.".to_string()),
+            ));
+        }
+
+        if let Some(t) = self.current_track.take() {
+            self.tracks.push(t);
+        }
+        self.current_track = Some(Track {
+            name,
+            channel,
+            muted,
+            sections: vec![crate::dsl::token::Section {
+                label: None,
+                lines: Vec::new(),
+            }],
+        });
+        Ok(())
+    }
+
+    fn add_section(&mut self, line_str: &str) -> Result<(), ParseError> {
+        let track = self.current_track.as_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Track header required before section divider (---)".to_string(),
+            )
+        })?;
+        track.sections.push(crate::dsl::token::Section {
+            label: None,
+            lines: Vec::new(),
+        });
+        Ok(())
+    }
+
+    fn add_pattern(
+        &mut self,
+        line_str: &str,
+        notes: Vec<Note>,
+        blocks: Vec<Block>,
+        end_bar: Bar,
+    ) -> Result<(), ParseError> {
+        let track = self.current_track.as_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Track header required before pattern line".to_string(),
+            )
+        })?;
+
+        if track.sections.is_empty() {
+            track.sections.push(crate::dsl::token::Section {
+                label: None,
+                lines: Vec::new(),
+            });
+        }
+
+        track.sections.last_mut().unwrap().lines.push(Line {
+            notes,
+            blocks,
+            end_bar,
+            modifiers: Vec::new(),
+        });
+        Ok(())
+    }
+
+    fn add_modifier(
+        &mut self,
+        line_str: &str,
+        kind: ModifierKind,
+        blocks: Vec<ModifierBlock>,
+        end_bar: Bar,
+        trailing_comment: Option<String>,
+    ) -> Result<(), ParseError> {
+        let track = self.current_track.as_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Track header required before modifier line".to_string(),
+            )
+        })?;
+
+        let section = track.sections.last_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Section required before modifier line".to_string(),
+            )
+        })?;
+
+        let line = section.lines.last_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Pattern line (notes) required before modifier line (v or p)".to_string(),
+            )
+        })?;
+
+        line.modifiers.push(ModifierLine {
+            kind,
+            blocks,
+            end_bar,
+            trailing_comment,
+        });
+        Ok(())
+    }
+
+    fn finish(mut self) -> Vec<Track> {
+        if let Some(t) = self.current_track.take() {
+            self.tracks.push(t);
+        }
+        self.tracks
+    }
 }
