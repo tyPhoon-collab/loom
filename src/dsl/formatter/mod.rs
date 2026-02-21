@@ -2,6 +2,7 @@ mod core;
 pub mod parser;
 
 use crate::dsl::parser::ParsedLine;
+use crate::dsl::syntax::Symbol;
 use std::fmt::Write;
 
 pub fn format_string(input: &str) -> String {
@@ -102,13 +103,13 @@ fn format_meta_line(line: &ParsedLine) -> String {
         }
         ParsedLine::Comment(s) => {
             let trimmed = s.trim();
-            if trimmed.starts_with('>') {
+            if trimmed.starts_with(Symbol::Comment.as_char()) {
                 out.push_str(trimmed);
             } else {
-                write!(out, "> {}", trimmed).unwrap();
+                write!(out, "{} {}", Symbol::Comment, trimmed).unwrap();
             }
         }
-        ParsedLine::TrackWrap => out.push_str("---"),
+        ParsedLine::TrackWrap => out.push_str(Symbol::TrackWrap.as_str()),
         _ => {} // Should not happen for Meta
     }
     out

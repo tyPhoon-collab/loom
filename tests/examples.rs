@@ -37,11 +37,11 @@ fn test_examples() {
                     }
                 }
             } else {
-                let song = res.expect(&format!("Failed to parse example: {}", filename));
+                let song = res.unwrap_or_else(|_| panic!("Failed to parse example: {}", filename));
                 let compiler = compiler::Compiler::new(&song).expect("Failed to create compiler");
                 let events = compiler
                     .compile(&song)
-                    .expect(&format!("Failed to compile example: {}", filename));
+                    .unwrap_or_else(|_| panic!("Failed to compile example: {}", filename));
 
                 // Snapshot test
                 insta::with_settings!({

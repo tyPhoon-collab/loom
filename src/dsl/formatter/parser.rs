@@ -1,4 +1,5 @@
 use crate::dsl::parser::{self, ParsedLine};
+use crate::dsl::syntax::Symbol;
 
 /// Parse the entire source into a list of ParsedLine for formatting.
 pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
@@ -10,7 +11,7 @@ pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
         let trimmed = line.trim();
 
         // Frontmatter handling (Manual handling as parser might expect full string)
-        if i == 0 && trimmed == "---" {
+        if i == 0 && trimmed == Symbol::TrackWrap.as_str() {
             in_frontmatter = true;
             frontmatter_buffer.push_str(line);
             frontmatter_buffer.push('\n');
@@ -19,7 +20,7 @@ pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
         if in_frontmatter {
             frontmatter_buffer.push_str(line);
             frontmatter_buffer.push('\n');
-            if trimmed == "---" {
+            if trimmed == Symbol::TrackWrap.as_str() {
                 in_frontmatter = false;
                 lines.push(ParsedLine::Frontmatter(frontmatter_buffer.clone()));
                 frontmatter_buffer.clear();

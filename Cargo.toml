@@ -9,7 +9,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_yaml = "0.9.27"
 anyhow = "1.0.75"
-miette = { version = "5.10", features = ["fancy"] }
+miette = { version = "7", features = ["fancy"] }
 thiserror = "1.0"
 colored = "2.0"
 tabled = "0.15"

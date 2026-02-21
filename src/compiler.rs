@@ -105,17 +105,17 @@ impl Compiler {
                 for (token_idx, target_slot) in
                     target[block_idx].iter_mut().enumerate().take(num_tokens)
                 {
-                    let mod_val = mod_values.get(token_idx).and_then(|v| v.as_ref());
+                    let mod_val = mod_values.get(token_idx).unwrap_or(&ModifierValue::Empty);
                     match mod_val {
-                        Some(ModifierValue::Set(v)) => {
+                        ModifierValue::Set(v) => {
                             *target_slot = *v;
                             latch_value = None; // One-shot: clear latch
                         }
-                        Some(ModifierValue::Latch(v)) => {
+                        ModifierValue::Latch(v) => {
                             *target_slot = *v;
                             latch_value = Some(*v);
                         }
-                        None => {
+                        ModifierValue::Empty => {
                             // If latched, continue with latch value; otherwise default
                             *target_slot = latch_value.unwrap_or(default_val);
                         }

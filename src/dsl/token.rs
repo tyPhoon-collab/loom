@@ -18,9 +18,9 @@ impl Token {
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Note => write!(f, "^"),
-            Token::Rest => write!(f, "."),
-            Token::Sustain => write!(f, "-"),
+            Token::Note => write!(f, "{}", Symbol::Note),
+            Token::Rest => write!(f, "{}", Symbol::Rest),
+            Token::Sustain => write!(f, "{}", Symbol::Sustain),
             Token::Group(tokens) => {
                 write!(f, "[")?;
                 for (i, t) in tokens.iter().enumerate() {
@@ -46,20 +46,21 @@ pub enum Bar {
 impl std::fmt::Display for Bar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Bar::Standard => "|",
-            Bar::RepeatStart => "|:",
-            Bar::RepeatEnd => ":|",
-            Bar::Double => ":|:",
+            Bar::Standard => Symbol::BarStandard.as_str(),
+            Bar::RepeatStart => Symbol::BarRepeatStart.as_str(),
+            Bar::RepeatEnd => Symbol::BarRepeatEnd.as_str(),
+            Bar::Double => Symbol::BarDouble.as_str(),
         };
         write!(f, "{}", s)
     }
 }
 
-/// モディファイアの値（ラッチ or ワンショット）
+/// モディファイアのスロット（値、ラッチ、または空）
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModifierValue {
-    Set(i32),   // ワンショット: 100, +2, -1
-    Latch(i32), // ラッチ: !80, !+2
+    Empty,
+    Set(i32),
+    Latch(i32),
 }
 
 /// モディファイアの種類
@@ -69,13 +70,18 @@ pub enum ModifierKind {
     Pitch,    // p
 }
 
+impl ModifierKind {
+    pub fn as_char(&self) -> char {
+        match self {
+            ModifierKind::Velocity => Symbol::ModVelocity.as_char(),
+            ModifierKind::Pitch => Symbol::ModPitch.as_char(),
+        }
+    }
+}
+
 impl std::fmt::Display for ModifierKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            ModifierKind::Velocity => "v",
-            ModifierKind::Pitch => "p",
-        };
-        f.pad(s)
+        f.pad(&self.as_char().to_string())
     }
 }
 
@@ -92,7 +98,7 @@ impl ModifierKind {
 #[derive(Debug, Clone)]
 pub struct ModifierBlock {
     pub start_bar: Bar,
-    pub values: Vec<Option<ModifierValue>>,
+    pub values: Vec<ModifierValue>,
 }
 
 /// 1行分のモディファイア
@@ -120,6 +126,7 @@ pub struct Line {
 
 #[derive(Debug, Clone)]
 pub struct Section {
+    pub label: Option<String>,
     pub lines: Vec<Line>,
 }
 
@@ -185,3 +192,5 @@ pub struct Song {
     pub metadata: Frontmatter,
     pub tracks: Vec<Track>,
 }
+
+use super::syntax::Symbol;

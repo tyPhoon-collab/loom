@@ -22,6 +22,7 @@ fn modifier_value_width(val: &ModifierValue) -> usize {
     match val {
         ModifierValue::Set(v) => format!("{}", v).len(),
         ModifierValue::Latch(v) => format!("!{}", v).len(),
+        ModifierValue::Empty => 0,
     }
 }
 
@@ -29,6 +30,7 @@ fn modifier_value_str(val: &ModifierValue) -> String {
     match val {
         ModifierValue::Set(v) => format!("{}", v),
         ModifierValue::Latch(v) => format!("!{}", v),
+        ModifierValue::Empty => String::new(),
     }
 }
 
@@ -159,8 +161,8 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
                         if k > 0 {
                             for (j, val) in block.values.iter().enumerate() {
                                 let col = 1 + (j * g) / k;
-                                if col < num_cols && val.is_some() {
-                                    let v_width = modifier_value_width(val.as_ref().unwrap());
+                                if col < num_cols && !matches!(val, ModifierValue::Empty) {
+                                    let v_width = modifier_value_width(val);
                                     column_widths[col] = column_widths[col].max(v_width);
                                 }
                             }
@@ -245,7 +247,7 @@ fn format_modifier_block(
     for col in 0..num_cols {
         let width = info.column_widths[col];
         if let Some(val) = val_pos.get(&col) {
-            let s = val.as_ref().map(modifier_value_str).unwrap_or_default();
+            let s = modifier_value_str(val);
             write!(buf, "{:width$}", s, width = width)?;
         } else {
             write!(buf, "{:width$}", "", width = width)?;
@@ -398,11 +400,14 @@ fn sort_patterns_and_mods<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedLin
                 .split(',')
                 .filter_map(|s| {
                     let trimmed = s.trim();
+                    // Frontmatter handling (Manual handling as parser might expect full string)
+                    // The following line is syntactically incorrect in this context and has been omitted.
+                    // if i == 0 && trimmed == Symbol::TrackWrap.as_str() {
                     crate::dsl::note::Note::from_str(trimmed)
                         .ok()
                         .map(|n| (n, trimmed.to_string()))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Vec<(crate::dsl::note::Note, String)>>();
 
             if ns.is_empty() {
                 sorted_keys.push(key.clone());
