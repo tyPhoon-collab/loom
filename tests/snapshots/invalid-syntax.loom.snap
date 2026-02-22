@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::base
+
+  × Parse error: Char
+    ╭─[input:10:1]
+  9 │ 
+ 10 │ # Invalid Track
+    · ───────┬───────
+    ·        ╰── Here
+ 11 │ > The following line has a syntax error (missing closing pipe or invalid char)
+    ╰────

@@ -1,5 +1,5 @@
 ---
-source: tests/examples.rs
+source: tests/examples_test.rs
 expression: events
 ---
 [

@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::base
+
+  × Parse error: Char
+   ╭─[input:7:1]
+ 6 │ # Track: 1
+ 7 │ ```
+   · ─┬─
+   ·  ╰── Here
+ 8 │ C4|rev
+   ╰────
