@@ -10,6 +10,10 @@ pub enum CompileError {
     #[error("Compilation error: {0}")]
     #[diagnostic(code(loom::compiler::base))]
     Base(String),
+
+    #[error("Circular template reference detected: {0}")]
+    #[diagnostic(code(loom::compiler::circular_template_reference))]
+    CircularTemplateReference(String),
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +33,12 @@ pub struct Compiler {
 struct ResolvedModifiers {
     velocities: Vec<Vec<i32>>, // per block, per token
     pitches: Vec<Vec<i32>>,    // per block, per token
+}
+
+struct CompilerContext<'a> {
+    events: &'a mut Vec<MidiEvent>,
+    templates: &'a std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+    call_stack: &'a mut Vec<String>,
 }
 
 impl Compiler {
@@ -142,6 +152,12 @@ impl Compiler {
     ) -> Result<()> {
         let mut section_start_time = 0.0;
         let mut section_max_time = 0.0;
+        let mut call_stack = Vec::new();
+        let mut ctx = CompilerContext {
+            events,
+            templates,
+            call_stack: &mut call_stack,
+        };
 
         for entry in &track.sequence.entries {
             match entry {
@@ -150,7 +166,7 @@ impl Compiler {
                     self.compile_pattern_line(
                         line,
                         track.channel,
-                        events,
+                        ctx.events,
                         pitch_offset,
                         &mut line_time,
                     );
@@ -164,10 +180,9 @@ impl Compiler {
                         self.compile_template(
                             call,
                             track.channel,
-                            events,
                             pitch_offset,
-                            templates,
                             &mut line_time,
+                            &mut ctx,
                         )?;
                         section_max_time = section_max_time.max(line_time);
                     }
@@ -284,12 +299,17 @@ impl Compiler {
         &self,
         call: &crate::dsl::token::TemplateCall,
         channel: u8,
-        events: &mut Vec<MidiEvent>,
         mut pitch_offset: i32,
-        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
         current_time: &mut f64,
+        ctx: &mut CompilerContext,
     ) -> Result<()> {
-        let def = templates
+        if ctx.call_stack.contains(&call.name) {
+            let trace = ctx.call_stack.join(" -> ") + " -> " + &call.name;
+            return Err(CompileError::CircularTemplateReference(trace).into());
+        }
+        ctx.call_stack.push(call.name.clone());
+        let def = ctx
+            .templates
             .get(&call.name)
             .ok_or_else(|| CompileError::Base(format!("Template not found: {}", call.name)))?;
 
@@ -334,7 +354,7 @@ impl Compiler {
                         self.compile_pattern_line(
                             &line_repeated,
                             channel,
-                            events,
+                            ctx.events,
                             pitch_offset,
                             &mut line_time,
                         );
@@ -348,10 +368,9 @@ impl Compiler {
                             self.compile_template(
                                 call,
                                 channel,
-                                events,
                                 pitch_offset,
-                                templates,
                                 &mut line_time,
+                                ctx,
                             )?;
                             section_max_time = section_max_time.max(line_time);
                         }
@@ -364,6 +383,7 @@ impl Compiler {
             *current_time = section_max_time;
         }
 
+        ctx.call_stack.pop();
         Ok(())
     }
 }
