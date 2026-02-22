@@ -99,5 +99,11 @@ define_symbols! {
     #[doc = "Modifier latch flag (!)"]
     ModLatch => "!",
     #[doc = "Modifier relative positive value (+)"]
-    ModPositive => "+",
+    Positive => "+",
+    #[doc = "Modifier relative negative value (-)"]
+    Negative => "-",
+    #[doc = "Template prefix symbol (@)"]
+    Template => "@",
+    #[doc = "Template parameter separator (|)"]
+    Separator => "|",
 }

@@ -68,11 +68,59 @@ p  | +2                 |
 | 3    | 80       | 0     | latch continues, default |
 | 4    | 100      | 0     | `100` one-shot (latch released) |
 
+## Templates
+
+Templates allow you to define reusable patterns that can be expanded within tracks.
+
+### Template Definition
+A template is defined similarly to a track, but the header starts with `@`.
+
+```ebnf
+Template       = TemplateHeader , { Line } ;
+TemplateHeader = "#" , space , "@" , name , newline ;
+```
+
+Templates are not directly rendered; they must be expanded within a track.
+
+### Template Expansion
+Templates are expanded using the `[@name]` syntax. They can take parameters for transposition, structural repetition, and macros.
+
+```ebnf
+TemplateLine      = TemplateExpansion , { TemplateExpansion } , newline ;
+TemplateExpansion = "[" , "@" , name , { "|" , TemplateParam } , "]" , [ "*" , digits ] ;
+TemplateParam     = Transpose | StructuralRepeat | Macro ;
+Transpose         = ( "+" | "-" ) , digits ;
+StructuralRepeat  = "x" , digits ;
+Macro             = "rev" ;
+```
+
+- **Sequential Processing**: When multiple template expansions are written on the same line (e.g., `[@a][@b]`), they are processed **sequentially** (B starts after A finishes). This is different from expansions on separate lines, which are processed **parallelly** at the start of the section.
+
+- **Transpose (`+N` / `-N`)**: Shifts the pitch of all notes in the template by `N` semitones.
+- **Structural Repeat (`xN`)**: Repeats the content within the same grid duration. For example, a single `^` with `x4` becomes `^ ^ ^ ^` within the same total time.
+- **Sequence Repeat (`*N`)**: Repeats the entire template `N` times.
+- **Macros**:
+    - `rev`: Reverses the sequence.
+
+```loom
+# Track: 1
+[@4beat]*2
+[@maj|x4][@maj|+5|x4]
+
+# @4beat
+hh | ^ ^ ^ ^ |
+sn | .   ^   |
+bd | ^   ^   |
+
+# @maj
+C3,E3,G3 | ^ |
+```
+
 ## Lexical Rules
 - `newline`: Line ending (`\n`, `\r\n`).
 - `space`: Horizontal whitespace.
 - `yaml_content`: Valid YAML string.
-- `name`: Track name (string).
+- `name`: Track or template name (string).
 - `channel`: MIDI channel (1-16). Note: Following the General MIDI standard, channel 10 is reserved for drums/percussion.
 - `character`: Any UTF-8 character except newline.
 - `digit`: `0`..."9".

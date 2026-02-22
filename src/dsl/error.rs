@@ -86,7 +86,12 @@ impl ParseError {
         }))
     }
 
-    pub fn from_validation(line: &str, full_source: &str, msg: String, help: Option<String>) -> Self {
+    pub fn from_validation(
+        line: &str,
+        full_source: &str,
+        msg: String,
+        help: Option<String>,
+    ) -> Self {
         let offset = line.as_ptr() as usize - full_source.as_ptr() as usize;
         Self::ValidationError(Box::new(ValidationErrorData {
             src: NamedSource::new("input", full_source.to_string()),

@@ -1,4 +1,7 @@
-use crate::dsl::token::{Bar, Block, ModifierKind, ModifierValue, Note, Song, Token, Track};
+use crate::dsl::token::{
+    Bar, Block, Line, LineEntry, ModifierKind, ModifierValue, Note, Song, TemplateParam, Token,
+    Track,
+};
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
@@ -53,7 +56,7 @@ impl Compiler {
             if track.muted {
                 continue;
             }
-            self.compile_track(track, &mut events, song.metadata.pitch)?;
+            self.compile_track(track, &mut events, song.metadata.pitch, &song.templates)?;
         }
 
         events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
@@ -135,107 +138,232 @@ impl Compiler {
         track: &Track,
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
+        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     ) -> Result<()> {
         let mut section_start_time = 0.0;
+        let mut section_max_time = 0.0;
 
-        for section in &track.sections {
-            let mut section_end_time = section_start_time;
-
-            for line in &section.lines {
-                let mut current_time = section_start_time;
-                let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
-
-                let resolved = self.resolve_modifiers(line);
-
-                let mut line_compiler = LineCompiler {
-                    channel: track.channel,
-                    notes: &line.notes,
-                    events,
-                    last_event_indices,
-                    pitch_offset,
-                    resolved_velocities: &resolved.velocities,
-                    resolved_pitches: &resolved.pitches,
-                    current_block_idx: 0,
-                };
-
-                let mut repeat_buffer: Vec<(usize, &Block)> = Vec::new();
-                let mut in_repeat = false;
-
-                for (block_idx, block) in line.blocks.iter().enumerate() {
-                    match block.start_bar {
-                        Bar::RepeatStart => {
-                            repeat_buffer.clear();
-                            in_repeat = true;
-                        }
-                        Bar::RepeatEnd => {
-                            if in_repeat {
-                                for &(buf_idx, buffered_block) in &repeat_buffer {
-                                    let block_duration = self.unit_per_block;
-                                    line_compiler.current_block_idx = buf_idx;
-                                    line_compiler.process_tokens(
-                                        &buffered_block.tokens,
-                                        current_time,
-                                        block_duration,
-                                    );
-                                    current_time += block_duration;
-                                }
-                                repeat_buffer.clear();
-                                in_repeat = false;
-                            }
-                        }
-                        Bar::Double => {
-                            if in_repeat {
-                                for &(buf_idx, buffered_block) in &repeat_buffer {
-                                    let block_duration = self.unit_per_block;
-                                    line_compiler.current_block_idx = buf_idx;
-                                    line_compiler.process_tokens(
-                                        &buffered_block.tokens,
-                                        current_time,
-                                        block_duration,
-                                    );
-                                    current_time += block_duration;
-                                }
-                                repeat_buffer.clear();
-                            }
-                            in_repeat = true;
-                        }
-                        Bar::Standard => {}
-                    }
-
-                    let block_duration = self.unit_per_block;
-                    line_compiler.current_block_idx = block_idx;
-                    line_compiler.process_tokens(&block.tokens, current_time, block_duration);
-                    current_time += block_duration;
-
-                    if in_repeat {
-                        repeat_buffer.push((block_idx, block));
+        for entry in &track.sequence.entries {
+            match entry {
+                LineEntry::Pattern(line) => {
+                    let mut line_time = section_start_time;
+                    self.compile_pattern_line(
+                        line,
+                        track.channel,
+                        events,
+                        pitch_offset,
+                        &mut line_time,
+                    );
+                    if line_time > section_max_time {
+                        section_max_time = line_time;
                     }
                 }
-
-                match line.end_bar {
-                    Bar::RepeatEnd | Bar::Double => {
-                        if in_repeat {
-                            for &(buf_idx, buffered_block) in &repeat_buffer {
-                                let block_duration = self.unit_per_block;
-                                line_compiler.current_block_idx = buf_idx;
-                                line_compiler.process_tokens(
-                                    &buffered_block.tokens,
-                                    current_time,
-                                    block_duration,
-                                );
-                                current_time += block_duration;
-                            }
-                        }
+                LineEntry::TemplateCalls(sub_calls) => {
+                    for call in sub_calls {
+                        let mut line_time = section_start_time;
+                        self.compile_template(
+                            call,
+                            track.channel,
+                            events,
+                            pitch_offset,
+                            templates,
+                            &mut line_time,
+                        )?;
+                        section_max_time = section_max_time.max(line_time);
                     }
-                    _ => {}
                 }
-
-                if current_time > section_end_time {
-                    section_end_time = current_time;
+                LineEntry::TrackWrap => {
+                    section_start_time = section_max_time;
                 }
             }
-            section_start_time = section_end_time;
         }
+        Ok(())
+    }
+
+    fn compile_pattern_line(
+        &self,
+        line: &Line,
+        channel: u8,
+        events: &mut Vec<MidiEvent>,
+        pitch_offset: i32,
+        current_time: &mut f64,
+    ) {
+        let initial_time = *current_time;
+        let mut line_time = initial_time;
+        let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+
+        let resolved = self.resolve_modifiers(line);
+
+        let mut line_compiler = LineCompiler {
+            channel,
+            notes: &line.notes,
+            events,
+            last_event_indices,
+            pitch_offset,
+            resolved_velocities: &resolved.velocities,
+            resolved_pitches: &resolved.pitches,
+            current_block_idx: 0,
+        };
+
+        let mut repeat_buffer: Vec<(usize, &Block)> = Vec::new();
+        let mut in_repeat = false;
+
+        for (block_idx, block) in line.blocks.iter().enumerate() {
+            match block.start_bar {
+                Bar::RepeatStart => {
+                    repeat_buffer.clear();
+                    in_repeat = true;
+                }
+                Bar::RepeatEnd => {
+                    if in_repeat {
+                        for &(buf_idx, buffered_block) in &repeat_buffer {
+                            let block_duration = self.unit_per_block;
+                            line_compiler.current_block_idx = buf_idx;
+                            line_compiler.process_tokens(
+                                &buffered_block.tokens,
+                                line_time,
+                                block_duration,
+                            );
+                            line_time += block_duration;
+                        }
+                        repeat_buffer.clear();
+                        in_repeat = false;
+                    }
+                }
+                Bar::Double => {
+                    if in_repeat {
+                        for &(buf_idx, buffered_block) in &repeat_buffer {
+                            let block_duration = self.unit_per_block;
+                            line_compiler.current_block_idx = buf_idx;
+                            line_compiler.process_tokens(
+                                &buffered_block.tokens,
+                                line_time,
+                                block_duration,
+                            );
+                            line_time += block_duration;
+                        }
+                        repeat_buffer.clear();
+                    }
+                    in_repeat = true;
+                }
+                Bar::Standard => {}
+            }
+
+            let block_duration = self.unit_per_block;
+            line_compiler.current_block_idx = block_idx;
+            line_compiler.process_tokens(&block.tokens, line_time, block_duration);
+            line_time += block_duration;
+
+            if in_repeat {
+                repeat_buffer.push((block_idx, block));
+            }
+        }
+
+        match line.end_bar {
+            Bar::RepeatEnd | Bar::Double => {
+                if in_repeat {
+                    for &(buf_idx, buffered_block) in &repeat_buffer {
+                        let block_duration = self.unit_per_block;
+                        line_compiler.current_block_idx = buf_idx;
+                        line_compiler.process_tokens(
+                            &buffered_block.tokens,
+                            line_time,
+                            block_duration,
+                        );
+                        line_time += block_duration;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        *current_time = line_time;
+    }
+
+    fn compile_template(
+        &self,
+        call: &crate::dsl::token::TemplateCall,
+        channel: u8,
+        events: &mut Vec<MidiEvent>,
+        mut pitch_offset: i32,
+        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+        current_time: &mut f64,
+    ) -> Result<()> {
+        let def = templates
+            .get(&call.name)
+            .ok_or_else(|| CompileError::Base(format!("Template not found: {}", call.name)))?;
+
+        let mut template_pitch_offset = 0;
+        let mut structural_repeat = 1u32;
+        let mut reverse = false;
+
+        for param in &call.params {
+            match param {
+                TemplateParam::Transpose(v) => template_pitch_offset += v,
+                TemplateParam::StructuralRepeat(v) => structural_repeat = *v,
+                TemplateParam::Macro(m) if m == "rev" => reverse = true,
+                _ => {}
+            }
+        }
+
+        pitch_offset += template_pitch_offset;
+
+        for _ in 0..call.repeat {
+            let mut entries = def.sequence.entries.clone();
+            if reverse {
+                entries.reverse();
+            }
+
+            let mut section_start_time = *current_time;
+            let mut section_max_time = section_start_time;
+
+            for entry in &entries {
+                match entry {
+                    LineEntry::Pattern(line) => {
+                        let mut line_repeated = line.clone();
+                        if structural_repeat > 1 {
+                            for block in &mut line_repeated.blocks {
+                                let original_tokens = block.tokens.clone();
+                                block.tokens.clear();
+                                for _ in 0..structural_repeat {
+                                    block.tokens.extend(original_tokens.clone());
+                                }
+                            }
+                        }
+                        let mut line_time = section_start_time;
+                        self.compile_pattern_line(
+                            &line_repeated,
+                            channel,
+                            events,
+                            pitch_offset,
+                            &mut line_time,
+                        );
+                        if line_time > section_max_time {
+                            section_max_time = line_time;
+                        }
+                    }
+                    LineEntry::TemplateCalls(sub_calls) => {
+                        for call in sub_calls {
+                            let mut line_time = section_start_time;
+                            self.compile_template(
+                                call,
+                                channel,
+                                events,
+                                pitch_offset,
+                                templates,
+                                &mut line_time,
+                            )?;
+                            section_max_time = section_max_time.max(line_time);
+                        }
+                    }
+                    LineEntry::TrackWrap => {
+                        section_start_time = section_max_time;
+                    }
+                }
+            }
+            *current_time = section_max_time;
+        }
+
         Ok(())
     }
 }
@@ -294,7 +422,7 @@ impl<'a> LineCompiler<'a> {
                         let event = MidiEvent {
                             time: token_time,
                             duration: duration_per_token,
-                            channel: self.channel - 1,
+                            channel: self.channel - 1, // Fix: 0-indexed MIDI channel
                             note: midi_val,
                             velocity,
                         };

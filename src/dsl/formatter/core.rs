@@ -291,6 +291,17 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
 
     let mut out = String::new();
 
+    for p in patterns {
+        if let ParsedLine::TemplateCalls(calls) = p {
+            let joined = calls
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            writeln!(out, "{}", joined).unwrap();
+        }
+    }
+
     // Prepare line contents and their widths (excluding trailing comments)
     let mut line_infos = Vec::new();
     let mut max_line_width = 0;

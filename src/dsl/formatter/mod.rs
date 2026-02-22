@@ -14,14 +14,16 @@ pub fn format_string(input: &str) -> String {
 
     for line in lines {
         match line {
-            ParsedLine::Pattern { .. } | ParsedLine::Modifier { .. } => {
+            ParsedLine::Pattern { .. }
+            | ParsedLine::Modifier { .. }
+            | ParsedLine::TemplateCalls(_) => {
                 current_data.push(line);
             }
             ParsedLine::Empty => {
                 // Explicitly ignore existing empty lines; we will regenerate them
                 continue;
             }
-            ParsedLine::TrackWrap => {
+            ParsedLine::TrackWrap | ParsedLine::TemplateHeader { .. } => {
                 if !current_data.is_empty() {
                     elements.push(OutputElement::Data(current_data));
                     current_data = Vec::new();
@@ -110,6 +112,15 @@ fn format_meta_line(line: &ParsedLine) -> String {
             }
         }
         ParsedLine::TrackWrap => out.push_str(Symbol::TrackWrap.as_str()),
+        ParsedLine::TemplateHeader { name } => {
+            write!(out, "{} {}", Symbol::TrackHeader, Symbol::Template).unwrap();
+            out.push_str(name);
+        }
+        ParsedLine::TemplateCalls(calls) => {
+            for call in calls {
+                write!(out, "{}", call).unwrap();
+            }
+        }
         _ => {} // Should not happen for Meta
     }
     out

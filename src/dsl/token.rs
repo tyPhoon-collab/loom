@@ -130,12 +130,74 @@ pub struct Section {
     pub lines: Vec<Line>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateParam {
+    Transpose(i32),        // +N / -N
+    StructuralRepeat(u32), // xN
+    Macro(String),         // rev, etc.
+}
+
+impl std::fmt::Display for TemplateParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transpose(val) => {
+                if *val >= 0 {
+                    write!(f, "{}{}", Symbol::Positive, val)
+                } else {
+                    write!(f, "{}{}", Symbol::Negative, val.abs())
+                }
+            }
+            Self::StructuralRepeat(val) => write!(f, "x{}", val),
+            Self::Macro(m) => write!(f, "{}", m),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TemplateCall {
+    pub name: String,
+    pub params: Vec<TemplateParam>,
+    pub repeat: u32, // *N
+}
+
+impl std::fmt::Display for TemplateCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}{}", Symbol::GroupStart, Symbol::Template, self.name)?;
+        for param in &self.params {
+            write!(f, "{}{}", Symbol::Separator, param)?;
+        }
+        write!(f, "{}", Symbol::GroupEnd)?;
+        if self.repeat > 1 {
+            write!(f, "*{}", self.repeat)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum LineEntry {
+    Pattern(Line),
+    TemplateCalls(Vec<TemplateCall>),
+    TrackWrap,
+}
+
+#[derive(Debug, Clone)]
+pub struct Sequence {
+    pub entries: Vec<LineEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TemplateDef {
+    pub name: String,
+    pub sequence: Sequence,
+}
+
 #[derive(Debug, Clone)]
 pub struct Track {
     pub name: String,
     pub channel: u8,
     pub muted: bool,
-    pub sections: Vec<Section>,
+    pub sequence: Sequence,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -191,6 +253,7 @@ impl Default for Frontmatter {
 pub struct Song {
     pub metadata: Frontmatter,
     pub tracks: Vec<Track>,
+    pub templates: std::collections::HashMap<String, TemplateDef>,
 }
 
 use super::syntax::Symbol;

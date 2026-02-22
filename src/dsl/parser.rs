@@ -1,8 +1,8 @@
 use super::error::ParseError;
 use super::syntax::Symbol;
 use super::token::{
-    Bar, Block, Frontmatter, Line, ModifierBlock, ModifierKind, ModifierLine, ModifierValue, Note,
-    Song, Token, Track,
+    Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
+    ModifierValue, Note, Song, Token, Track,
 };
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
@@ -28,6 +28,10 @@ pub enum ParsedLine {
     Comment(String),
     Empty,
     TrackWrap,
+    TemplateHeader {
+        name: String,
+    },
+    TemplateCalls(Vec<crate::dsl::token::TemplateCall>),
 }
 use miette::Result;
 use nom::{
@@ -150,7 +154,6 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)>
 
     Ok((current_input, (blocks, current_bar)))
 }
-
 // --- Line Types ---
 
 fn parse_comment(input: &str) -> IResult<&str, ParsedLine> {
@@ -179,6 +182,86 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
             muted: muted_flag.is_some(),
         },
     ))
+}
+
+fn parse_template_header(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = Symbol::TrackHeader.char()(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = Symbol::Template.char()(input)?;
+    let (input, name) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '_')(input)?;
+
+    Ok((
+        input,
+        ParsedLine::TemplateHeader {
+            name: name.to_string(),
+        },
+    ))
+}
+
+fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall> {
+    let (input, _) = space0.parse(input)?;
+    let (input, _) = Symbol::GroupStart.char()(input)?;
+    let (input, _) = Symbol::Template.char()(input)?;
+    let (input, name) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '_')(input)?;
+    let (input, _) = space0.parse(input)?;
+
+    let mut params = Vec::new();
+    let mut current_input = input;
+
+    while current_input.starts_with(Symbol::Separator.as_char()) {
+        let (rest, _) = Symbol::Separator.char()(current_input)?;
+        let (rest, _) = space0.parse(rest)?;
+        let (rest, param_str) = take_while1(|c: char| {
+            c != Symbol::Separator.as_char()
+                && c != Symbol::GroupEnd.as_char()
+                && !c.is_whitespace()
+        })(rest)?;
+        let (rest, _) = space0.parse(rest)?;
+
+        if param_str.starts_with(Symbol::Positive.as_char())
+            || param_str.starts_with(Symbol::Negative.as_char())
+        {
+            if let Ok(val) = param_str.parse::<i32>() {
+                params.push(crate::dsl::token::TemplateParam::Transpose(val));
+            }
+        } else if let Some(stripped) = param_str.strip_prefix('x') {
+            if let Ok(val) = stripped.parse::<u32>() {
+                params.push(crate::dsl::token::TemplateParam::StructuralRepeat(val));
+            }
+        } else if param_str == "rev" {
+            params.push(crate::dsl::token::TemplateParam::Macro("rev".to_string()));
+        }
+
+        current_input = rest;
+    }
+
+    let (input, _) = Symbol::GroupEnd.char()(current_input)?;
+    let (input, _) = space0.parse(input)?;
+
+    let mut final_input = input;
+    let mut repeat = 1;
+
+    let (input_after_space, _) = space0.parse(final_input)?;
+    if input_after_space.starts_with('*') {
+        let (rest, _) = nom::character::complete::char('*')(input_after_space)?;
+        let (rest, digits) = digit1(rest)?;
+        repeat = digits.parse().unwrap_or(1);
+        final_input = rest;
+    }
+
+    Ok((
+        final_input,
+        crate::dsl::token::TemplateCall {
+            name: name.to_string(),
+            params,
+            repeat,
+        },
+    ))
+}
+
+fn parse_template_list(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, expansions) = nom::multi::many1(parse_template).parse(input)?;
+    Ok((input, ParsedLine::TemplateCalls(expansions)))
 }
 
 pub(crate) fn parse_key(input: &str) -> IResult<&str, &str> {
@@ -261,12 +344,12 @@ fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
 
     let (input, is_latch) = opt(Symbol::ModLatch.char()).parse(input)?;
     let (input, sign) =
-        opt(alt((Symbol::ModPositive.char(), Symbol::Sustain.char()))).parse(input)?;
+        opt(alt((Symbol::Positive.char(), Symbol::Negative.char()))).parse(input)?;
     let (input, digits) = digit1.parse(input)?;
 
     let val: i32 = digits.parse().unwrap_or(0);
     let val = match sign {
-        Some(s) if s == Symbol::Sustain.as_char() => -val,
+        Some(s) if s == Symbol::Negative.as_char() => -val,
         _ => val,
     };
 
@@ -381,6 +464,8 @@ pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
         parse_comment,
         parse_track_wrap,
         parse_track_header,
+        parse_template_header,
+        parse_template_list,
         parse_empty_line,
         parse_modifier_line,
         parse_pattern_line,
@@ -451,6 +536,12 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 ParsedLine::TrackWrap => {
                     builder.add_section(line_str)?;
                 }
+                ParsedLine::TemplateHeader { name } => {
+                    builder.start_template(name);
+                }
+                ParsedLine::TemplateCalls(calls) => {
+                    builder.add_template_calls(calls);
+                }
                 ParsedLine::Pattern {
                     notes,
                     blocks,
@@ -480,15 +571,20 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
         }
     }
 
+    let (tracks, templates) = builder.finish();
+
     Ok(Song {
         metadata,
-        tracks: builder.finish(),
+        tracks,
+        templates,
     })
 }
 
 struct SongBuilder<'a> {
     tracks: Vec<Track>,
+    templates: std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     current_track: Option<Track>,
+    current_template: Option<(String, crate::dsl::token::Sequence)>,
     source: &'a str,
 }
 
@@ -496,8 +592,32 @@ impl<'a> SongBuilder<'a> {
     fn new(source: &'a str) -> Self {
         Self {
             tracks: Vec::new(),
+            templates: std::collections::HashMap::new(),
             current_track: None,
+            current_template: None,
             source,
+        }
+    }
+
+    fn start_template(&mut self, name: String) {
+        self.finish_current();
+        self.current_template = Some((
+            name,
+            crate::dsl::token::Sequence {
+                entries: Vec::new(),
+            },
+        ));
+    }
+
+    fn finish_current(&mut self) {
+        if let Some(t) = self.current_track.take() {
+            self.tracks.push(t);
+        }
+        if let Some((name, sequence)) = self.current_template.take() {
+            self.templates.insert(
+                name.clone(),
+                crate::dsl::token::TemplateDef { name, sequence },
+            );
         }
     }
 
@@ -517,65 +637,56 @@ impl<'a> SongBuilder<'a> {
             ));
         }
 
-        if let Some(t) = self.current_track.take() {
-            self.tracks.push(t);
-        }
+        self.finish_current();
         self.current_track = Some(Track {
             name,
             channel,
             muted,
-            sections: vec![crate::dsl::token::Section {
-                label: None,
-                lines: Vec::new(),
-            }],
+            sequence: crate::dsl::token::Sequence {
+                entries: Vec::new(),
+            },
         });
         Ok(())
     }
 
-    fn add_section(&mut self, line_str: &str) -> Result<(), ParseError> {
-        let track = self.current_track.as_mut().ok_or_else(|| {
-            ParseError::from_context(
-                line_str,
-                self.source,
-                "Track header required before section divider (---)".to_string(),
-            )
-        })?;
-        track.sections.push(crate::dsl::token::Section {
-            label: None,
-            lines: Vec::new(),
-        });
+    fn add_section(&mut self, _line_str: &str) -> Result<(), ParseError> {
+        if let Some(ref mut track) = self.current_track {
+            track.sequence.entries.push(LineEntry::TrackWrap);
+        }
         Ok(())
     }
 
     fn add_pattern(
         &mut self,
-        line_str: &str,
+        _line_str: &str,
         notes: Vec<Note>,
         blocks: Vec<Block>,
         end_bar: Bar,
     ) -> Result<(), ParseError> {
-        let track = self.current_track.as_mut().ok_or_else(|| {
-            ParseError::from_context(
-                line_str,
-                self.source,
-                "Track header required before pattern line".to_string(),
-            )
-        })?;
-
-        if track.sections.is_empty() {
-            track.sections.push(crate::dsl::token::Section {
-                label: None,
-                lines: Vec::new(),
-            });
-        }
-
-        track.sections.last_mut().unwrap().lines.push(Line {
+        let entry = LineEntry::Pattern(Line {
             notes,
             blocks,
             end_bar,
             modifiers: Vec::new(),
         });
+
+        if let Some((_, ref mut seq)) = self.current_template {
+            seq.entries.push(entry);
+        } else if let Some(ref mut track) = self.current_track {
+            track.sequence.entries.push(entry);
+        }
+
         Ok(())
+    }
+
+    fn add_template_calls(&mut self, calls: Vec<crate::dsl::token::TemplateCall>) {
+        let entry = LineEntry::TemplateCalls(calls);
+
+        if let Some((_, ref mut seq)) = self.current_template {
+            seq.entries.push(entry);
+        } else if let Some(ref mut track) = self.current_track {
+            track.sequence.entries.push(entry);
+        }
     }
 
     fn add_modifier(
@@ -586,43 +697,50 @@ impl<'a> SongBuilder<'a> {
         end_bar: Bar,
         trailing_comment: Option<String>,
     ) -> Result<(), ParseError> {
-        let track = self.current_track.as_mut().ok_or_else(|| {
+        let entries = if let Some((_, ref mut seq)) = self.current_template {
+            &mut seq.entries
+        } else if let Some(ref mut track) = self.current_track {
+            &mut track.sequence.entries
+        } else {
+            return Err(ParseError::from_context(
+                line_str,
+                self.source,
+                "Track or template header required before modifier line".to_string(),
+            ));
+        };
+
+        let last_entry = entries.last_mut().ok_or_else(|| {
             ParseError::from_context(
                 line_str,
                 self.source,
-                "Track header required before modifier line".to_string(),
+                "Pattern line required before modifier line".to_string(),
             )
         })?;
 
-        let section = track.sections.last_mut().ok_or_else(|| {
-            ParseError::from_context(
+        if let LineEntry::Pattern(ref mut line) = last_entry {
+            line.modifiers.push(ModifierLine {
+                kind,
+                blocks,
+                end_bar,
+                trailing_comment,
+            });
+            Ok(())
+        } else {
+            Err(ParseError::from_context(
                 line_str,
                 self.source,
-                "Section required before modifier line".to_string(),
-            )
-        })?;
-
-        let line = section.lines.last_mut().ok_or_else(|| {
-            ParseError::from_context(
-                line_str,
-                self.source,
-                "Pattern line (notes) required before modifier line (v or p)".to_string(),
-            )
-        })?;
-
-        line.modifiers.push(ModifierLine {
-            kind,
-            blocks,
-            end_bar,
-            trailing_comment,
-        });
-        Ok(())
+                "Modifier cannot follow a template expansion directly".to_string(),
+            ))
+        }
     }
 
-    fn finish(mut self) -> Vec<Track> {
-        if let Some(t) = self.current_track.take() {
-            self.tracks.push(t);
-        }
-        self.tracks
+    fn finish(
+        mut self,
+    ) -> (
+        Vec<Track>,
+        std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+    ) {
+        self.finish_current();
+        (self.tracks, self.templates)
     }
 }
