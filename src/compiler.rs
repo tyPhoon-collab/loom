@@ -39,6 +39,7 @@ struct CompilerContext<'a> {
     events: &'a mut Vec<MidiEvent>,
     templates: &'a std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     call_stack: &'a mut Vec<String>,
+    swing: Option<(u8, u8)>,
 }
 
 impl Compiler {
@@ -66,7 +67,13 @@ impl Compiler {
             if track.muted {
                 continue;
             }
-            self.compile_track(track, &mut events, song.metadata.pitch, &song.templates)?;
+            self.compile_track(
+                track,
+                &mut events,
+                song.metadata.pitch,
+                &song.templates,
+                song.metadata.swing.values(),
+            )?;
         }
 
         events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
@@ -149,6 +156,7 @@ impl Compiler {
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
         templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+        swing: Option<(u8, u8)>,
     ) -> Result<()> {
         let mut section_start_time = 0.0;
         let mut section_max_time = 0.0;
@@ -157,6 +165,7 @@ impl Compiler {
             events,
             templates,
             call_stack: &mut call_stack,
+            swing,
         };
 
         for entry in &track.sequence.entries {
@@ -169,6 +178,7 @@ impl Compiler {
                         ctx.events,
                         pitch_offset,
                         &mut line_time,
+                        ctx.swing,
                     );
                     if line_time > section_max_time {
                         section_max_time = line_time;
@@ -202,6 +212,7 @@ impl Compiler {
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
         current_time: &mut f64,
+        swing: Option<(u8, u8)>,
     ) {
         let initial_time = *current_time;
         let mut line_time = initial_time;
@@ -218,6 +229,7 @@ impl Compiler {
             resolved_velocities: &resolved.velocities,
             resolved_pitches: &resolved.pitches,
             current_block_idx: 0,
+            swing,
         };
 
         let mut repeat_buffer: Vec<(usize, &Block)> = Vec::new();
@@ -357,6 +369,7 @@ impl Compiler {
                             ctx.events,
                             pitch_offset,
                             &mut line_time,
+                            ctx.swing,
                         );
                         if line_time > section_max_time {
                             section_max_time = line_time;
@@ -397,6 +410,35 @@ struct LineCompiler<'a> {
     resolved_velocities: &'a [Vec<i32>],
     resolved_pitches: &'a [Vec<i32>],
     current_block_idx: usize,
+    swing: Option<(u8, u8)>,
+}
+
+fn apply_swing_to_time(time: f64, swing: Option<(u8, u8)>) -> f64 {
+    let (swing_grid, swing_amount) = match swing {
+        Some((g, a)) => (g, a),
+        None => return time,
+    };
+    if swing_grid == 0 || swing_amount == 50 {
+        return time;
+    }
+    let grid = 4.0 / (swing_grid as f64);
+    let pair_cycle = grid * 2.0;
+
+    let time_with_eps = time + 1e-9;
+    let cycle_start = (time_with_eps / pair_cycle).floor() * pair_cycle;
+    let pos_in_cycle = time - cycle_start;
+
+    let first_half_duration = pair_cycle * (swing_amount as f64) / 100.0;
+    let first_half_ratio = first_half_duration / grid;
+
+    if pos_in_cycle < grid - 1e-9 {
+        cycle_start + pos_in_cycle * first_half_ratio
+    } else {
+        let second_half_duration = pair_cycle - first_half_duration;
+        let second_half_ratio = second_half_duration / grid;
+        let pos_in_second_half = pos_in_cycle - grid;
+        cycle_start + first_half_duration + pos_in_second_half * second_half_ratio
+    }
 }
 
 impl<'a> LineCompiler<'a> {
@@ -409,7 +451,11 @@ impl<'a> LineCompiler<'a> {
         let duration_per_token = total_duration / len;
 
         for (i, token) in tokens.iter().enumerate() {
-            let token_time = start_time + (i as f64 * duration_per_token);
+            let unswung_start = start_time + (i as f64 * duration_per_token);
+            let unswung_end = start_time + ((i + 1) as f64 * duration_per_token);
+
+            let token_time = apply_swing_to_time(unswung_start, self.swing);
+            let swung_duration = apply_swing_to_time(unswung_end, self.swing) - token_time;
 
             match token {
                 Token::Note => {
@@ -441,7 +487,7 @@ impl<'a> LineCompiler<'a> {
                         };
                         let event = MidiEvent {
                             time: token_time,
-                            duration: duration_per_token,
+                            duration: swung_duration,
                             channel: self.channel - 1, // Fix: 0-indexed MIDI channel
                             note: midi_val,
                             velocity,
@@ -458,12 +504,12 @@ impl<'a> LineCompiler<'a> {
                 Token::Sustain => {
                     for (nth, _) in self.notes.iter().enumerate() {
                         if let Some(idx) = self.last_event_indices[nth] {
-                            self.events[idx].duration += duration_per_token;
+                            self.events[idx].duration += swung_duration;
                         }
                     }
                 }
                 Token::Group(sub_tokens) => {
-                    self.process_tokens(sub_tokens, token_time, duration_per_token);
+                    self.process_tokens(sub_tokens, unswung_start, duration_per_token);
                 }
             }
         }

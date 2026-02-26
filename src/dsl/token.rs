@@ -201,6 +201,39 @@ pub struct Track {
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum SwingConfig {
+    Detailed {
+        grid: u8,
+        #[serde(default = "default_swing_amount")]
+        amount: u8,
+    },
+    Numeric(u8),
+    Boolean(bool),
+}
+
+fn default_swing_amount() -> u8 {
+    66
+}
+
+impl Default for SwingConfig {
+    fn default() -> Self {
+        SwingConfig::Numeric(0)
+    }
+}
+
+impl SwingConfig {
+    pub fn values(&self) -> Option<(u8, u8)> {
+        match self {
+            SwingConfig::Detailed { grid, amount } if *grid > 0 => Some((*grid, *amount)),
+            SwingConfig::Numeric(grid) if *grid > 0 => Some((*grid, 66)),
+            SwingConfig::Boolean(true) => Some((8, 66)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Frontmatter {
     #[allow(dead_code)]
     #[serde(default = "default_bpm")]
@@ -217,6 +250,8 @@ pub struct Frontmatter {
     pub title: Option<String>,
     #[allow(dead_code)]
     pub author: Option<String>,
+    #[serde(default)]
+    pub swing: SwingConfig,
     #[serde(default, rename = "loop")]
     pub r#loop: bool,
     #[allow(dead_code)]
@@ -243,6 +278,7 @@ impl Default for Frontmatter {
             unit: default_unit(),
             title: None,
             author: None,
+            swing: SwingConfig::default(),
             r#loop: false,
             loop_range: None,
         }

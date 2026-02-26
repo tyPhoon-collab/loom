@@ -68,7 +68,7 @@ expression: events
     },
     MidiEvent {
         time: 0.6666666666666666,
-        duration: 0.3333333333333333,
+        duration: 0.33333333333333337,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -96,7 +96,7 @@ expression: events
     },
     MidiEvent {
         time: 1.0,
-        duration: 0.3333333333333333,
+        duration: 0.33333333333333326,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -110,7 +110,7 @@ expression: events
     },
     MidiEvent {
         time: 1.3333333333333333,
-        duration: 0.3333333333333333,
+        duration: 0.33333333333333326,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -124,7 +124,7 @@ expression: events
     },
     MidiEvent {
         time: 1.6666666666666665,
-        duration: 0.3333333333333333,
+        duration: 0.3333333333333335,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -145,7 +145,7 @@ expression: events
     },
     MidiEvent {
         time: 2.0,
-        duration: 0.3333333333333333,
+        duration: 0.3333333333333335,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -166,7 +166,7 @@ expression: events
     },
     MidiEvent {
         time: 2.3333333333333335,
-        duration: 0.3333333333333333,
+        duration: 0.33333333333333304,
         channel: 9,
         note: 38,
         velocity: 100,
@@ -187,7 +187,7 @@ expression: events
     },
     MidiEvent {
         time: 2.6666666666666665,
-        duration: 0.3333333333333333,
+        duration: 0.3333333333333335,
         channel: 9,
         note: 38,
         velocity: 100,

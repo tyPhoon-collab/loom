@@ -19,7 +19,7 @@ expression: events
     },
     MidiEvent {
         time: 2.6666666666666665,
-        duration: 1.3333333333333333,
+        duration: 1.3333333333333335,
         channel: 0,
         note: 72,
         velocity: 100,
@@ -47,14 +47,14 @@ expression: events
     },
     MidiEvent {
         time: 8.0,
-        duration: 1.3333333333333333,
+        duration: 1.333333333333334,
         channel: 0,
         note: 72,
         velocity: 100,
     },
     MidiEvent {
         time: 10.666666666666666,
-        duration: 1.3333333333333333,
+        duration: 1.333333333333334,
         channel: 0,
         note: 72,
         velocity: 100,

@@ -1,0 +1,16 @@
+---
+title: "Swing Amount Test"
+signature: 4/4
+swing:
+  grid: 8
+  amount: 60
+---
+
+# Track: 1
+C4 | ^ ^ ^ ^ |
+
+# Track: 2
+C4 | [ ^ ^ ] [ ^ ^ ] [ ^ ^ ] [ ^ ^ ] |
+
+# Track: 3
+C4 | [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] |

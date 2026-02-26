@@ -1,0 +1,19 @@
+---
+title: "Swing Test"
+signature: 4/4
+swing: 8
+loop: true
+bpm: 60
+---
+
+# Track: 1
+
+C2 | ^ ^ ^ ^  |
+
+# Track: 2
+
+C3 | [^ ^] [^ ^] [^ ^] [^ ^]  |
+
+# Track: 3
+
+C4 | [^ ^ ^ ^] [^ ^ ^ ^] [^ ^ ^ ^] [^ ^ ^ ^]  |
