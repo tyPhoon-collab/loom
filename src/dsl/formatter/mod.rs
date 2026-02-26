@@ -30,6 +30,20 @@ pub fn format_string(input: &str) -> String {
                 }
                 elements.push(OutputElement::Meta(line));
             }
+            ParsedLine::Comment(_) => {
+                if !current_data.is_empty() {
+                    elements.push(OutputElement::Data(current_data));
+                    current_data = Vec::new();
+                }
+                match elements.last_mut() {
+                    Some(OutputElement::Comments(comments)) => {
+                        comments.push(line);
+                    }
+                    _ => {
+                        elements.push(OutputElement::Comments(vec![line]));
+                    }
+                }
+            }
             _ => {
                 if !current_data.is_empty() {
                     elements.push(OutputElement::Data(current_data));
@@ -70,6 +84,16 @@ pub fn format_string(input: &str) -> String {
                 core::format_patterns(&refs)
             }
             OutputElement::Meta(meta_line) => format_meta_line(meta_line),
+            OutputElement::Comments(comment_lines) => {
+                let mut out = String::new();
+                for (j, c) in comment_lines.iter().enumerate() {
+                    if j > 0 {
+                        out.push('\n');
+                    }
+                    out.push_str(&format_meta_line(c));
+                }
+                out
+            }
         };
 
         // Write each line, trim-ending it
@@ -89,6 +113,7 @@ pub fn format_string(input: &str) -> String {
 enum OutputElement {
     Data(Vec<ParsedLine>),
     Meta(ParsedLine),
+    Comments(Vec<ParsedLine>),
 }
 
 fn format_meta_line(line: &ParsedLine) -> String {

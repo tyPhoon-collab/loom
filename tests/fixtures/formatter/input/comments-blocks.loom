@@ -1,0 +1,18 @@
+---
+title: "Comment Blocks Test"
+---
+
+# Track: 1
+
+> This is a comment block
+> It has two consecutive lines
+C4 | ^ ^ ^ ^  |
+
+> Another comment
+
+> with multiple lines
+
+
+> should be grouped.
+
+C5 | . ^ . ^  |
