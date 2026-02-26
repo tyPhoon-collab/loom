@@ -69,24 +69,6 @@ impl App {
                             if content != formatted {
                                 if let Err(e) = fs::write(&self.path, &formatted) {
                                     self.status_message = format!("Format save error: {}", e);
-                                } else {
-                                    // Re-compile to get events for MIDI export
-                                    if let Ok(song) = parser::parse_song(content.clone()) {
-                                        if let Ok(compiler_inst) =
-                                            crate::compiler::Compiler::new(&song)
-                                        {
-                                            if let Ok(events) = compiler_inst.compile(&song) {
-                                                if let Err(e) = crate::midi::file::save_to_midi(
-                                                    &events,
-                                                    &self.path.with_extension("mid"),
-                                                    bpm,
-                                                ) {
-                                                    self.status_message =
-                                                        format!("MIDI save error: {}", e);
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
