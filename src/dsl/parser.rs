@@ -329,7 +329,21 @@ fn parse_track_wrap(input: &str) -> IResult<&str, ParsedLine> {
     Ok((input, ParsedLine::TrackWrap))
 }
 
-fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
+fn parse_modifier_group(input: &str) -> IResult<&str, ModifierValue> {
+    let (input, _) = space0(input)?;
+    let (input, _) = Symbol::GroupStart.char()(input)?;
+    let (input, values) = parse_modifier_block_values(input)?;
+    let (input, _) = Symbol::GroupEnd.char()(input)?;
+    Ok((input, ModifierValue::Group(values)))
+}
+
+fn parse_modifier_empty(input: &str) -> IResult<&str, ModifierValue> {
+    let (input, _) = space0(input)?;
+    let (input, _) = Symbol::Rest.char()(input)?;
+    Ok((input, ModifierValue::Empty))
+}
+
+fn parse_modifier_scalar(input: &str) -> IResult<&str, ModifierValue> {
     let (input, _) = space0(input)?;
     let input_trimmed = input.trim_start();
     if input_trimmed.is_empty()
@@ -361,6 +375,15 @@ fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
             ModifierValue::Set(val)
         },
     ))
+}
+
+fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
+    alt((
+        parse_modifier_group,
+        parse_modifier_empty,
+        parse_modifier_scalar,
+    ))
+    .parse(input)
 }
 
 fn parse_modifier_block_values(input: &str) -> IResult<&str, Vec<ModifierValue>> {

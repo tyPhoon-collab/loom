@@ -29,10 +29,72 @@ pub struct Compiler {
     pub unit_per_block: f64, // e.g. 4.0 for 4/4 bar
 }
 
-/// Resolved modifier values for a line, flattened per block
+/// Resolved modifier values for a line, flattened per block (DFS leaf order)
 struct ResolvedModifiers {
-    velocities: Vec<Vec<i32>>, // per block, per token
-    pitches: Vec<Vec<i32>>,    // per block, per token
+    velocities: Vec<Vec<i32>>, // per block, per leaf token (DFS order)
+    pitches: Vec<Vec<i32>>,    // per block, per leaf token (DFS order)
+}
+
+/// Count the number of leaf tokens (non-Group) in a token tree via DFS
+fn count_leaf_tokens(tokens: &[Token]) -> usize {
+    tokens
+        .iter()
+        .map(|t| match t {
+            Token::Group(sub) => count_leaf_tokens(sub),
+            _ => 1,
+        })
+        .sum()
+}
+
+/// Expand modifier values to align with pattern leaf tokens.
+///
+/// - `ModifierValue::Group(vals)` aligns its sub-values with the sub-tokens of the
+///   corresponding `Token::Group`.
+/// - A scalar modifier value at a Group token position is broadcast to all
+///   leaf tokens of that group.
+/// - `ModifierValue::Empty` at a Group position fills all leaves with Empty.
+fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec<ModifierValue> {
+    let mut result = Vec::new();
+
+    for (i, token) in tokens.iter().enumerate() {
+        let mod_val = mod_values.get(i);
+        match token {
+            Token::Group(sub_tokens) => {
+                let leaf_count = count_leaf_tokens(sub_tokens);
+                match mod_val {
+                    Some(ModifierValue::Group(sub_vals)) => {
+                        // Recurse: align sub-values with sub-tokens
+                        result.extend(expand_modifier_values(sub_tokens, sub_vals));
+                    }
+                    Some(val @ (ModifierValue::Set(_) | ModifierValue::Latch(_))) => {
+                        // Broadcast scalar to all leaves in the group
+                        for _ in 0..leaf_count {
+                            result.push(val.clone());
+                        }
+                    }
+                    Some(ModifierValue::Empty) | None => {
+                        // Fill with Empty for all leaves
+                        for _ in 0..leaf_count {
+                            result.push(ModifierValue::Empty);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Leaf token: use modifier value directly, or Empty
+                match mod_val {
+                    Some(ModifierValue::Group(_)) => {
+                        // Group modifier on a non-group token: ignore, treat as empty
+                        result.push(ModifierValue::Empty);
+                    }
+                    Some(val) => result.push(val.clone()),
+                    None => result.push(ModifierValue::Empty),
+                }
+            }
+        }
+    }
+
+    result
 }
 
 struct CompilerContext<'a> {
@@ -81,19 +143,23 @@ impl Compiler {
         Ok(events)
     }
 
-    /// Resolve modifier values for a line into per-block, per-token arrays
+    /// Resolve modifier values for a line into per-block, per-leaf-token arrays (DFS order)
     fn resolve_modifiers(&self, line: &crate::dsl::token::Line) -> ResolvedModifiers {
         let num_blocks = line.blocks.len();
 
-        // Count tokens per block
-        let tokens_per_block: Vec<usize> = line.blocks.iter().map(|b| b.tokens.len()).collect();
+        // Count leaf tokens per block (DFS)
+        let leaves_per_block: Vec<usize> = line
+            .blocks
+            .iter()
+            .map(|b| count_leaf_tokens(&b.tokens))
+            .collect();
 
         // Initialize with defaults
-        let mut velocities: Vec<Vec<i32>> = tokens_per_block
+        let mut velocities: Vec<Vec<i32>> = leaves_per_block
             .iter()
             .map(|&n| vec![ModifierKind::Velocity.default_value(); n])
             .collect();
-        let mut pitches: Vec<Vec<i32>> = tokens_per_block
+        let mut pitches: Vec<Vec<i32>> = leaves_per_block
             .iter()
             .map(|&n| vec![ModifierKind::Pitch.default_value(); n])
             .collect();
@@ -109,23 +175,24 @@ impl Compiler {
             let mut mod_block_idx = 0;
 
             for block_idx in 0..num_blocks {
-                let num_tokens = tokens_per_block[block_idx];
-                if num_tokens == 0 {
+                let num_leaves = leaves_per_block[block_idx];
+                if num_leaves == 0 {
                     continue;
                 }
 
-                // Get modifier values for this block (if available)
-                let mod_values = if mod_block_idx < modifier.blocks.len() {
+                // Get modifier values for this block, expanded to leaf level
+                let expanded = if mod_block_idx < modifier.blocks.len() {
+                    let raw_values = &modifier.blocks[mod_block_idx].values;
                     mod_block_idx += 1;
-                    &modifier.blocks[mod_block_idx - 1].values
+                    expand_modifier_values(&line.blocks[block_idx].tokens, raw_values)
                 } else {
-                    &vec![]
+                    vec![ModifierValue::Empty; num_leaves]
                 };
 
-                for (token_idx, target_slot) in
-                    target[block_idx].iter_mut().enumerate().take(num_tokens)
+                for (leaf_idx, target_slot) in
+                    target[block_idx].iter_mut().enumerate().take(num_leaves)
                 {
-                    let mod_val = mod_values.get(token_idx).unwrap_or(&ModifierValue::Empty);
+                    let mod_val = expanded.get(leaf_idx).unwrap_or(&ModifierValue::Empty);
                     match mod_val {
                         ModifierValue::Set(v) => {
                             *target_slot = *v;
@@ -135,7 +202,7 @@ impl Compiler {
                             *target_slot = *v;
                             latch_value = Some(*v);
                         }
-                        ModifierValue::Empty => {
+                        ModifierValue::Empty | ModifierValue::Group(_) => {
                             // If latched, continue with latch value; otherwise default
                             *target_slot = latch_value.unwrap_or(default_val);
                         }
@@ -229,6 +296,7 @@ impl Compiler {
             resolved_velocities: &resolved.velocities,
             resolved_pitches: &resolved.pitches,
             current_block_idx: 0,
+            leaf_counter: 0,
             swing,
         };
 
@@ -246,6 +314,7 @@ impl Compiler {
                         for &(buf_idx, buffered_block) in &repeat_buffer {
                             let block_duration = self.unit_per_block;
                             line_compiler.current_block_idx = buf_idx;
+                            line_compiler.leaf_counter = 0;
                             line_compiler.process_tokens(
                                 &buffered_block.tokens,
                                 line_time,
@@ -262,6 +331,7 @@ impl Compiler {
                         for &(buf_idx, buffered_block) in &repeat_buffer {
                             let block_duration = self.unit_per_block;
                             line_compiler.current_block_idx = buf_idx;
+                            line_compiler.leaf_counter = 0;
                             line_compiler.process_tokens(
                                 &buffered_block.tokens,
                                 line_time,
@@ -278,6 +348,7 @@ impl Compiler {
 
             let block_duration = self.unit_per_block;
             line_compiler.current_block_idx = block_idx;
+            line_compiler.leaf_counter = 0;
             line_compiler.process_tokens(&block.tokens, line_time, block_duration);
             line_time += block_duration;
 
@@ -292,6 +363,7 @@ impl Compiler {
                     for &(buf_idx, buffered_block) in &repeat_buffer {
                         let block_duration = self.unit_per_block;
                         line_compiler.current_block_idx = buf_idx;
+                        line_compiler.leaf_counter = 0;
                         line_compiler.process_tokens(
                             &buffered_block.tokens,
                             line_time,
@@ -410,6 +482,7 @@ struct LineCompiler<'a> {
     resolved_velocities: &'a [Vec<i32>],
     resolved_pitches: &'a [Vec<i32>],
     current_block_idx: usize,
+    leaf_counter: usize,
     swing: Option<(u8, u8)>,
 }
 
@@ -459,11 +532,12 @@ impl<'a> LineCompiler<'a> {
 
             match token {
                 Token::Note => {
-                    // Get velocity and pitch modifier for this token
+                    // Get velocity and pitch modifier for this leaf token
+                    let leaf_idx = self.leaf_counter;
                     let velocity = self
                         .resolved_velocities
                         .get(self.current_block_idx)
-                        .and_then(|v| v.get(i))
+                        .and_then(|v| v.get(leaf_idx))
                         .copied()
                         .unwrap_or(100)
                         .clamp(0, 127) as u8;
@@ -471,7 +545,7 @@ impl<'a> LineCompiler<'a> {
                     let pitch_mod = self
                         .resolved_pitches
                         .get(self.current_block_idx)
-                        .and_then(|v| v.get(i))
+                        .and_then(|v| v.get(leaf_idx))
                         .copied()
                         .unwrap_or(0);
 
@@ -495,11 +569,13 @@ impl<'a> LineCompiler<'a> {
                         self.events.push(event);
                         self.last_event_indices[nth] = Some(self.events.len() - 1);
                     }
+                    self.leaf_counter += 1;
                 }
                 Token::Rest => {
                     for (nth, _) in self.notes.iter().enumerate() {
                         self.last_event_indices[nth] = None;
                     }
+                    self.leaf_counter += 1;
                 }
                 Token::Sustain => {
                     for (nth, _) in self.notes.iter().enumerate() {
@@ -507,8 +583,10 @@ impl<'a> LineCompiler<'a> {
                             self.events[idx].duration += swung_duration;
                         }
                     }
+                    self.leaf_counter += 1;
                 }
                 Token::Group(sub_tokens) => {
+                    // Recurse into group — leaf_counter continues from current position
                     self.process_tokens(sub_tokens, unswung_start, duration_per_token);
                 }
             }

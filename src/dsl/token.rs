@@ -61,6 +61,7 @@ pub enum ModifierValue {
     Empty,
     Set(i32),
     Latch(i32),
+    Group(Vec<ModifierValue>),
 }
 
 /// モディファイアの種類

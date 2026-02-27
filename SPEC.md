@@ -45,15 +45,21 @@ Group       = "[" , { Token | space } , "]" ;
 A modifier line adjusts per-token properties (e.g. velocity, pitch) for the immediately preceding pattern line.
 
 ```ebnf
-ModifierLine  = ModifierKind , space , Bar , { ModifierValue | space } , { Bar , { ModifierValue | space } } , Bar ;
-ModifierKind  = "v" | "p" ;
-ModifierValue = [ "!" ] , [ "+" | "-" ] , digits ;
+ModifierLine   = ModifierKind , space , Bar , { ModifierEntry | space } , { Bar , { ModifierEntry | space } } , Bar ;
+ModifierKind   = "v" | "p" ;
+ModifierEntry  = ModifierValue | ModifierGroup | ModifierEmpty ;
+ModifierValue  = [ "!" ] , [ "+" | "-" ] , digits ;
+ModifierGroup  = "[" , { ModifierEntry | space } , "]" ;
+ModifierEmpty  = "." ;
 ```
 
 - **`v`** (Velocity): Absolute value (0–127). Default: 100.
 - **`p`** (Pitch): Relative semitone offset (`+N` / `-N`). Default: 0.
 - **`!` prefix (Latch)**: The value persists for subsequent empty slots.
+- **`.` (Empty)**: Explicitly marks a slot as empty (uses latch or default). Equivalent to a whitespace-only gap, but useful inside `[...]` groups.
 - **Empty slot**: Uses the latched value if active, otherwise the default.
+- **`[...]` (Group)**: Aligns sub-values 1:1 with the sub-tokens of the corresponding pattern `[...]`. Empty slots within a group use the latch/default rules.
+- **Scalar at Group position**: When a single modifier value corresponds to a pattern `[...]`, the value is broadcast to all sub-tokens.
 
 ```loom
 C3 | ^    ^    ^    ^   |

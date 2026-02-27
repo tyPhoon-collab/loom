@@ -22,7 +22,16 @@ fn modifier_value_width(val: &ModifierValue) -> usize {
     match val {
         ModifierValue::Set(v) => format!("{}", v).len(),
         ModifierValue::Latch(v) => format!("!{}", v).len(),
-        ModifierValue::Empty => 0,
+        ModifierValue::Empty => 1,
+        ModifierValue::Group(vals) => {
+            // [v1 v2 ...] — brackets + spaces + each value
+            if vals.is_empty() {
+                return 2; // []
+            }
+            let inner: usize = vals.iter().map(|v| modifier_value_width(v).max(1)).sum();
+            let spaces = vals.len() - 1;
+            2 + inner + spaces // [ + values + spaces + ]
+        }
     }
 }
 
@@ -30,7 +39,21 @@ fn modifier_value_str(val: &ModifierValue) -> String {
     match val {
         ModifierValue::Set(v) => format!("{}", v),
         ModifierValue::Latch(v) => format!("!{}", v),
-        ModifierValue::Empty => String::new(),
+        ModifierValue::Empty => ".".to_string(),
+        ModifierValue::Group(vals) => {
+            let inner: Vec<String> = vals
+                .iter()
+                .map(|v| {
+                    let s = modifier_value_str(v);
+                    if s.is_empty() {
+                        ".".to_string()
+                    } else {
+                        s
+                    }
+                })
+                .collect();
+            format!("[{}]", inner.join(" "))
+        }
     }
 }
 
@@ -100,7 +123,10 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
                 } = m
                 {
                     if let Some(block) = mblocks.get(b_idx) {
-                        token_counts.push(block.values.len());
+                        // Modifier values do NOT participate in LCM grid calculation.
+                        // They follow the pattern's grid layout.
+                        // Only contribute to column widths (done below).
+                        let _ = block;
                     }
                 }
             }
@@ -161,7 +187,7 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
                         if k > 0 {
                             for (j, val) in block.values.iter().enumerate() {
                                 let col = 1 + (j * g) / k;
-                                if col < num_cols && !matches!(val, ModifierValue::Empty) {
+                                if col < num_cols {
                                     let v_width = modifier_value_width(val);
                                     column_widths[col] = column_widths[col].max(v_width);
                                 }

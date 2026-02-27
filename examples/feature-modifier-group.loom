@@ -1,0 +1,23 @@
+---
+bpm: 120
+signature: 4/4
+unit: bar
+title: "Modifier Group Demo"
+---
+
+# Drums: 10
+
+> Group内の個別サブトークンにベロシティを指定するデモ
+> 「.」はデフォルト値(Empty)を明示。[. . . 80] で4つ目だけvel=80
+
+hh | ^  ^  ^           ^   |
+sn | .   ^   [^ . . ^]     |
+v  |         [. . . 80]    |
+bd | ^  .  ^           .   |
+
+# Piano: 1
+
+> 単一値はGroup全体に一括適用
+
+C3 | ^   ^ [^ ^ ^ ^]  |
+v  | 100   60         |
