@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub struct App {
@@ -14,16 +15,34 @@ pub struct App {
     pub status_message: String,
     pub is_playing: bool,
     pub bpm: u32,
+    pub midi_device_name: String,
+    pub current_beat: Arc<Mutex<f64>>,
     player: LivePlayer,
     event_handler: EventHandler,
 }
 
 impl App {
     pub fn new(path: PathBuf, port_index: usize) -> Result<Self> {
-        let player = LivePlayer::new(port_index)?;
+        let current_beat = Arc::new(Mutex::new(0.0));
+        let player = LivePlayer::new(port_index, Arc::clone(&current_beat))?;
         // Initial compile
         let content = fs::read_to_string(&path).unwrap_or_default();
         let _ = Self::compile_and_update(&content, &player);
+
+        let midi_device_name = {
+            if let Ok(midi_out) = midir::MidiOutput::new("Loom Info") {
+                let ports = midi_out.ports();
+                if let Some(port) = ports.get(port_index) {
+                    midi_out
+                        .port_name(port)
+                        .unwrap_or_else(|_| format!("Port {}", port_index))
+                } else {
+                    format!("Port {} (Not Found)", port_index)
+                }
+            } else {
+                format!("Port {}", port_index)
+            }
+        };
 
         Ok(Self {
             should_quit: false,
@@ -32,6 +51,8 @@ impl App {
             status_message: "Ready".to_string(),
             is_playing: false,
             bpm: 120,
+            midi_device_name,
+            current_beat,
             player,
         })
     }
@@ -123,6 +144,14 @@ impl App {
                     self.status_message = "Playing".to_string();
                 }
             }
+            KeyCode::Char('r') => {
+                self.player.restart();
+                if !self.is_playing {
+                    self.player.play();
+                    self.is_playing = true;
+                }
+                self.status_message = "Restarted from beginning".to_string();
+            }
             _ => {}
         }
     }
@@ -150,11 +179,15 @@ impl App {
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
 
+        let beat_val = *self.current_beat.lock().unwrap();
+
         let status = Paragraph::new(format!(
-            "Status: {}\nBPM: {}\nState: {}",
+            "Device: {}\nStatus: {}\nBPM: {}\nState: {}\nBeat: {:.2}",
+            self.midi_device_name,
             self.status_message,
             self.bpm,
-            if self.is_playing { "PLAYING" } else { "PAUSED" }
+            if self.is_playing { "PLAYING" } else { "PAUSED" },
+            beat_val
         ))
         .block(Block::default().title("Info").borders(Borders::ALL))
         .style(
@@ -166,7 +199,7 @@ impl App {
         );
         f.render_widget(status, chunks[1]);
 
-        let footer = Paragraph::new("q: Quit | Space: Play/Pause")
+        let footer = Paragraph::new("q: Quit | Space: Play/Pause | r: Restart")
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(footer, chunks[2]);
     }

@@ -3,7 +3,7 @@ use crate::dsl::token::Frontmatter;
 use crate::sequencer::{Core, PlaybackState};
 use miette::Result;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ pub enum PlayerCommand {
     Play,
     Pause,
     Stop,
+    Restart,
 }
 
 pub struct LivePlayer {
@@ -22,12 +23,12 @@ pub struct LivePlayer {
 }
 
 impl LivePlayer {
-    pub fn new(port_index: usize) -> Result<Self> {
+    pub fn new(port_index: usize, current_beat_ref: Arc<Mutex<f64>>) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
         let _ = PLAYER_SENDER.set(tx.clone());
 
         let handle = thread::spawn(move || {
-            if let Err(e) = run_player_loop(port_index, rx) {
+            if let Err(e) = run_player_loop(port_index, rx, current_beat_ref) {
                 eprintln!("Player thread error: {}", e);
             }
             Ok(())
@@ -53,6 +54,10 @@ impl LivePlayer {
         let _ = self.command_sender.send(PlayerCommand::Pause);
     }
 
+    pub fn restart(&self) {
+        let _ = self.command_sender.send(PlayerCommand::Restart);
+    }
+
     pub fn stop(&mut self) {
         let _ = self.command_sender.send(PlayerCommand::Stop);
         if let Some(handle) = self.thread_handle.take() {
@@ -73,7 +78,11 @@ impl Drop for LivePlayer {
     }
 }
 
-fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()> {
+fn run_player_loop(
+    port_index: usize,
+    rx: Receiver<PlayerCommand>,
+    current_beat_ref: Arc<Mutex<f64>>,
+) -> Result<()> {
     let mut core = Core::new(port_index, "Loom Live")?;
     let tick_rate = Duration::from_millis(5);
 
@@ -90,6 +99,9 @@ fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()>
                 PlayerCommand::Pause => {
                     core.pause();
                 }
+                PlayerCommand::Restart => {
+                    core.restart();
+                }
                 PlayerCommand::Stop => {
                     core.stop();
                     return Ok(());
@@ -98,10 +110,10 @@ fn run_player_loop(port_index: usize, rx: Receiver<PlayerCommand>) -> Result<()>
         }
 
         let state = core.tick();
-        if state == PlaybackState::Playing {
-            // Check loop or end?
-            // Core handles looping if metadata.loop is true.
-            // If not looping and end reached, Core stops.
+        if state == PlaybackState::Playing || state == PlaybackState::Paused {
+            if let Ok(mut beat) = current_beat_ref.lock() {
+                *beat = core.current_beat();
+            }
         }
 
         thread::sleep(tick_rate);

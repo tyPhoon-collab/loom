@@ -57,6 +57,10 @@ impl Core {
         self.store.update(events, metadata);
     }
 
+    pub fn current_beat(&self) -> f64 {
+        self.last_processed_beat.max(0.0)
+    }
+
     pub fn set_loop_range(&mut self, start: f64, end: f64) {
         self.loop_range = Some((start, end));
     }
@@ -85,6 +89,13 @@ impl Core {
         self.state = PlaybackState::Stopped;
         self.seq_offset = 0.0;
         self.last_processed_beat = -1.0;
+        self.silence_all();
+    }
+
+    pub fn restart(&mut self) {
+        self.seq_offset = self.loop_range.map(|(s, _)| s).unwrap_or(0.0);
+        self.last_processed_beat = self.seq_offset - 0.001;
+        self.start_time = Instant::now();
         self.silence_all();
     }
 
