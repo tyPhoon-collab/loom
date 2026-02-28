@@ -406,6 +406,7 @@ impl Compiler {
         let mut structural_repeat = 1u32;
         let mut reverse = false;
         let mut time_scale = 1.0f64;
+        let mut macros: Vec<&str> = Vec::new();
 
         for param in &call.params {
             match param {
@@ -413,12 +414,15 @@ impl Compiler {
                 TemplateParam::StructuralRepeat(v) => structural_repeat = *v,
                 TemplateParam::TimeScale(v) => time_scale = 1.0 / *v as f64,
                 TemplateParam::Macro(m) if m == "rev" => reverse = true,
-                _ => {}
+                TemplateParam::Macro(m) => macros.push(m),
             }
         }
 
         pitch_offset += template_pitch_offset;
         let effective_time_scale = parent_time_scale * time_scale;
+
+        // Track where new events start so we can apply macros later
+        let events_start_idx = ctx.events.len();
 
         for _ in 0..call.repeat {
             let mut entries = def.sequence.entries.clone();
@@ -478,11 +482,104 @@ impl Compiler {
             *current_time = section_max_time;
         }
 
+        // Apply post-processing macros to generated events
+        let generated_events = &mut ctx.events[events_start_idx..];
+        for macro_str in &macros {
+            apply_macro(generated_events, macro_str, effective_time_scale);
+        }
+
         ctx.call_stack.pop();
         Ok(())
     }
 }
 
+/// Apply a post-processing macro to a slice of generated MidiEvents.
+fn apply_macro(events: &mut [MidiEvent], macro_str: &str, time_scale: f64) {
+    if let Some(vel_str) = macro_str.strip_prefix("vel:") {
+        // vel:N — Override velocity for all events
+        if let Ok(vel) = vel_str.parse::<u8>() {
+            let vel = vel.min(127);
+            for event in events.iter_mut() {
+                event.velocity = vel;
+            }
+        }
+    } else if macro_str == "arp" {
+        // arp — Spread simultaneous notes evenly across their block duration
+        apply_arp(events, time_scale);
+    } else if macro_str == "strum" {
+        // strum — Small timing offsets between simultaneous notes (guitar-like)
+        apply_strum(events, time_scale);
+    }
+}
+
+/// Arpeggiate: spread simultaneous notes evenly across the block duration.
+fn apply_arp(events: &mut [MidiEvent], _time_scale: f64) {
+    if events.is_empty() {
+        return;
+    }
+
+    // Group events by their start time
+    let mut time_groups: std::collections::BTreeMap<u64, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, event) in events.iter().enumerate() {
+        let key = (event.time * 1_000_000.0) as u64; // Use microsecond precision for grouping
+        time_groups.entry(key).or_default().push(i);
+    }
+
+    for indices in time_groups.values() {
+        let count = indices.len();
+        if count <= 1 {
+            continue;
+        }
+        // Get the original duration of the block these notes belong to
+        let original_duration = events[indices[0]].duration;
+        let step = original_duration / count as f64;
+
+        // Sort by pitch (low to high) for natural arpeggio
+        let mut sorted_indices: Vec<usize> = indices.clone();
+        sorted_indices.sort_by(|&a, &b| events[a].note.cmp(&events[b].note));
+
+        for (nth, &idx) in sorted_indices.iter().enumerate() {
+            events[idx].time += step * nth as f64;
+            events[idx].duration = step;
+        }
+    }
+}
+
+/// Strum: add small timing offsets between simultaneous notes (guitar-like feel).
+fn apply_strum(events: &mut [MidiEvent], _time_scale: f64) {
+    if events.is_empty() {
+        return;
+    }
+
+    let strum_interval = 0.03; // ~30ms worth of beats at moderate tempo
+
+    // Group events by their start time
+    let mut time_groups: std::collections::BTreeMap<u64, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, event) in events.iter().enumerate() {
+        let key = (event.time * 1_000_000.0) as u64;
+        time_groups.entry(key).or_default().push(i);
+    }
+
+    for indices in time_groups.values() {
+        let count = indices.len();
+        if count <= 1 {
+            continue;
+        }
+
+        // Sort by pitch: low notes first (strum from bass string up)
+        let mut sorted_indices: Vec<usize> = indices.clone();
+        sorted_indices.sort_by(|&a, &b| events[a].note.cmp(&events[b].note));
+
+        for (nth, &idx) in sorted_indices.iter().enumerate() {
+            let offset = strum_interval * nth as f64;
+            events[idx].time += offset;
+            // Shorten duration slightly to keep the end time the same
+            events[idx].duration = (events[idx].duration - offset).max(0.01);
+        }
+    }
+}
 struct LineCompiler<'a> {
     channel: u8,
     notes: &'a [Note],

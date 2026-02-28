@@ -100,7 +100,7 @@ TemplateParam     = Transpose | StructuralRepeat | TimeScale | Macro ;
 Transpose         = ( "+" | "-" ) , digits ;
 StructuralRepeat  = "x" , digits ;
 TimeScale         = "/" , digits ;
-Macro             = "rev" ;
+Macro             = "rev" | "arp" | "strum" | "vel:" , digits ;
 ```
 
 - **Sequential Processing**: When multiple template expansions are written on the same line (e.g., `[@a][@b]`), they are processed **sequentially** (B starts after A finishes). This is different from expansions on separate lines, which are processed **parallelly** at the start of the section.
@@ -111,6 +111,9 @@ Macro             = "rev" ;
 - **Sequence Repeat (`*N`)**: Repeats the entire template `N` times.
 - **Macros**:
     - `rev`: Reverses the sequence.
+    - `arp`: Arpeggiates simultaneous notes, spreading them evenly across the block duration.
+    - `strum`: Adds slight timing offsets between simultaneous notes (guitar strum feel).
+    - `vel:N`: Overrides velocity for all notes in the template (0–127).
 
 ```loom
 # Track: 1

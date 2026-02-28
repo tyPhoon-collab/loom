@@ -234,8 +234,11 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
                     params.push(crate::dsl::token::TemplateParam::TimeScale(val));
                 }
             }
-        } else if param_str == "rev" {
-            params.push(crate::dsl::token::TemplateParam::Macro("rev".to_string()));
+        } else {
+            // General macro: "rev", "arp", "strum", "vel:80", etc.
+            params.push(crate::dsl::token::TemplateParam::Macro(
+                param_str.to_string(),
+            ));
         }
 
         current_input = rest;
