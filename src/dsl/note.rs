@@ -49,6 +49,7 @@ static DRUM_MAP: phf::Map<&str, u8> = phf_map! {
 pub enum Note {
     Pitch { name: String, octave: i32 },
     Drum(String),
+    Midi(u8),
 }
 
 impl std::fmt::Display for Note {
@@ -65,6 +66,7 @@ impl std::fmt::Display for Note {
                 }
             }
             Note::Drum(alias) => write!(f, "{}", alias),
+            Note::Midi(v) => write!(f, "{}", v),
         }
     }
 }
@@ -77,6 +79,7 @@ impl Note {
                 ((octave + 2) * 12 + offset as i32).clamp(0, 127) as u8
             }
             Note::Drum(alias) => DRUM_MAP.get(alias.as_str()).copied().unwrap_or(36),
+            Note::Midi(v) => *v,
         }
     }
 }
@@ -85,12 +88,19 @@ impl FromStr for Note {
     type Err = miette::Report;
 
     fn from_str(s: &str) -> Result<Self> {
-        // 1. Check Drum Aliases (Case-Sensitive)
+        // 1. Check if it's a numeric MIDI note (always valid up to 127)
+        if let Ok(midi_val) = s.parse::<u8>() {
+            if midi_val <= 127 {
+                return Ok(Note::Midi(midi_val));
+            }
+        }
+
+        // 2. Check Drum Aliases (Case-Sensitive)
         if DRUM_MAP.contains_key(s) {
             return Ok(Note::Drum(s.to_string()));
         }
 
-        // 2. Parse Pitch (Case-Insensitive for the pitch name part)
+        // 3. Parse Pitch (Case-Insensitive for the pitch name part)
         let s_lower = s.to_lowercase();
         let mut pitch_part = String::new();
         let mut octave_part = String::new();

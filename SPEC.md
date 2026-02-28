@@ -19,9 +19,10 @@ PatternLine = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , Commen
 
 ## Patterns & Tokens
 ```ebnf
-RowHeader   = NoteList | DrumName ;
+RowHeader   = NoteList | DrumName | MidiNote ;
 NoteList    = NoteName , { "," , NoteName } ;
 NoteName    = ( "a"..."g" | "A"..."G" ) , [ "#" | "b" ] , digit ;
+MidiNote    = digits ;
 DrumName    = "bd" | "kick" | "sn" | "snare" | "rs" | "rim" | "cp" | "clap"
             | "hh" | "hc" | "hihat" | "oh" | "ho" | "hp"
             | "cr" | "crash" | "rd" | "ride" | "splash" | "china"
@@ -29,6 +30,7 @@ DrumName    = "bd" | "kick" | "sn" | "snare" | "rs" | "rim" | "cp" | "clap"
 
 > [!NOTE]
 > - **NoteName** is case-insensitive (e.g., `c4` and `C4` are the same).
+> - **MidiNote** must be a valid number from `0` to `127` (e.g., `60` represents Middle C).
 > - **DrumName** is case-sensitive (e.g., `kick` is valid, `KICK` is not).
 
 Bar         = "|" | "|:" | ":|" | ":|:" ;

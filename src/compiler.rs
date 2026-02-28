@@ -551,7 +551,7 @@ impl<'a> LineCompiler<'a> {
 
                     for (nth, note) in self.notes.iter().enumerate() {
                         let midi_val = match note {
-                            Note::Pitch { .. } => {
+                            Note::Pitch { .. } | Note::Midi(_) => {
                                 (note.to_midi() as i32 + self.pitch_offset + pitch_mod)
                                     .clamp(0, 127) as u8
                             }
