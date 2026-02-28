@@ -228,6 +228,12 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
             if let Ok(val) = stripped.parse::<u32>() {
                 params.push(crate::dsl::token::TemplateParam::StructuralRepeat(val));
             }
+        } else if let Some(stripped) = param_str.strip_prefix('/') {
+            if let Ok(val) = stripped.parse::<u32>() {
+                if val > 0 {
+                    params.push(crate::dsl::token::TemplateParam::TimeScale(val));
+                }
+            }
         } else if param_str == "rev" {
             params.push(crate::dsl::token::TemplateParam::Macro("rev".to_string()));
         }

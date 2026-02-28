@@ -96,9 +96,10 @@ Templates are expanded using the `[@name]` syntax. They can take parameters for 
 ```ebnf
 TemplateLine      = TemplateExpansion , { TemplateExpansion } , newline ;
 TemplateExpansion = "[" , "@" , name , { "|" , TemplateParam } , "]" , [ "*" , digits ] ;
-TemplateParam     = Transpose | StructuralRepeat | Macro ;
+TemplateParam     = Transpose | StructuralRepeat | TimeScale | Macro ;
 Transpose         = ( "+" | "-" ) , digits ;
 StructuralRepeat  = "x" , digits ;
+TimeScale         = "/" , digits ;
 Macro             = "rev" ;
 ```
 
@@ -106,6 +107,7 @@ Macro             = "rev" ;
 
 - **Transpose (`+N` / `-N`)**: Shifts the pitch of all notes in the template by `N` semitones.
 - **Structural Repeat (`xN`)**: Repeats the content within the same grid duration. For example, a single `^` with `x4` becomes `^ ^ ^ ^` within the same total time.
+- **Time Scale (`/N`)**: Compresses the template playback to `1/N` of its original duration. Propagates through nested template calls.
 - **Sequence Repeat (`*N`)**: Repeats the entire template `N` times.
 - **Macros**:
     - `rev`: Reverses the sequence.

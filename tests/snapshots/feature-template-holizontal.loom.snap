@@ -1,0 +1,49 @@
+---
+source: tests/examples_test.rs
+assertion_line: 32
+expression: events
+---
+[
+    MidiEvent {
+        time: 0.0,
+        duration: 2.0,
+        channel: 0,
+        note: 67,
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 0.0,
+        duration: 2.0,
+        channel: 0,
+        note: 64,
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 0.0,
+        duration: 2.0,
+        channel: 0,
+        note: 60,
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 2.0,
+        duration: 2.0,
+        channel: 0,
+        note: 72,
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 2.0,
+        duration: 2.0,
+        channel: 0,
+        note: 69,
+        velocity: 100,
+    },
+    MidiEvent {
+        time: 2.0,
+        duration: 2.0,
+        channel: 0,
+        note: 65,
+        velocity: 100,
+    },
+]

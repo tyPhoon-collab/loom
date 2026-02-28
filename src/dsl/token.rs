@@ -135,6 +135,7 @@ pub struct Section {
 pub enum TemplateParam {
     Transpose(i32),        // +N / -N
     StructuralRepeat(u32), // xN
+    TimeScale(u32),        // /N
     Macro(String),         // rev, etc.
 }
 
@@ -149,6 +150,7 @@ impl std::fmt::Display for TemplateParam {
                 }
             }
             Self::StructuralRepeat(val) => write!(f, "x{}", val),
+            Self::TimeScale(val) => write!(f, "/{}", val),
             Self::Macro(m) => write!(f, "{}", m),
         }
     }

@@ -246,23 +246,25 @@ impl Compiler {
                         pitch_offset,
                         &mut line_time,
                         ctx.swing,
+                        1.0,
                     );
                     if line_time > section_max_time {
                         section_max_time = line_time;
                     }
                 }
                 LineEntry::TemplateCalls(sub_calls) => {
+                    let mut seq_time = section_start_time;
                     for call in sub_calls {
-                        let mut line_time = section_start_time;
                         self.compile_template(
                             call,
                             track.channel,
                             pitch_offset,
-                            &mut line_time,
+                            &mut seq_time,
                             &mut ctx,
+                            1.0,
                         )?;
-                        section_max_time = section_max_time.max(line_time);
                     }
+                    section_max_time = section_max_time.max(seq_time);
                 }
                 LineEntry::TrackWrap => {
                     section_start_time = section_max_time;
@@ -272,6 +274,7 @@ impl Compiler {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compile_pattern_line(
         &self,
         line: &Line,
@@ -280,6 +283,7 @@ impl Compiler {
         pitch_offset: i32,
         current_time: &mut f64,
         swing: Option<(u8, u8)>,
+        time_scale: f64,
     ) {
         let initial_time = *current_time;
         let mut line_time = initial_time;
@@ -312,7 +316,7 @@ impl Compiler {
                 Bar::RepeatEnd => {
                     if in_repeat {
                         for &(buf_idx, buffered_block) in &repeat_buffer {
-                            let block_duration = self.unit_per_block;
+                            let block_duration = self.unit_per_block * time_scale;
                             line_compiler.current_block_idx = buf_idx;
                             line_compiler.leaf_counter = 0;
                             line_compiler.process_tokens(
@@ -329,7 +333,7 @@ impl Compiler {
                 Bar::Double => {
                     if in_repeat {
                         for &(buf_idx, buffered_block) in &repeat_buffer {
-                            let block_duration = self.unit_per_block;
+                            let block_duration = self.unit_per_block * time_scale;
                             line_compiler.current_block_idx = buf_idx;
                             line_compiler.leaf_counter = 0;
                             line_compiler.process_tokens(
@@ -346,7 +350,7 @@ impl Compiler {
                 Bar::Standard => {}
             }
 
-            let block_duration = self.unit_per_block;
+            let block_duration = self.unit_per_block * time_scale;
             line_compiler.current_block_idx = block_idx;
             line_compiler.leaf_counter = 0;
             line_compiler.process_tokens(&block.tokens, line_time, block_duration);
@@ -386,6 +390,7 @@ impl Compiler {
         mut pitch_offset: i32,
         current_time: &mut f64,
         ctx: &mut CompilerContext,
+        parent_time_scale: f64,
     ) -> Result<()> {
         if ctx.call_stack.contains(&call.name) {
             let trace = ctx.call_stack.join(" -> ") + " -> " + &call.name;
@@ -400,17 +405,20 @@ impl Compiler {
         let mut template_pitch_offset = 0;
         let mut structural_repeat = 1u32;
         let mut reverse = false;
+        let mut time_scale = 1.0f64;
 
         for param in &call.params {
             match param {
                 TemplateParam::Transpose(v) => template_pitch_offset += v,
                 TemplateParam::StructuralRepeat(v) => structural_repeat = *v,
+                TemplateParam::TimeScale(v) => time_scale = 1.0 / *v as f64,
                 TemplateParam::Macro(m) if m == "rev" => reverse = true,
                 _ => {}
             }
         }
 
         pitch_offset += template_pitch_offset;
+        let effective_time_scale = parent_time_scale * time_scale;
 
         for _ in 0..call.repeat {
             let mut entries = def.sequence.entries.clone();
@@ -442,23 +450,25 @@ impl Compiler {
                             pitch_offset,
                             &mut line_time,
                             ctx.swing,
+                            effective_time_scale,
                         );
                         if line_time > section_max_time {
                             section_max_time = line_time;
                         }
                     }
                     LineEntry::TemplateCalls(sub_calls) => {
+                        let mut seq_time = section_start_time;
                         for call in sub_calls {
-                            let mut line_time = section_start_time;
                             self.compile_template(
                                 call,
                                 channel,
                                 pitch_offset,
-                                &mut line_time,
+                                &mut seq_time,
                                 ctx,
+                                effective_time_scale,
                             )?;
-                            section_max_time = section_max_time.max(line_time);
                         }
+                        section_max_time = section_max_time.max(seq_time);
                     }
                     LineEntry::TrackWrap => {
                         section_start_time = section_max_time;
