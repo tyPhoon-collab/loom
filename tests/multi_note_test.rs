@@ -40,3 +40,24 @@ c3,e3 | ^ - |
     assert_eq!(events[0].duration, 4.0);
     assert_eq!(events[1].duration, 4.0);
 }
+
+#[test]
+fn test_modifier_latch_applies_on_later_non_empty_block() {
+    let source = r#"---
+bpm: 152
+---
+# Piano: 2
+F4,C5 |              | ^   ^ ^ ^ [^ ^ [^ ^ ^]]  |
+v     |              | !60                      |
+G4,B4 | ^   ^ ^ ^ ^  |                          |
+v     | !60          |                          |
+"#;
+
+    let song = parse_song(source.to_string()).unwrap();
+    let compiler = Compiler::new(&song).unwrap();
+    let events = compiler.compile(&song).unwrap();
+
+    // Regression: modifier blocks must stay aligned even if pattern block has zero tokens.
+    assert!(!events.is_empty());
+    assert!(events.iter().all(|e| e.velocity == 60));
+}

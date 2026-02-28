@@ -176,14 +176,21 @@ impl Compiler {
 
             for block_idx in 0..num_blocks {
                 let num_leaves = leaves_per_block[block_idx];
+                let maybe_raw_values = if mod_block_idx < modifier.blocks.len() {
+                    let raw_values = &modifier.blocks[mod_block_idx].values;
+                    mod_block_idx += 1;
+                    Some(raw_values)
+                } else {
+                    None
+                };
+
                 if num_leaves == 0 {
+                    // Keep modifier block alignment even when the pattern block is empty.
                     continue;
                 }
 
                 // Get modifier values for this block, expanded to leaf level
-                let expanded = if mod_block_idx < modifier.blocks.len() {
-                    let raw_values = &modifier.blocks[mod_block_idx].values;
-                    mod_block_idx += 1;
+                let expanded = if let Some(raw_values) = maybe_raw_values {
                     expand_modifier_values(&line.blocks[block_idx].tokens, raw_values)
                 } else {
                     vec![ModifierValue::Empty; num_leaves]
