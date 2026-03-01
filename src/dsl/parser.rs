@@ -2,7 +2,7 @@ use super::error::ParseError;
 use super::syntax::Symbol;
 use super::token::{
     Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
-    ModifierValue, Note, Song, Token, Track,
+    ModifierValue, Note, Song, Token, Track, TrackInitEvent,
 };
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
@@ -12,6 +12,7 @@ pub enum ParsedLine {
         channel: u8,
         muted: bool,
     },
+    TrackInit(TrackInitEvent),
     Pattern {
         key: String,
         notes: Vec<Note>,
@@ -182,6 +183,115 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
             muted: muted_flag.is_some(),
         },
     ))
+}
+
+fn parse_u7(raw: &str) -> std::result::Result<u8, String> {
+    let v = raw
+        .parse::<u16>()
+        .map_err(|_| format!("Invalid number '{}'", raw))?;
+    if v > 127 {
+        return Err(format!("Out of range '{}': expected 0..127", raw));
+    }
+    Ok(v as u8)
+}
+
+fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent, String> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("Missing init command after '##'".to_string());
+    }
+    let head = parts[0].to_ascii_lowercase();
+    match head.as_str() {
+        "pc" | "sound" => {
+            if parts.len() != 2 {
+                Err(format!("Usage: ## {} <0..127>", head))
+            } else {
+                parse_u7(parts[1]).map(|program| TrackInitEvent::ProgramChange { program })
+            }
+        }
+        "bank" => {
+            if parts.len() != 2 {
+                Err("Usage: ## bank <msb>/<lsb>".to_string())
+            } else if let Some((msb, lsb)) = parts[1].split_once('/') {
+                match (parse_u7(msb), parse_u7(lsb)) {
+                    (Ok(msb), Ok(lsb)) => Ok(TrackInitEvent::BankSelect { msb, lsb }),
+                    (Err(e), _) | (_, Err(e)) => Err(e),
+                }
+            } else {
+                Err("Usage: ## bank <msb>/<lsb>".to_string())
+            }
+        }
+        "cc" => {
+            if parts.len() != 3 {
+                Err("Usage: ## cc <controller 0..127> <value 0..127>".to_string())
+            } else {
+                match (parse_u7(parts[1]), parse_u7(parts[2])) {
+                    (Ok(cc), Ok(value)) => Ok(TrackInitEvent::ControlChange { cc, value }),
+                    (Err(e), _) | (_, Err(e)) => Err(e),
+                }
+            }
+        }
+        "pan" | "volume" | "expression" | "mod" | "sustain" => {
+            if parts.len() != 2 {
+                Err(format!("Usage: ## {} <0..127>", head))
+            } else {
+                let cc = match head.as_str() {
+                    "pan" => 10,
+                    "volume" => 7,
+                    "expression" => 11,
+                    "mod" => 1,
+                    "sustain" => 64,
+                    _ => unreachable!(),
+                };
+                parse_u7(parts[1]).map(|value| TrackInitEvent::ControlChange { cc, value })
+            }
+        }
+        _ => {
+            let suggestions = [
+                "bank",
+                "pc",
+                "sound",
+                "cc",
+                "pan",
+                "volume",
+                "expression",
+                "mod",
+                "sustain",
+            ];
+            let hint = suggestions
+                .iter()
+                .find(|s| s.starts_with(&head))
+                .copied()
+                .or_else(|| {
+                    suggestions
+                        .iter()
+                        .find(|s| s.contains(&head) || head.contains(**s))
+                        .copied()
+                });
+            match hint {
+                Some(h) => Err(format!(
+                    "Unknown init command '{}'. Did you mean '{}'?",
+                    head, h
+                )),
+                None => Err(format!("Unknown init command '{}'", head)),
+            }
+        }
+    }
+}
+
+fn parse_track_init_line(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = nom::bytes::complete::tag("##")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, rest) = not_line_ending(input)?;
+    let command = rest.trim();
+
+    match parse_track_init_command(command) {
+        Ok(event) => Ok((input, ParsedLine::TrackInit(event))),
+        Err(_) => Err(nom::Err::Failure(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        ))),
+    }
 }
 
 fn parse_template_header(input: &str) -> IResult<&str, ParsedLine> {
@@ -495,6 +605,7 @@ pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     alt((
         parse_comment,
         parse_track_wrap,
+        parse_track_init_line,
         parse_track_header,
         parse_template_header,
         parse_template_list,
@@ -568,6 +679,9 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 ParsedLine::TrackWrap => {
                     builder.add_section(line_str)?;
                 }
+                ParsedLine::TrackInit(event) => {
+                    builder.add_track_init(line_str, event)?;
+                }
                 ParsedLine::TemplateHeader { name } => {
                     builder.start_template(name);
                 }
@@ -593,6 +707,11 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 ParsedLine::Comment(_) | ParsedLine::Empty | ParsedLine::Frontmatter(_) => {}
             },
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+                if let Some(rest) = trimmed.strip_prefix("##") {
+                    if let Err(msg) = parse_track_init_command(rest.trim()) {
+                        return Err(ParseError::from_validation(line_str, &source, msg, None));
+                    }
+                }
                 return Err(ParseError::from_nom(
                     line_str,
                     &source,
@@ -674,6 +793,7 @@ impl<'a> SongBuilder<'a> {
             name,
             channel,
             muted,
+            init_events: Vec::new(),
             sequence: crate::dsl::token::Sequence {
                 entries: Vec::new(),
             },
@@ -719,6 +839,93 @@ impl<'a> SongBuilder<'a> {
         } else if let Some(ref mut track) = self.current_track {
             track.sequence.entries.push(entry);
         }
+    }
+
+    fn add_track_init(&mut self, line_str: &str, event: TrackInitEvent) -> Result<(), ParseError> {
+        if self.current_template.is_some() {
+            return Err(ParseError::from_context(
+                line_str,
+                self.source,
+                "Track init line (## ...) is not allowed inside template".to_string(),
+            ));
+        }
+
+        let track = self.current_track.as_mut().ok_or_else(|| {
+            ParseError::from_context(
+                line_str,
+                self.source,
+                "Track header required before init line".to_string(),
+            )
+        })?;
+
+        match &event {
+            TrackInitEvent::ProgramChange { .. } => {
+                if track
+                    .init_events
+                    .iter()
+                    .any(|e| matches!(e, TrackInitEvent::ProgramChange { .. }))
+                {
+                    return Err(ParseError::from_validation(
+                        line_str,
+                        self.source,
+                        "Duplicate program change in the same track".to_string(),
+                        Some("Use only one `## pc ...` per track.".to_string()),
+                    ));
+                }
+            }
+            TrackInitEvent::BankSelect { .. } => {
+                if track
+                    .init_events
+                    .iter()
+                    .any(|e| matches!(e, TrackInitEvent::BankSelect { .. }))
+                {
+                    return Err(ParseError::from_validation(
+                        line_str,
+                        self.source,
+                        "Duplicate bank select in the same track".to_string(),
+                        Some("Use only one `## bank ...` per track.".to_string()),
+                    ));
+                }
+                if track.init_events.iter().any(|e| {
+                    matches!(e, TrackInitEvent::ControlChange { cc, .. } if *cc == 0 || *cc == 32)
+                }) {
+                    return Err(ParseError::from_validation(
+                        line_str,
+                        self.source,
+                        "Cannot mix `## bank ...` with `## cc 0 ...` / `## cc 32 ...`".to_string(),
+                        None,
+                    ));
+                }
+            }
+            TrackInitEvent::ControlChange { cc, .. } => {
+                if (*cc == 0 || *cc == 32)
+                    && track
+                        .init_events
+                        .iter()
+                        .any(|e| matches!(e, TrackInitEvent::BankSelect { .. }))
+                {
+                    return Err(ParseError::from_validation(
+                        line_str,
+                        self.source,
+                        "Cannot mix `## cc 0/32 ...` with `## bank ...`".to_string(),
+                        None,
+                    ));
+                }
+                if track.init_events.iter().any(
+                    |e| matches!(e, TrackInitEvent::ControlChange { cc: prev, .. } if prev == cc),
+                ) {
+                    return Err(ParseError::from_validation(
+                        line_str,
+                        self.source,
+                        format!("Duplicate CC{} init event in the same track", cc),
+                        None,
+                    ));
+                }
+            }
+        }
+
+        track.init_events.push(event);
+        Ok(())
     }
 
     fn add_modifier(

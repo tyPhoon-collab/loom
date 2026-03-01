@@ -200,7 +200,15 @@ pub struct Track {
     pub name: String,
     pub channel: u8,
     pub muted: bool,
+    pub init_events: Vec<TrackInitEvent>,
     pub sequence: Sequence,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrackInitEvent {
+    ProgramChange { program: u8 },
+    BankSelect { msb: u8, lsb: u8 },
+    ControlChange { cc: u8, value: u8 },
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]

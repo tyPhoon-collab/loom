@@ -2,72 +2,99 @@ use midly::{Format, Header, MidiMessage, Smf, Timing, TrackEvent};
 use miette::{IntoDiagnostic, Result};
 use std::path::Path;
 
-use crate::compiler::MidiEvent;
+use crate::compiler::{MidiEvent, MidiInitEvent};
 
-pub fn save_to_midi(events: &[MidiEvent], path: &Path, bpm: u32) -> Result<()> {
+pub fn save_to_midi(
+    note_events: &[MidiEvent],
+    init_events: &[MidiInitEvent],
+    path: &Path,
+    bpm: u32,
+) -> Result<()> {
     // 1. Create SMF Header
     // generic typical TPQN (Ticks Per Quarter Note)
     let ppqn = 480;
     let header = Header::new(Format::SingleTrack, Timing::Metrical(ppqn.into()));
 
-    // 2. Convert Loom MidiEvents to Midly TrackEvents
-    // Loom events are absolute time in seconds (f64).
-    // MIDI events are delta time in ticks.
-
-    // Calculate ticks per second based on BPM and PPQN
-    // BPM = Beats Per Minute
-    // PPQN = Ticks Per Beat
-    // Ticks Per Minute = BPM * PPQN
-    // Ticks Per Second = (BPM * PPQN) / 60
-
+    // 2. Convert Loom MidiEvents to Midly TrackEvents.
     let ticks_per_second = (bpm as f64 * ppqn as f64) / 60.0;
-
-    // Sort events by time just in case
-    let mut sorted_events = events.to_vec();
-    sorted_events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
-
-    // We need to handle NoteOn and NoteOff.
-    // Loom's MidiEvent has duration, so it implies NoteOn at `time` and NoteOff at `time + duration`.
 
     #[derive(Debug)]
     struct TempEvent {
         time: f64,
+        order: u8,
         kind: TempEventKind,
-        channel: u8,
-        note: u8,
     }
 
     #[derive(Debug)]
     enum TempEventKind {
-        NoteOn,
-        NoteOff,
+        NoteOn { channel: u8, note: u8, velocity: u8 },
+        NoteOff { channel: u8, note: u8 },
+        ControlChange { channel: u8, cc: u8, value: u8 },
+        ProgramChange { channel: u8, program: u8 },
     }
 
     let mut temp_events = Vec::new();
-    for event in &sorted_events {
+
+    for event in init_events {
         temp_events.push(TempEvent {
-            time: event.time,
-            kind: TempEventKind::NoteOn,
-            channel: event.channel,
-            note: event.note,
-        });
-        temp_events.push(TempEvent {
-            time: event.time + event.duration,
-            kind: TempEventKind::NoteOff,
-            channel: event.channel,
-            note: event.note,
+            time: match event {
+                MidiInitEvent::ControlChange { time, .. }
+                | MidiInitEvent::ProgramChange { time, .. } => *time,
+            },
+            order: match event {
+                MidiInitEvent::ControlChange { cc, .. } if *cc == 0 => 0, // bank msb
+                MidiInitEvent::ControlChange { cc, .. } if *cc == 32 => 1, // bank lsb
+                MidiInitEvent::ProgramChange { .. } => 2,
+                MidiInitEvent::ControlChange { .. } => 3,
+            },
+            kind: match event {
+                MidiInitEvent::ControlChange {
+                    channel, cc, value, ..
+                } => TempEventKind::ControlChange {
+                    channel: *channel,
+                    cc: *cc,
+                    value: *value,
+                },
+                MidiInitEvent::ProgramChange {
+                    channel, program, ..
+                } => TempEventKind::ProgramChange {
+                    channel: *channel,
+                    program: *program,
+                },
+            },
         });
     }
 
-    // Sort temp events by time
-    temp_events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+    for event in note_events {
+        temp_events.push(TempEvent {
+            time: event.time,
+            order: 10,
+            kind: TempEventKind::NoteOn {
+                channel: event.channel,
+                note: event.note,
+                velocity: event.velocity,
+            },
+        });
+        temp_events.push(TempEvent {
+            time: event.time + event.duration,
+            order: 11,
+            kind: TempEventKind::NoteOff {
+                channel: event.channel,
+                note: event.note,
+            },
+        });
+    }
+
+    temp_events.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap()
+            .then_with(|| a.order.cmp(&b.order))
+    });
 
     let mut track = Vec::new();
     let mut current_time = 0.0;
     // let mut current_ticks = 0;
-
-    // Add Tempo Meta Event (Optional but good practice)
-    // For now, let's just emit notes.
 
     for event in temp_events {
         let delta_time = event.time - current_time;
@@ -75,27 +102,61 @@ pub fn save_to_midi(events: &[MidiEvent], path: &Path, bpm: u32) -> Result<()> {
         let delta_time = delta_time.max(0.0);
         let delta_ticks = (delta_time * ticks_per_second).round() as u32;
 
-        let kind = match event.kind {
-            TempEventKind::NoteOn => MidiMessage::NoteOn {
-                key: event.note.into(),
-                vel: 64.into(), // Default velocity
-            },
-            TempEventKind::NoteOff => MidiMessage::NoteOff {
-                key: event.note.into(),
-                vel: 0.into(),
-            },
-        };
-
-        track.push(TrackEvent {
-            delta: delta_ticks.into(),
-            kind: midly::TrackEventKind::Midi {
-                channel: event.channel.into(),
-                message: kind,
-            },
-        });
+        match event.kind {
+            TempEventKind::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
+                track.push(TrackEvent {
+                    delta: delta_ticks.into(),
+                    kind: midly::TrackEventKind::Midi {
+                        channel: channel.into(),
+                        message: MidiMessage::NoteOn {
+                            key: note.into(),
+                            vel: velocity.into(),
+                        },
+                    },
+                });
+            }
+            TempEventKind::NoteOff { channel, note } => {
+                track.push(TrackEvent {
+                    delta: delta_ticks.into(),
+                    kind: midly::TrackEventKind::Midi {
+                        channel: channel.into(),
+                        message: MidiMessage::NoteOff {
+                            key: note.into(),
+                            vel: 0.into(),
+                        },
+                    },
+                });
+            }
+            TempEventKind::ControlChange { channel, cc, value } => {
+                track.push(TrackEvent {
+                    delta: delta_ticks.into(),
+                    kind: midly::TrackEventKind::Midi {
+                        channel: channel.into(),
+                        message: MidiMessage::Controller {
+                            controller: cc.into(),
+                            value: value.into(),
+                        },
+                    },
+                });
+            }
+            TempEventKind::ProgramChange { channel, program } => {
+                track.push(TrackEvent {
+                    delta: delta_ticks.into(),
+                    kind: midly::TrackEventKind::Midi {
+                        channel: channel.into(),
+                        message: MidiMessage::ProgramChange {
+                            program: program.into(),
+                        },
+                    },
+                });
+            }
+        }
 
         current_time = event.time;
-        // current_ticks += delta_ticks;
     }
 
     // Add End of Track

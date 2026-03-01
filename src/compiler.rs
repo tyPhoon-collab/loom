@@ -1,6 +1,6 @@
 use crate::dsl::token::{
     Bar, Block, Line, LineEntry, ModifierKind, ModifierValue, Note, Song, TemplateParam, Token,
-    Track,
+    Track, TrackInitEvent,
 };
 use miette::{Diagnostic, Result};
 use thiserror::Error;
@@ -23,6 +23,21 @@ pub struct MidiEvent {
     pub channel: u8,
     pub note: u8,
     pub velocity: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MidiInitEvent {
+    ControlChange {
+        time: f64,
+        channel: u8, // 0-based
+        cc: u8,
+        value: u8,
+    },
+    ProgramChange {
+        time: f64,
+        channel: u8, // 0-based
+        program: u8,
+    },
 }
 
 pub struct Compiler {
@@ -498,6 +513,53 @@ impl Compiler {
         ctx.call_stack.pop();
         Ok(())
     }
+}
+
+pub fn collect_init_events(song: &Song) -> Vec<MidiInitEvent> {
+    let mut out = Vec::new();
+
+    for track in &song.tracks {
+        if track.muted {
+            continue;
+        }
+        let channel = track.channel.saturating_sub(1).min(15);
+
+        for event in &track.init_events {
+            match event {
+                TrackInitEvent::BankSelect { msb, lsb } => {
+                    out.push(MidiInitEvent::ControlChange {
+                        time: 0.0,
+                        channel,
+                        cc: 0,
+                        value: *msb,
+                    });
+                    out.push(MidiInitEvent::ControlChange {
+                        time: 0.0,
+                        channel,
+                        cc: 32,
+                        value: *lsb,
+                    });
+                }
+                TrackInitEvent::ProgramChange { program } => {
+                    out.push(MidiInitEvent::ProgramChange {
+                        time: 0.0,
+                        channel,
+                        program: *program,
+                    });
+                }
+                TrackInitEvent::ControlChange { cc, value } => {
+                    out.push(MidiInitEvent::ControlChange {
+                        time: 0.0,
+                        channel,
+                        cc: *cc,
+                        value: *value,
+                    });
+                }
+            }
+        }
+    }
+
+    out
 }
 
 /// Apply a post-processing macro to a slice of generated MidiEvents.

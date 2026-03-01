@@ -113,11 +113,17 @@ impl App {
         match parser::parse_song(content.to_string()) {
             Ok(song) => match compiler::Compiler::new(&song) {
                 Ok(compiler_inst) => match compiler_inst.compile(&song) {
-                    Ok(events) => {
-                        let events: Vec<crate::compiler::MidiEvent> = events.to_vec();
+                    Ok(note_events) => {
+                        let note_events: Vec<crate::compiler::MidiEvent> = note_events.to_vec();
+                        let init_events = compiler::collect_init_events(&song);
                         let bpm = song.metadata.bpm;
-                        let msg = format!("{} events, {} BPM", events.len(), bpm);
-                        player.update(events, song.metadata);
+                        let msg = format!(
+                            "{} note events, {} init events, {} BPM",
+                            note_events.len(),
+                            init_events.len(),
+                            bpm
+                        );
+                        player.update(note_events, init_events, song.metadata);
                         Ok((bpm, msg))
                     }
                     Err(e) => Err(miette::miette!("Compile error: {}", e)),

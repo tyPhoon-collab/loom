@@ -1,0 +1,25 @@
+---
+bpm: 120
+signature: 4/4
+unit: bar
+title: "Init Events Demo"
+---
+
+# Lead: 1
+
+> canonical form
+## bank 0/32
+## pc 81
+## cc 11 100
+
+C4 | ^ . ^ . |
+E4 | . ^ . ^ |
+
+# Pad: 2
+
+> sugar aliases
+## volume 90
+## pan 72
+## expression 110
+
+C3,G3 | ^   ^   |
