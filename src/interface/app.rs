@@ -16,13 +16,14 @@ pub struct App {
     pub is_playing: bool,
     pub bpm: u32,
     pub midi_device_name: String,
+    pub config_status: String,
     pub current_beat: Arc<Mutex<f64>>,
     player: LivePlayer,
     event_handler: EventHandler,
 }
 
 impl App {
-    pub fn new(path: PathBuf, port_index: usize) -> Result<Self> {
+    pub fn new(path: PathBuf, port_index: usize, config_status: String) -> Result<Self> {
         let current_beat = Arc::new(Mutex::new(0.0));
         let player = LivePlayer::new(port_index, Arc::clone(&current_beat))?;
         // Initial compile
@@ -52,6 +53,7 @@ impl App {
             is_playing: false,
             bpm: 120,
             midi_device_name,
+            config_status,
             current_beat,
             player,
         })
@@ -199,12 +201,13 @@ impl App {
         let beat_val = *self.current_beat.lock().unwrap();
 
         let status = Paragraph::new(format!(
-            "Device: {}\nStatus: {}\nBPM: {}\nState: {}\nBeat: {:.2}",
+            "Device: {}\nStatus: {}\nBPM: {}\nState: {}\nBeat: {:.2}\n{}",
             self.midi_device_name,
             self.status_message,
             self.bpm,
             if self.is_playing { "PLAYING" } else { "PAUSED" },
-            beat_val
+            beat_val,
+            self.config_status
         ))
         .block(Block::default().title("Info").borders(Borders::ALL))
         .style(

@@ -1,4 +1,5 @@
 pub mod compiler;
+pub mod config;
 pub mod dsl;
 pub mod event;
 pub mod inspect;

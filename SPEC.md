@@ -157,3 +157,31 @@ The active track context is maintained across `---` boundaries. For readability 
 
 See [FORMATTER.md](FORMATTER.md) for the full formatter specification.
 
+## Global Configuration
+
+Loom supports a single global config file:
+
+- Path: `~/.config/loom/loom.toml`
+- This path is fixed. Loom does not search alternate locations.
+
+Current keys:
+
+```toml
+[midi]
+output_port = 0
+```
+
+- `midi.output_port`: default MIDI output port index (`usize`).
+
+Precedence:
+
+1. CLI option (`--port`)
+2. Global config (`midi.output_port`)
+3. Built-in default (`0`)
+
+Scope:
+
+- Applied to: `play`, `live`
+- Not applied to: song/frontmatter semantics (`bpm`, `signature`, `unit`, `swing`, etc.)
+
+If the file is missing or invalid, Loom falls back to defaults.

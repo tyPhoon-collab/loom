@@ -33,15 +33,15 @@ pub enum Commands {
     Play {
         input: PathBuf,
         /// MIDI output port index
-        #[arg(short, long, default_value_t = 0)]
-        port: usize,
+        #[arg(short, long)]
+        port: Option<usize>,
     },
     /// Interactive Live Coding Mode (TUI & Hot-swap)
     Live {
         input: PathBuf,
         /// MIDI output port index
-        #[arg(short, long, default_value_t = 0)]
-        port: usize,
+        #[arg(short, long)]
+        port: Option<usize>,
     },
     /// Export to MIDI file
     Save {
