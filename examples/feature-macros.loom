@@ -1,8 +1,8 @@
 # Track: 1
 
-[@chord|strum]
-[@chord|arp]
-[@chord|vel:60]
+[@chord strum]
+[@chord arp]
+[@chord vel:60]
 
 # @chord
 

@@ -38,7 +38,7 @@ use miette::Result;
 use nom::{
     branch::alt,
     bytes::complete::{take_until, take_while1},
-    character::complete::{digit1, line_ending, not_line_ending, space0},
+    character::complete::{digit1, line_ending, not_line_ending, space0, space1},
     combinator::{eof, map, opt, value},
     multi::many0,
     sequence::{delimited, preceded, terminated},
@@ -332,20 +332,20 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
     let (input, _) = Symbol::GroupStart.char()(input)?;
     let (input, _) = Symbol::Template.char()(input)?;
     let (input, name) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '_')(input)?;
-    let (input, _) = space0.parse(input)?;
 
     let mut params = Vec::new();
     let mut current_input = input;
 
-    while current_input.starts_with(Symbol::Separator.as_char()) {
-        let (rest, _) = Symbol::Separator.char()(current_input)?;
-        let (rest, _) = space0.parse(rest)?;
-        let (rest, param_str) = take_while1(|c: char| {
-            c != Symbol::Separator.as_char()
-                && c != Symbol::GroupEnd.as_char()
-                && !c.is_whitespace()
-        })(rest)?;
-        let (rest, _) = space0.parse(rest)?;
+    if !current_input.starts_with(Symbol::GroupEnd.as_char()) {
+        let (rest, _) = space1.parse(current_input)?;
+        current_input = rest;
+    }
+
+    while !current_input.starts_with(Symbol::GroupEnd.as_char()) {
+        let (next_input, param_str) =
+            take_while1(|c: char| c != Symbol::GroupEnd.as_char() && !c.is_whitespace())(
+                current_input,
+            )?;
 
         if param_str.starts_with(Symbol::Positive.as_char())
             || param_str.starts_with(Symbol::Negative.as_char())
@@ -370,11 +370,16 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
                 }
                 Err(_) => {
                     use nom::error::{Error, ErrorKind};
-                    return Err(nom::Err::Failure(Error::new(rest, ErrorKind::Verify)));
+                    return Err(nom::Err::Failure(Error::new(next_input, ErrorKind::Verify)));
                 }
             }
         }
 
+        current_input = next_input;
+        if current_input.starts_with(Symbol::GroupEnd.as_char()) {
+            break;
+        }
+        let (rest, _) = space1.parse(current_input)?;
         current_input = rest;
     }
 

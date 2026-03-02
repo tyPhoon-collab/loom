@@ -104,6 +104,4 @@ define_symbols! {
     Negative => "-",
     #[doc = "Template prefix symbol (@)"]
     Template => "@",
-    #[doc = "Template parameter separator (|)"]
-    Separator => "|",
 }

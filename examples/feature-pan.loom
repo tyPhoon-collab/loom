@@ -5,7 +5,7 @@ bpm: 120
 # Lead: 1
 
 > template macro pan:N emits timed CC10 before each expansion
-[@riff|pan:16][@riff|pan:100]
+[@riff pan:16][@riff pan:100]
 
 # @riff
 C3,E3,G3 | ^ |

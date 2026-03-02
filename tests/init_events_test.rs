@@ -110,7 +110,7 @@ C4 | ^ |
 fn test_pan_macro_emits_timed_cc10() {
     let source = r#"
 # Lead: 1
-[@a|pan:16][@a|pan:100]
+[@a pan:16][@a pan:100]
 
 # @a
 C4 | ^ ^ |
@@ -133,4 +133,16 @@ C4 | ^ ^ |
         .collect();
 
     assert_eq!(pan_events, vec![(0.0, 0, 16), (4.0, 0, 100)]);
+}
+
+#[test]
+fn test_template_pipe_syntax_is_error() {
+    let source = r#"
+# Lead: 1
+[@a|x2]
+
+# @a
+C4 | ^ |
+"#;
+    assert!(parse_song(source.to_string()).is_err());
 }

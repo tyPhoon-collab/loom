@@ -182,7 +182,7 @@ impl std::fmt::Display for TemplateCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}{}", Symbol::GroupStart, Symbol::Template, self.name)?;
         for param in &self.params {
-            write!(f, "{}{}", Symbol::Separator, param)?;
+            write!(f, " {}", param)?;
         }
         write!(f, "{}", Symbol::GroupEnd)?;
         if self.repeat > 1 {

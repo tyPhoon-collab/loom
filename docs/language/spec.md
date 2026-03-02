@@ -82,7 +82,7 @@ TemplateHeader = "#" , space , "@" , name , newline ;
 
 ```ebnf
 TemplateLine      = TemplateExpansion , { TemplateExpansion } , newline ;
-TemplateExpansion = "[" , "@" , name , { "|" , TemplateParam } , "]" , [ "*" , digits ] ;
+TemplateExpansion = "[" , "@" , name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
 TemplateParam     = Transpose | StructuralRepeat | TimeScale | Macro ;
 Transpose         = ( "+" | "-" ) , digits ;
 StructuralRepeat  = "x" , digits ;

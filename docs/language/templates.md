@@ -14,9 +14,9 @@ C4,E4,G4 | ^ |
 ```loom
 # Lead: 1
 [@riff]
-[@riff|+12]
-[@riff|x2|/2]
-[@riff|vel:80|pan:32]
+[@riff +12]
+[@riff x2 /2]
+[@riff vel:80 pan:32]
 ```
 
 ## Supported Parameters

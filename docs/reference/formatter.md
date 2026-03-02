@@ -38,8 +38,8 @@ Multiple template expansions in one input line are emitted as compact, independe
 
 Example:
 
-- input: `[@a][@b| x9 | +4 ]`
-- output: `[@a] [@b|x9|+4]`
+- input: `[@a][@b x9 +4]`
+- output: `[@a] [@b x9 +4]`
 
 ## Loom Grid Algorithm
 

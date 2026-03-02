@@ -5,12 +5,12 @@ loop: true
 
 # Track: 1
 
-[@note|x9|+4]
-[@note|x4]
+[@note x9 +4]
+[@note x4]
 
 # Drums: 10
 
-[@hihat|x36]
+[@hihat x36]
 
 # @hihat
 
