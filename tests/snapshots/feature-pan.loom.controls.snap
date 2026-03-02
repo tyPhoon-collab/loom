@@ -1,0 +1,18 @@
+---
+source: tests/examples_test.rs
+expression: control_events
+---
+[
+    ControlChange {
+        time: 0.0,
+        channel: 0,
+        cc: 10,
+        value: 16,
+    },
+    ControlChange {
+        time: 4.0,
+        channel: 0,
+        cc: 10,
+        value: 100,
+    },
+]

@@ -1,6 +1,6 @@
 use crate::dsl::token::{
-    Bar, Block, Line, LineEntry, ModifierKind, ModifierValue, Note, Song, TemplateParam, Token,
-    Track, TrackInitEvent,
+    Bar, Block, Line, LineEntry, ModifierKind, ModifierValue, Note, Song, TemplateMacro,
+    TemplateParam, Token, Track, TrackInitEvent,
 };
 use miette::{Diagnostic, Result};
 use thiserror::Error;
@@ -114,6 +114,7 @@ fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec
 
 struct CompilerContext<'a> {
     events: &'a mut Vec<MidiEvent>,
+    control_events: &'a mut Vec<MidiInitEvent>,
     templates: &'a std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     call_stack: &'a mut Vec<String>,
     swing: Option<(u8, u8)>,
@@ -138,7 +139,16 @@ impl Compiler {
     }
 
     pub fn compile(&self, song: &Song) -> Result<Vec<MidiEvent>> {
+        let (events, _) = self.compile_with_controls(song)?;
+        Ok(events)
+    }
+
+    pub fn compile_with_controls(
+        &self,
+        song: &Song,
+    ) -> Result<(Vec<MidiEvent>, Vec<MidiInitEvent>)> {
         let mut events = Vec::new();
+        let mut control_events = collect_init_events(song);
 
         for track in &song.tracks {
             if track.muted {
@@ -147,6 +157,7 @@ impl Compiler {
             self.compile_track(
                 track,
                 &mut events,
+                &mut control_events,
                 song.metadata.pitch,
                 &song.templates,
                 song.metadata.swing.values(),
@@ -154,8 +165,14 @@ impl Compiler {
         }
 
         events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        control_events.sort_by(|a, b| {
+            event_time(a)
+                .partial_cmp(&event_time(b))
+                .unwrap()
+                .then_with(|| control_order(a).cmp(&control_order(b)))
+        });
 
-        Ok(events)
+        Ok((events, control_events))
     }
 
     /// Resolve modifier values for a line into per-block, per-leaf-token arrays (DFS order)
@@ -243,6 +260,7 @@ impl Compiler {
         &self,
         track: &Track,
         events: &mut Vec<MidiEvent>,
+        control_events: &mut Vec<MidiInitEvent>,
         pitch_offset: i32,
         templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
         swing: Option<(u8, u8)>,
@@ -252,6 +270,7 @@ impl Compiler {
         let mut call_stack = Vec::new();
         let mut ctx = CompilerContext {
             events,
+            control_events,
             templates,
             call_stack: &mut call_stack,
             swing,
@@ -428,15 +447,17 @@ impl Compiler {
         let mut structural_repeat = 1u32;
         let mut reverse = false;
         let mut time_scale = 1.0f64;
-        let mut macros: Vec<&str> = Vec::new();
+        let mut note_macros: Vec<TemplateMacro> = Vec::new();
+        let mut pan: Option<u8> = None;
 
         for param in &call.params {
             match param {
                 TemplateParam::Transpose(v) => template_pitch_offset += v,
                 TemplateParam::StructuralRepeat(v) => structural_repeat = *v,
                 TemplateParam::TimeScale(v) => time_scale = 1.0 / *v as f64,
-                TemplateParam::Macro(m) if m == "rev" => reverse = true,
-                TemplateParam::Macro(m) => macros.push(m),
+                TemplateParam::Macro(TemplateMacro::Rev) => reverse = true,
+                TemplateParam::Macro(TemplateMacro::Pan(v)) => pan = Some(*v),
+                TemplateParam::Macro(m) => note_macros.push(m.clone()),
             }
         }
 
@@ -445,6 +466,14 @@ impl Compiler {
 
         // Track where new events start so we can apply macros later
         let events_start_idx = ctx.events.len();
+        if let Some(value) = pan {
+            ctx.control_events.push(MidiInitEvent::ControlChange {
+                time: *current_time,
+                channel: channel.saturating_sub(1).min(15),
+                cc: 10,
+                value,
+            });
+        }
 
         for _ in 0..call.repeat {
             let mut entries = def.sequence.entries.clone();
@@ -506,8 +535,8 @@ impl Compiler {
 
         // Apply post-processing macros to generated events
         let generated_events = &mut ctx.events[events_start_idx..];
-        for macro_str in &macros {
-            apply_macro(generated_events, macro_str, effective_time_scale);
+        for macro_kind in &note_macros {
+            apply_macro(generated_events, macro_kind, effective_time_scale);
         }
 
         ctx.call_stack.pop();
@@ -563,21 +592,39 @@ pub fn collect_init_events(song: &Song) -> Vec<MidiInitEvent> {
 }
 
 /// Apply a post-processing macro to a slice of generated MidiEvents.
-fn apply_macro(events: &mut [MidiEvent], macro_str: &str, time_scale: f64) {
-    if let Some(vel_str) = macro_str.strip_prefix("vel:") {
-        // vel:N — Override velocity for all events
-        if let Ok(vel) = vel_str.parse::<u8>() {
-            let vel = vel.min(127);
+fn apply_macro(events: &mut [MidiEvent], macro_kind: &TemplateMacro, time_scale: f64) {
+    match macro_kind {
+        TemplateMacro::Vel(vel) => {
             for event in events.iter_mut() {
-                event.velocity = vel;
+                event.velocity = *vel;
             }
         }
-    } else if macro_str == "arp" {
-        // arp — Spread simultaneous notes evenly across their block duration
-        apply_arp(events, time_scale);
-    } else if macro_str == "strum" {
-        // strum — Small timing offsets between simultaneous notes (guitar-like)
-        apply_strum(events, time_scale);
+        TemplateMacro::Arp => {
+            // arp — Spread simultaneous notes evenly across their block duration
+            apply_arp(events, time_scale);
+        }
+        TemplateMacro::Strum => {
+            // strum — Small timing offsets between simultaneous notes (guitar-like)
+            apply_strum(events, time_scale);
+        }
+        TemplateMacro::Rev | TemplateMacro::Pan(_) => {}
+    }
+}
+
+fn event_time(event: &MidiInitEvent) -> f64 {
+    match event {
+        MidiInitEvent::ControlChange { time, .. } | MidiInitEvent::ProgramChange { time, .. } => {
+            *time
+        }
+    }
+}
+
+fn control_order(event: &MidiInitEvent) -> u8 {
+    match event {
+        MidiInitEvent::ControlChange { cc: 0, .. } => 0,
+        MidiInitEvent::ControlChange { cc: 32, .. } => 1,
+        MidiInitEvent::ProgramChange { .. } => 2,
+        MidiInitEvent::ControlChange { .. } => 3,
     }
 }
 

@@ -112,18 +112,19 @@ impl App {
     fn compile_and_update(content: &str, player: &LivePlayer) -> Result<(u32, String)> {
         match parser::parse_song(content.to_string()) {
             Ok(song) => match compiler::Compiler::new(&song) {
-                Ok(compiler_inst) => match compiler_inst.compile(&song) {
-                    Ok(note_events) => {
+                Ok(compiler_inst) => match compiler_inst.compile_with_controls(&song) {
+                    Ok((note_events, control_events)) => {
                         let note_events: Vec<crate::compiler::MidiEvent> = note_events.to_vec();
-                        let init_events = compiler::collect_init_events(&song);
+                        let control_events: Vec<crate::compiler::MidiInitEvent> =
+                            control_events.to_vec();
                         let bpm = song.metadata.bpm;
                         let msg = format!(
-                            "{} note events, {} init events, {} BPM",
+                            "{} note events, {} control events, {} BPM",
                             note_events.len(),
-                            init_events.len(),
+                            control_events.len(),
                             bpm
                         );
-                        player.update(note_events, init_events, song.metadata);
+                        player.update(note_events, control_events, song.metadata);
                         Ok((bpm, msg))
                     }
                     Err(e) => Err(miette::miette!("Compile error: {}", e)),

@@ -1,6 +1,7 @@
 use crate::cli::{ParseFormat, ParseSortKey};
+use loom::compiler;
 use loom::dsl::parser;
-use loom::{compiler, dsl};
+use loom::dsl::token::Song;
 use miette::{miette, IntoDiagnostic, Result};
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -264,21 +265,21 @@ fn sort_events(events: &mut [ParsedEvent], key: ParseSortKey) {
     }
 }
 
-fn collect_parsed_events(song: &dsl::token::Song) -> Result<Vec<ParsedEvent>> {
+fn collect_parsed_events(song: &Song) -> Result<Vec<ParsedEvent>> {
     let mut out = Vec::new();
 
     for track in &song.tracks {
         if track.muted {
             continue;
         }
-        let single_song = dsl::token::Song {
+        let single_song = Song {
             metadata: song.metadata.clone(),
             tracks: vec![track.clone()],
             templates: song.templates.clone(),
         };
         let compiler_inst = compiler::Compiler::new(&single_song)?;
-        let events = compiler_inst
-            .compile(&single_song)
+        let (events, control_events) = compiler_inst
+            .compile_with_controls(&single_song)
             .map_err(|e| miette!("Compiler error: {}", e))?;
 
         for event in events {
@@ -298,64 +299,42 @@ fn collect_parsed_events(song: &dsl::token::Song) -> Result<Vec<ParsedEvent>> {
             });
         }
 
-        let channel = track.channel.saturating_sub(1).min(15).saturating_add(1);
-        for init in &track.init_events {
-            match init {
-                dsl::token::TrackInitEvent::BankSelect { msb, lsb } => {
-                    out.push(ParsedEvent {
-                        event_type: "cc".to_string(),
-                        track: track.name.clone(),
-                        channel,
-                        note: None,
-                        note_name: None,
-                        velocity: None,
-                        cc: Some(0),
-                        value: Some(*msb),
-                        program: None,
-                        time: 0.0,
-                        duration: None,
-                        end_time: None,
-                    });
-                    out.push(ParsedEvent {
-                        event_type: "cc".to_string(),
-                        track: track.name.clone(),
-                        channel,
-                        note: None,
-                        note_name: None,
-                        velocity: None,
-                        cc: Some(32),
-                        value: Some(*lsb),
-                        program: None,
-                        time: 0.0,
-                        duration: None,
-                        end_time: None,
-                    });
-                }
-                dsl::token::TrackInitEvent::ProgramChange { program } => out.push(ParsedEvent {
-                    event_type: "pc".to_string(),
-                    track: track.name.clone(),
+        for event in &control_events {
+            match event {
+                compiler::MidiInitEvent::ControlChange {
+                    time,
                     channel,
-                    note: None,
-                    note_name: None,
-                    velocity: None,
-                    cc: None,
-                    value: None,
-                    program: Some(*program),
-                    time: 0.0,
-                    duration: None,
-                    end_time: None,
-                }),
-                dsl::token::TrackInitEvent::ControlChange { cc, value } => out.push(ParsedEvent {
+                    cc,
+                    value,
+                } => out.push(ParsedEvent {
                     event_type: "cc".to_string(),
                     track: track.name.clone(),
-                    channel,
+                    channel: channel.saturating_add(1),
                     note: None,
                     note_name: None,
                     velocity: None,
                     cc: Some(*cc),
                     value: Some(*value),
                     program: None,
-                    time: 0.0,
+                    time: *time,
+                    duration: None,
+                    end_time: None,
+                }),
+                compiler::MidiInitEvent::ProgramChange {
+                    time,
+                    channel,
+                    program,
+                } => out.push(ParsedEvent {
+                    event_type: "pc".to_string(),
+                    track: track.name.clone(),
+                    channel: channel.saturating_add(1),
+                    note: None,
+                    note_name: None,
+                    velocity: None,
+                    cc: None,
+                    value: None,
+                    program: Some(*program),
+                    time: *time,
                     duration: None,
                     end_time: None,
                 }),

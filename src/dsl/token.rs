@@ -132,11 +132,20 @@ pub struct Section {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum TemplateMacro {
+    Rev,
+    Arp,
+    Strum,
+    Vel(u8),
+    Pan(u8),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TemplateParam {
     Transpose(i32),        // +N / -N
     StructuralRepeat(u32), // xN
     TimeScale(u32),        // /N
-    Macro(String),         // rev, etc.
+    Macro(TemplateMacro),
 }
 
 impl std::fmt::Display for TemplateParam {
@@ -151,7 +160,13 @@ impl std::fmt::Display for TemplateParam {
             }
             Self::StructuralRepeat(val) => write!(f, "x{}", val),
             Self::TimeScale(val) => write!(f, "/{}", val),
-            Self::Macro(m) => write!(f, "{}", m),
+            Self::Macro(m) => match m {
+                TemplateMacro::Rev => write!(f, "rev"),
+                TemplateMacro::Arp => write!(f, "arp"),
+                TemplateMacro::Strum => write!(f, "strum"),
+                TemplateMacro::Vel(v) => write!(f, "vel:{}", v),
+                TemplateMacro::Pan(v) => write!(f, "pan:{}", v),
+            },
         }
     }
 }

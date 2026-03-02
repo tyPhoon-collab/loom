@@ -1,4 +1,5 @@
 use loom::compiler::collect_init_events;
+use loom::compiler::Compiler;
 use loom::compiler::MidiInitEvent;
 use loom::dsl::parser::parse_song;
 use loom::dsl::token::TrackInitEvent;
@@ -103,4 +104,33 @@ C4 | ^ |
 "#;
     let err = parse_song(source.to_string()).unwrap_err().to_string();
     assert!(err.contains("Cannot mix"));
+}
+
+#[test]
+fn test_pan_macro_emits_timed_cc10() {
+    let source = r#"
+# Lead: 1
+[@a|pan:16][@a|pan:100]
+
+# @a
+C4 | ^ ^ |
+"#;
+    let song = parse_song(source.to_string()).unwrap();
+    let compiler = Compiler::new(&song).unwrap();
+    let (_notes, controls) = compiler.compile_with_controls(&song).unwrap();
+
+    let pan_events: Vec<_> = controls
+        .into_iter()
+        .filter_map(|e| match e {
+            MidiInitEvent::ControlChange {
+                time,
+                channel,
+                cc,
+                value,
+            } if cc == 10 => Some((time, channel, value)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(pan_events, vec![(0.0, 0, 16), (4.0, 0, 100)]);
 }

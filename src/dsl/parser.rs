@@ -2,7 +2,7 @@ use super::error::ParseError;
 use super::syntax::Symbol;
 use super::token::{
     Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
-    ModifierValue, Note, Song, Token, Track, TrackInitEvent,
+    ModifierValue, Note, Song, TemplateMacro, Token, Track, TrackInitEvent,
 };
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
@@ -279,6 +279,25 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
     }
 }
 
+fn parse_template_macro(param: &str) -> std::result::Result<TemplateMacro, String> {
+    match param {
+        "rev" => Ok(TemplateMacro::Rev),
+        "arp" => Ok(TemplateMacro::Arp),
+        "strum" => Ok(TemplateMacro::Strum),
+        _ => {
+            if let Some(raw) = param.strip_prefix("vel:") {
+                let v = parse_u7(raw)?;
+                return Ok(TemplateMacro::Vel(v));
+            }
+            if let Some(raw) = param.strip_prefix("pan:") {
+                let v = parse_u7(raw)?;
+                return Ok(TemplateMacro::Pan(v));
+            }
+            Err(format!("Unknown template macro '{}'", param))
+        }
+    }
+}
+
 fn parse_track_init_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = nom::bytes::complete::tag("##")(input)?;
     let (input, _) = space0(input)?;
@@ -345,10 +364,15 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
                 }
             }
         } else {
-            // General macro: "rev", "arp", "strum", "vel:80", etc.
-            params.push(crate::dsl::token::TemplateParam::Macro(
-                param_str.to_string(),
-            ));
+            match parse_template_macro(param_str) {
+                Ok(macro_kind) => {
+                    params.push(crate::dsl::token::TemplateParam::Macro(macro_kind));
+                }
+                Err(_) => {
+                    use nom::error::{Error, ErrorKind};
+                    return Err(nom::Err::Failure(Error::new(rest, ErrorKind::Verify)));
+                }
+            }
         }
 
         current_input = rest;
