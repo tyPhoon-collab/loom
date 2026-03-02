@@ -1,6 +1,7 @@
 pub mod compiler;
 pub mod dsl;
 pub mod event;
+pub mod inspect;
 pub mod interface;
 pub mod live_player;
 pub mod midi;

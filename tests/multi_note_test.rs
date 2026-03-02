@@ -1,4 +1,5 @@
 use loom::compiler::Compiler;
+use loom::compiler::MidiEvent;
 use loom::dsl::parser::parse_song;
 
 #[test]
@@ -12,13 +13,25 @@ c3,e3 | ^ |
     let song = parse_song(source.to_string()).unwrap();
     let compiler = Compiler::new(&song).unwrap();
     let events = compiler.compile(&song).unwrap();
+    let note_events: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            MidiEvent::Note { .. } => Some(e),
+            _ => None,
+        })
+        .collect();
 
     // C3=60, E3=64
-    assert_eq!(events.len(), 2);
-    assert!(events.iter().any(|e| e.note == 60));
-    assert!(events.iter().any(|e| e.note == 64));
-    assert_eq!(events[0].time, 0.0);
-    assert_eq!(events[1].time, 0.0);
+    assert_eq!(note_events.len(), 2);
+    assert!(note_events
+        .iter()
+        .any(|e| matches!(e, MidiEvent::Note { note: 60, .. })));
+    assert!(note_events
+        .iter()
+        .any(|e| matches!(e, MidiEvent::Note { note: 64, .. })));
+    assert!(note_events
+        .iter()
+        .all(|e| matches!(e, MidiEvent::Note { time: 0.0, .. })));
 }
 
 #[test]
@@ -32,13 +45,21 @@ c3,e3 | ^ - |
     let song = parse_song(source.to_string()).unwrap();
     let compiler = Compiler::new(&song).unwrap();
     let events = compiler.compile(&song).unwrap();
+    let note_events: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            MidiEvent::Note { .. } => Some(e),
+            _ => None,
+        })
+        .collect();
 
-    assert_eq!(events.len(), 2);
+    assert_eq!(note_events.len(), 2);
     // duration: in 4/4, 1 bar (unit=bar) is 4.0 beats.
     // 1 block = 4.0. 2 tokens (^, -) mean duration_per_token = 4.0 / 2 = 2.0.
     // ^ (2.0) + - (2.0) = 4.0 total.
-    assert_eq!(events[0].duration, 4.0);
-    assert_eq!(events[1].duration, 4.0);
+    assert!(note_events
+        .iter()
+        .all(|e| matches!(e, MidiEvent::Note { duration: 4.0, .. })));
 }
 
 #[test]
@@ -56,8 +77,17 @@ v     | !60          |                          |
     let song = parse_song(source.to_string()).unwrap();
     let compiler = Compiler::new(&song).unwrap();
     let events = compiler.compile(&song).unwrap();
+    let note_events: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            MidiEvent::Note { .. } => Some(e),
+            _ => None,
+        })
+        .collect();
 
     // Regression: modifier blocks must stay aligned even if pattern block has zero tokens.
-    assert!(!events.is_empty());
-    assert!(events.iter().all(|e| e.velocity == 60));
+    assert!(!note_events.is_empty());
+    assert!(note_events
+        .iter()
+        .all(|e| matches!(e, MidiEvent::Note { velocity: 60, .. })));
 }

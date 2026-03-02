@@ -1,6 +1,6 @@
-use loom::compiler::collect_init_events;
+use loom::compiler::compile_track_init_events;
 use loom::compiler::Compiler;
-use loom::compiler::MidiInitEvent;
+use loom::compiler::MidiEvent;
 use loom::dsl::parser::parse_song;
 use loom::dsl::token::TrackInitEvent;
 
@@ -38,29 +38,29 @@ fn test_collect_init_events_order() {
 C4 | ^ |
 "#;
     let song = parse_song(source.to_string()).unwrap();
-    let events = collect_init_events(&song);
+    let events = compile_track_init_events(&song);
 
     assert_eq!(
         events,
         vec![
-            MidiInitEvent::ControlChange {
+            MidiEvent::ControlChange {
                 time: 0.0,
                 channel: 1,
                 cc: 0,
                 value: 1
             },
-            MidiInitEvent::ControlChange {
+            MidiEvent::ControlChange {
                 time: 0.0,
                 channel: 1,
                 cc: 32,
                 value: 2
             },
-            MidiInitEvent::ProgramChange {
+            MidiEvent::ProgramChange {
                 time: 0.0,
                 channel: 1,
                 program: 40
             },
-            MidiInitEvent::ControlChange {
+            MidiEvent::ControlChange {
                 time: 0.0,
                 channel: 1,
                 cc: 11,
@@ -117,12 +117,12 @@ C4 | ^ ^ |
 "#;
     let song = parse_song(source.to_string()).unwrap();
     let compiler = Compiler::new(&song).unwrap();
-    let (_notes, controls) = compiler.compile_with_controls(&song).unwrap();
+    let controls = compiler.compile(&song).unwrap();
 
     let pan_events: Vec<_> = controls
         .into_iter()
         .filter_map(|e| match e {
-            MidiInitEvent::ControlChange {
+            MidiEvent::ControlChange {
                 time,
                 channel,
                 cc,

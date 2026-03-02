@@ -3,6 +3,7 @@ use crate::dsl::token::{
     TemplateParam, Token, Track, TrackInitEvent,
 };
 use miette::{Diagnostic, Result};
+use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -16,17 +17,15 @@ pub enum CompileError {
     CircularTemplateReference(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct MidiEvent {
-    pub time: f64,     // Absolute time in beats
-    pub duration: f64, // Duration in beats
-    pub channel: u8,
-    pub note: u8,
-    pub velocity: u8,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MidiInitEvent {
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum MidiEvent {
+    Note {
+        time: f64,     // Absolute time in beats
+        duration: f64, // Duration in beats
+        channel: u8,   // 0-based
+        note: u8,
+        velocity: u8,
+    },
     ControlChange {
         time: f64,
         channel: u8, // 0-based
@@ -38,6 +37,76 @@ pub enum MidiInitEvent {
         channel: u8, // 0-based
         program: u8,
     },
+}
+
+impl MidiEvent {
+    pub fn time(&self) -> f64 {
+        match self {
+            Self::Note { time, .. }
+            | Self::ControlChange { time, .. }
+            | Self::ProgramChange { time, .. } => *time,
+        }
+    }
+
+    pub fn channel(&self) -> u8 {
+        match self {
+            Self::Note { channel, .. }
+            | Self::ControlChange { channel, .. }
+            | Self::ProgramChange { channel, .. } => *channel,
+        }
+    }
+
+    pub fn note_end_time(&self) -> Option<f64> {
+        match self {
+            Self::Note { time, duration, .. } => Some(*time + *duration),
+            _ => None,
+        }
+    }
+
+    pub fn timing_order(&self) -> u8 {
+        match self {
+            Self::ControlChange { cc: 0, .. } => 0,
+            Self::ControlChange { cc: 32, .. } => 1,
+            Self::ProgramChange { .. } => 2,
+            Self::ControlChange { .. } => 3,
+            Self::Note { .. } => 10,
+        }
+    }
+
+    pub fn note(&self) -> Option<u8> {
+        match self {
+            Self::Note { note, .. } => Some(*note),
+            _ => None,
+        }
+    }
+
+    pub fn velocity(&self) -> Option<u8> {
+        match self {
+            Self::Note { velocity, .. } => Some(*velocity),
+            _ => None,
+        }
+    }
+
+    pub fn cc(&self) -> Option<u8> {
+        match self {
+            Self::ControlChange { cc, .. } => Some(*cc),
+            _ => None,
+        }
+    }
+
+    pub fn value(&self) -> Option<u8> {
+        match self {
+            Self::ControlChange { value, .. } => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn program(&self) -> Option<u8> {
+        match self {
+            Self::ProgramChange { program, .. } => Some(*program),
+            _ => None,
+        }
+    }
 }
 
 pub struct Compiler {
@@ -114,7 +183,6 @@ fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec
 
 struct CompilerContext<'a> {
     events: &'a mut Vec<MidiEvent>,
-    control_events: &'a mut Vec<MidiInitEvent>,
     templates: &'a std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     call_stack: &'a mut Vec<String>,
     swing: Option<(u8, u8)>,
@@ -139,16 +207,7 @@ impl Compiler {
     }
 
     pub fn compile(&self, song: &Song) -> Result<Vec<MidiEvent>> {
-        let (events, _) = self.compile_with_controls(song)?;
-        Ok(events)
-    }
-
-    pub fn compile_with_controls(
-        &self,
-        song: &Song,
-    ) -> Result<(Vec<MidiEvent>, Vec<MidiInitEvent>)> {
-        let mut events = Vec::new();
-        let mut control_events = collect_init_events(song);
+        let mut events = compile_track_init_events(song);
 
         for track in &song.tracks {
             if track.muted {
@@ -157,22 +216,19 @@ impl Compiler {
             self.compile_track(
                 track,
                 &mut events,
-                &mut control_events,
                 song.metadata.pitch,
                 &song.templates,
                 song.metadata.swing.values(),
             )?;
         }
 
-        events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
-        control_events.sort_by(|a, b| {
-            event_time(a)
-                .partial_cmp(&event_time(b))
+        events.sort_by(|a, b| {
+            a.time()
+                .partial_cmp(&b.time())
                 .unwrap()
-                .then_with(|| control_order(a).cmp(&control_order(b)))
+                .then_with(|| a.timing_order().cmp(&b.timing_order()))
         });
-
-        Ok((events, control_events))
+        Ok(events)
     }
 
     /// Resolve modifier values for a line into per-block, per-leaf-token arrays (DFS order)
@@ -260,7 +316,6 @@ impl Compiler {
         &self,
         track: &Track,
         events: &mut Vec<MidiEvent>,
-        control_events: &mut Vec<MidiInitEvent>,
         pitch_offset: i32,
         templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
         swing: Option<(u8, u8)>,
@@ -270,7 +325,6 @@ impl Compiler {
         let mut call_stack = Vec::new();
         let mut ctx = CompilerContext {
             events,
-            control_events,
             templates,
             call_stack: &mut call_stack,
             swing,
@@ -467,7 +521,7 @@ impl Compiler {
         // Track where new events start so we can apply macros later
         let events_start_idx = ctx.events.len();
         if let Some(value) = pan {
-            ctx.control_events.push(MidiInitEvent::ControlChange {
+            ctx.events.push(MidiEvent::ControlChange {
                 time: *current_time,
                 channel: channel.saturating_sub(1).min(15),
                 cc: 10,
@@ -544,7 +598,7 @@ impl Compiler {
     }
 }
 
-pub fn collect_init_events(song: &Song) -> Vec<MidiInitEvent> {
+pub fn compile_track_init_events(song: &Song) -> Vec<MidiEvent> {
     let mut out = Vec::new();
 
     for track in &song.tracks {
@@ -556,13 +610,13 @@ pub fn collect_init_events(song: &Song) -> Vec<MidiInitEvent> {
         for event in &track.init_events {
             match event {
                 TrackInitEvent::BankSelect { msb, lsb } => {
-                    out.push(MidiInitEvent::ControlChange {
+                    out.push(MidiEvent::ControlChange {
                         time: 0.0,
                         channel,
                         cc: 0,
                         value: *msb,
                     });
-                    out.push(MidiInitEvent::ControlChange {
+                    out.push(MidiEvent::ControlChange {
                         time: 0.0,
                         channel,
                         cc: 32,
@@ -570,14 +624,14 @@ pub fn collect_init_events(song: &Song) -> Vec<MidiInitEvent> {
                     });
                 }
                 TrackInitEvent::ProgramChange { program } => {
-                    out.push(MidiInitEvent::ProgramChange {
+                    out.push(MidiEvent::ProgramChange {
                         time: 0.0,
                         channel,
                         program: *program,
                     });
                 }
                 TrackInitEvent::ControlChange { cc, value } => {
-                    out.push(MidiInitEvent::ControlChange {
+                    out.push(MidiEvent::ControlChange {
                         time: 0.0,
                         channel,
                         cc: *cc,
@@ -596,7 +650,9 @@ fn apply_macro(events: &mut [MidiEvent], macro_kind: &TemplateMacro, time_scale:
     match macro_kind {
         TemplateMacro::Vel(vel) => {
             for event in events.iter_mut() {
-                event.velocity = *vel;
+                if let MidiEvent::Note { velocity, .. } = event {
+                    *velocity = *vel;
+                }
             }
         }
         TemplateMacro::Arp => {
@@ -611,23 +667,6 @@ fn apply_macro(events: &mut [MidiEvent], macro_kind: &TemplateMacro, time_scale:
     }
 }
 
-fn event_time(event: &MidiInitEvent) -> f64 {
-    match event {
-        MidiInitEvent::ControlChange { time, .. } | MidiInitEvent::ProgramChange { time, .. } => {
-            *time
-        }
-    }
-}
-
-fn control_order(event: &MidiInitEvent) -> u8 {
-    match event {
-        MidiInitEvent::ControlChange { cc: 0, .. } => 0,
-        MidiInitEvent::ControlChange { cc: 32, .. } => 1,
-        MidiInitEvent::ProgramChange { .. } => 2,
-        MidiInitEvent::ControlChange { .. } => 3,
-    }
-}
-
 /// Arpeggiate: spread simultaneous notes evenly across the block duration.
 fn apply_arp(events: &mut [MidiEvent], _time_scale: f64) {
     if events.is_empty() {
@@ -638,8 +677,10 @@ fn apply_arp(events: &mut [MidiEvent], _time_scale: f64) {
     let mut time_groups: std::collections::BTreeMap<u64, Vec<usize>> =
         std::collections::BTreeMap::new();
     for (i, event) in events.iter().enumerate() {
-        let key = (event.time * 1_000_000.0) as u64; // Use microsecond precision for grouping
-        time_groups.entry(key).or_default().push(i);
+        if let MidiEvent::Note { time, .. } = event {
+            let key = (*time * 1_000_000.0) as u64; // Use microsecond precision for grouping
+            time_groups.entry(key).or_default().push(i);
+        }
     }
 
     for indices in time_groups.values() {
@@ -648,16 +689,31 @@ fn apply_arp(events: &mut [MidiEvent], _time_scale: f64) {
             continue;
         }
         // Get the original duration of the block these notes belong to
-        let original_duration = events[indices[0]].duration;
+        let original_duration = match events[indices[0]] {
+            MidiEvent::Note { duration, .. } => duration,
+            _ => continue,
+        };
         let step = original_duration / count as f64;
 
         // Sort by pitch (low to high) for natural arpeggio
         let mut sorted_indices: Vec<usize> = indices.clone();
-        sorted_indices.sort_by(|&a, &b| events[a].note.cmp(&events[b].note));
+        sorted_indices.sort_by(|&a, &b| {
+            let note_a = match events[a] {
+                MidiEvent::Note { note, .. } => note,
+                _ => 0,
+            };
+            let note_b = match events[b] {
+                MidiEvent::Note { note, .. } => note,
+                _ => 0,
+            };
+            note_a.cmp(&note_b)
+        });
 
         for (nth, &idx) in sorted_indices.iter().enumerate() {
-            events[idx].time += step * nth as f64;
-            events[idx].duration = step;
+            if let MidiEvent::Note { time, duration, .. } = &mut events[idx] {
+                *time += step * nth as f64;
+                *duration = step;
+            }
         }
     }
 }
@@ -674,8 +730,10 @@ fn apply_strum(events: &mut [MidiEvent], _time_scale: f64) {
     let mut time_groups: std::collections::BTreeMap<u64, Vec<usize>> =
         std::collections::BTreeMap::new();
     for (i, event) in events.iter().enumerate() {
-        let key = (event.time * 1_000_000.0) as u64;
-        time_groups.entry(key).or_default().push(i);
+        if let MidiEvent::Note { time, .. } = event {
+            let key = (*time * 1_000_000.0) as u64;
+            time_groups.entry(key).or_default().push(i);
+        }
     }
 
     for indices in time_groups.values() {
@@ -686,13 +744,25 @@ fn apply_strum(events: &mut [MidiEvent], _time_scale: f64) {
 
         // Sort by pitch: low notes first (strum from bass string up)
         let mut sorted_indices: Vec<usize> = indices.clone();
-        sorted_indices.sort_by(|&a, &b| events[a].note.cmp(&events[b].note));
+        sorted_indices.sort_by(|&a, &b| {
+            let note_a = match events[a] {
+                MidiEvent::Note { note, .. } => note,
+                _ => 0,
+            };
+            let note_b = match events[b] {
+                MidiEvent::Note { note, .. } => note,
+                _ => 0,
+            };
+            note_a.cmp(&note_b)
+        });
 
         for (nth, &idx) in sorted_indices.iter().enumerate() {
             let offset = strum_interval * nth as f64;
-            events[idx].time += offset;
-            // Shorten duration slightly to keep the end time the same
-            events[idx].duration = (events[idx].duration - offset).max(0.01);
+            if let MidiEvent::Note { time, duration, .. } = &mut events[idx] {
+                *time += offset;
+                // Shorten duration slightly to keep the end time the same
+                *duration = (*duration - offset).max(0.01);
+            }
         }
     }
 }
@@ -782,7 +852,7 @@ impl<'a> LineCompiler<'a> {
                                 (note.to_midi() as i32 + pitch_mod).clamp(0, 127) as u8
                             }
                         };
-                        let event = MidiEvent {
+                        let event = MidiEvent::Note {
                             time: token_time,
                             duration: swung_duration,
                             channel: self.channel - 1, // Fix: 0-indexed MIDI channel
@@ -803,7 +873,9 @@ impl<'a> LineCompiler<'a> {
                 Token::Sustain => {
                     for (nth, _) in self.notes.iter().enumerate() {
                         if let Some(idx) = self.last_event_indices[nth] {
-                            self.events[idx].duration += swung_duration;
+                            if let MidiEvent::Note { duration, .. } = &mut self.events[idx] {
+                                *duration += swung_duration;
+                            }
                         }
                     }
                     self.leaf_counter += 1;

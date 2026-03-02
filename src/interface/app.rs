@@ -112,19 +112,29 @@ impl App {
     fn compile_and_update(content: &str, player: &LivePlayer) -> Result<(u32, String)> {
         match parser::parse_song(content.to_string()) {
             Ok(song) => match compiler::Compiler::new(&song) {
-                Ok(compiler_inst) => match compiler_inst.compile_with_controls(&song) {
-                    Ok((note_events, control_events)) => {
-                        let note_events: Vec<crate::compiler::MidiEvent> = note_events.to_vec();
-                        let control_events: Vec<crate::compiler::MidiInitEvent> =
-                            control_events.to_vec();
+                Ok(compiler_inst) => match compiler_inst.compile(&song) {
+                    Ok(events) => {
+                        let events: Vec<crate::compiler::MidiEvent> = events.to_vec();
                         let bpm = song.metadata.bpm;
+                        let note_count = events
+                            .iter()
+                            .filter(|e| matches!(e, crate::compiler::MidiEvent::Note { .. }))
+                            .count();
+                        let control_count = events
+                            .iter()
+                            .filter(|e| {
+                                matches!(
+                                    e,
+                                    crate::compiler::MidiEvent::ControlChange { .. }
+                                        | crate::compiler::MidiEvent::ProgramChange { .. }
+                                )
+                            })
+                            .count();
                         let msg = format!(
                             "{} note events, {} control events, {} BPM",
-                            note_events.len(),
-                            control_events.len(),
-                            bpm
+                            note_count, control_count, bpm
                         );
-                        player.update(note_events, control_events, song.metadata);
+                        player.update(events, song.metadata);
                         Ok((bpm, msg))
                     }
                     Err(e) => Err(miette::miette!("Compile error: {}", e)),

@@ -1,70 +1,96 @@
 ---
 source: tests/examples_test.rs
-assertion_line: 32
 expression: events
 ---
 [
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 60,
+            velocity: 60,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 1.3333333333333333,
-        channel: 0,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 67,
-        velocity: 60,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.0,
+            duration: 1.3333333333333333,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 64,
-        velocity: 60,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 64,
+            velocity: 60,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 60,
-        velocity: 60,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 67,
+            velocity: 60,
+        },
     },
-    MidiEvent {
-        time: 0.03,
-        duration: 3.97,
-        channel: 0,
-        note: 64,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.03,
+            duration: 3.97,
+            channel: 0,
+            note: 64,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 0.06,
-        duration: 3.94,
-        channel: 0,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 0.06,
+            duration: 3.94,
+            channel: 0,
+            note: 67,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 1.3333333333333333,
-        duration: 1.3333333333333333,
-        channel: 0,
-        note: 64,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 1.3333333333333333,
+            duration: 1.3333333333333333,
+            channel: 0,
+            note: 64,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 2.6666666666666665,
-        duration: 1.3333333333333333,
-        channel: 0,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Track",
+        event: Note {
+            time: 2.6666666666666665,
+            duration: 1.3333333333333333,
+            channel: 0,
+            note: 67,
+            velocity: 100,
+        },
     },
 ]

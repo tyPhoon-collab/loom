@@ -1,63 +1,148 @@
 ---
 source: tests/examples_test.rs
-assertion_line: 32
 expression: events
 ---
 [
-    MidiEvent {
-        time: 0.0,
-        duration: 1.0,
-        channel: 0,
-        note: 72,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ControlChange {
+            time: 0.0,
+            channel: 0,
+            cc: 0,
+            value: 0,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 2.0,
-        channel: 1,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ControlChange {
+            time: 0.0,
+            channel: 0,
+            cc: 32,
+            value: 32,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 2.0,
-        channel: 1,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ProgramChange {
+            time: 0.0,
+            channel: 0,
+            program: 81,
+        },
     },
-    MidiEvent {
-        time: 1.0,
-        duration: 1.0,
-        channel: 0,
-        note: 76,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ControlChange {
+            time: 0.0,
+            channel: 0,
+            cc: 11,
+            value: 100,
+        },
     },
-    MidiEvent {
-        time: 2.0,
-        duration: 1.0,
-        channel: 0,
-        note: 72,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 0.0,
+            duration: 1.0,
+            channel: 0,
+            note: 72,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 2.0,
-        duration: 2.0,
-        channel: 1,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Pad",
+        event: ControlChange {
+            time: 0.0,
+            channel: 1,
+            cc: 7,
+            value: 90,
+        },
     },
-    MidiEvent {
-        time: 2.0,
-        duration: 2.0,
-        channel: 1,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Pad",
+        event: ControlChange {
+            time: 0.0,
+            channel: 1,
+            cc: 10,
+            value: 72,
+        },
     },
-    MidiEvent {
-        time: 3.0,
-        duration: 1.0,
-        channel: 0,
-        note: 76,
-        velocity: 100,
+    TrackEvent {
+        track: "Pad",
+        event: ControlChange {
+            time: 0.0,
+            channel: 1,
+            cc: 11,
+            value: 110,
+        },
+    },
+    TrackEvent {
+        track: "Pad",
+        event: Note {
+            time: 0.0,
+            duration: 2.0,
+            channel: 1,
+            note: 60,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Pad",
+        event: Note {
+            time: 0.0,
+            duration: 2.0,
+            channel: 1,
+            note: 67,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 1.0,
+            duration: 1.0,
+            channel: 0,
+            note: 76,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 2.0,
+            duration: 1.0,
+            channel: 0,
+            note: 72,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Pad",
+        event: Note {
+            time: 2.0,
+            duration: 2.0,
+            channel: 1,
+            note: 60,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Pad",
+        event: Note {
+            time: 2.0,
+            duration: 2.0,
+            channel: 1,
+            note: 67,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 3.0,
+            duration: 1.0,
+            channel: 0,
+            note: 76,
+            velocity: 100,
+        },
     },
 ]

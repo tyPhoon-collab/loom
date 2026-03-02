@@ -1,4 +1,4 @@
-use crate::compiler::{MidiEvent, MidiInitEvent};
+use crate::compiler::MidiEvent;
 use crate::sequencer::{Core, PlaybackState};
 use miette::Result;
 use std::{thread, time::Duration};
@@ -18,18 +18,13 @@ impl Player {
 
     pub fn play(
         &mut self,
-        compiled_events: &[MidiEvent],
-        init_events: &[MidiInitEvent],
+        events: &[MidiEvent],
         metadata: &crate::dsl::token::Frontmatter,
     ) -> Result<()> {
         println!("Playing at {} BPM...", metadata.bpm);
 
         // Load data
-        self.core.load(
-            compiled_events.to_vec(),
-            init_events.to_vec(),
-            metadata.clone(),
-        );
+        self.core.load(events.to_vec(), metadata.clone());
 
         // Setup loop range if provided
         if let Some(ref range_str) = metadata.loop_range {

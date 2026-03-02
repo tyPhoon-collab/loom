@@ -1,4 +1,4 @@
-use crate::compiler::{MidiEvent, MidiInitEvent};
+use crate::compiler::MidiEvent;
 use crate::dsl::token::Frontmatter;
 use crate::sequencer::{Core, PlaybackState};
 use miette::Result;
@@ -10,7 +10,7 @@ use std::time::Duration;
 static PLAYER_SENDER: OnceLock<Sender<PlayerCommand>> = OnceLock::new();
 
 pub enum PlayerCommand {
-    UpdateSequence(Vec<MidiEvent>, Vec<MidiInitEvent>, Frontmatter),
+    UpdateSequence(Vec<MidiEvent>, Frontmatter),
     Play,
     Pause,
     Stop,
@@ -40,17 +40,10 @@ impl LivePlayer {
         })
     }
 
-    pub fn update(
-        &self,
-        note_events: Vec<MidiEvent>,
-        init_events: Vec<MidiInitEvent>,
-        metadata: Frontmatter,
-    ) {
-        let _ = self.command_sender.send(PlayerCommand::UpdateSequence(
-            note_events,
-            init_events,
-            metadata,
-        ));
+    pub fn update(&self, events: Vec<MidiEvent>, metadata: Frontmatter) {
+        let _ = self
+            .command_sender
+            .send(PlayerCommand::UpdateSequence(events, metadata));
     }
 
     pub fn play(&self) {
@@ -97,8 +90,8 @@ fn run_player_loop(
         // Handle Commands
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
-                PlayerCommand::UpdateSequence(note_events, init_events, metadata) => {
-                    core.load(note_events, init_events, metadata);
+                PlayerCommand::UpdateSequence(events, metadata) => {
+                    core.load(events, metadata);
                 }
                 PlayerCommand::Play => {
                     core.play();

@@ -1,49 +1,84 @@
 ---
 source: tests/examples_test.rs
-assertion_line: 32
 expression: events
 ---
 [
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ControlChange {
+            time: 0.0,
+            channel: 0,
+            cc: 10,
+            value: 16,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 64,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 0.0,
-        duration: 4.0,
-        channel: 0,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 64,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 4.0,
-        duration: 4.0,
-        channel: 0,
-        note: 60,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 0.0,
+            duration: 4.0,
+            channel: 0,
+            note: 67,
+            velocity: 100,
+        },
     },
-    MidiEvent {
-        time: 4.0,
-        duration: 4.0,
-        channel: 0,
-        note: 64,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: ControlChange {
+            time: 4.0,
+            channel: 0,
+            cc: 10,
+            value: 100,
+        },
     },
-    MidiEvent {
-        time: 4.0,
-        duration: 4.0,
-        channel: 0,
-        note: 67,
-        velocity: 100,
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 4.0,
+            duration: 4.0,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 4.0,
+            duration: 4.0,
+            channel: 0,
+            note: 64,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Lead",
+        event: Note {
+            time: 4.0,
+            duration: 4.0,
+            channel: 0,
+            note: 67,
+            velocity: 100,
+        },
     },
 ]

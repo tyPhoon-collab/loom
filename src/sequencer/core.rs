@@ -1,5 +1,5 @@
 use super::store::Store;
-use crate::compiler::{MidiEvent, MidiInitEvent};
+use crate::compiler::MidiEvent;
 use crate::dsl::token::Frontmatter;
 use crate::midi;
 use midir::MidiOutputConnection;
@@ -47,12 +47,7 @@ impl Core {
         })
     }
 
-    pub fn load(
-        &mut self,
-        note_events: Vec<MidiEvent>,
-        init_events: Vec<MidiInitEvent>,
-        metadata: Frontmatter,
-    ) {
+    pub fn load(&mut self, events: Vec<MidiEvent>, metadata: Frontmatter) {
         // If playing, adjust offset to prevent jumps
         if self.state == PlaybackState::Playing {
             let old_bpm = self.store.metadata.bpm.max(1) as f64;
@@ -60,7 +55,7 @@ impl Core {
             self.seq_offset += elapsed * (old_bpm / 60.0);
             self.start_time = Instant::now();
         }
-        self.store.update(note_events, init_events, metadata);
+        self.store.update(events, metadata);
     }
 
     pub fn current_beat(&self) -> f64 {
@@ -120,9 +115,9 @@ impl Core {
         } else {
             let max_time = self
                 .store
-                .note_events
+                .events
                 .iter()
-                .map(|e| e.time + e.duration)
+                .filter_map(MidiEvent::note_end_time)
                 .fold(0.0, f64::max)
                 .max(4.0);
             (0.0, max_time)
@@ -168,23 +163,37 @@ impl Core {
     }
 
     fn process_new_events(&mut self, current_beat: f64) {
-        for event in &self.store.init_events {
-            if event_time(event) > self.last_processed_beat && event_time(event) <= current_beat {
-                send_init_event(&mut self.conn, event);
-            }
-        }
-
-        for event in &self.store.note_events {
-            if event.time > self.last_processed_beat && event.time <= current_beat {
-                let channel = event.channel.min(15);
-                let _ = self
-                    .conn
-                    .send(&[0x90 | channel, event.note, event.velocity]);
-                self.active_notes.push(ActiveNote {
-                    channel,
-                    note: event.note,
-                    off_time: event.time + event.duration,
-                });
+        for event in &self.store.events {
+            if event.time() > self.last_processed_beat && event.time() <= current_beat {
+                match event {
+                    MidiEvent::Note {
+                        time,
+                        duration,
+                        channel,
+                        note,
+                        velocity,
+                    } => {
+                        let channel = (*channel).min(15);
+                        let _ = self.conn.send(&[0x90 | channel, *note, *velocity]);
+                        self.active_notes.push(ActiveNote {
+                            channel,
+                            note: *note,
+                            off_time: *time + *duration,
+                        });
+                    }
+                    MidiEvent::ControlChange {
+                        channel, cc, value, ..
+                    } => {
+                        let ch = (*channel).min(15);
+                        let _ = self.conn.send(&[0xB0 | ch, *cc, *value]);
+                    }
+                    MidiEvent::ProgramChange {
+                        channel, program, ..
+                    } => {
+                        let ch = (*channel).min(15);
+                        let _ = self.conn.send(&[0xC0 | ch, *program]);
+                    }
+                }
             }
         }
     }
@@ -198,31 +207,6 @@ impl Core {
         // CC All Notes Off
         for i in 0..16 {
             let _ = self.conn.send(&[0xB0 | i, 123, 0]);
-        }
-    }
-}
-
-fn event_time(event: &MidiInitEvent) -> f64 {
-    match event {
-        MidiInitEvent::ControlChange { time, .. } | MidiInitEvent::ProgramChange { time, .. } => {
-            *time
-        }
-    }
-}
-
-fn send_init_event(conn: &mut MidiOutputConnection, event: &MidiInitEvent) {
-    match event {
-        MidiInitEvent::ControlChange {
-            channel, cc, value, ..
-        } => {
-            let ch = (*channel).min(15);
-            let _ = conn.send(&[0xB0 | ch, *cc, *value]);
-        }
-        MidiInitEvent::ProgramChange {
-            channel, program, ..
-        } => {
-            let ch = (*channel).min(15);
-            let _ = conn.send(&[0xC0 | ch, *program]);
         }
     }
 }
