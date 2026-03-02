@@ -2,3 +2,6 @@
 next.md
 /examples/internals
 .DS_Store
+
+/docs/node_modules
+/docs/.vitepress

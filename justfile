@@ -36,6 +36,16 @@ save file output="output.mid" *args:
 ports:
     cargo run -- ports
 
+# Docs
+
+# Install docs dependencies. You NEED "cd docs && pnpm approve-builds" before this.
+docs-install:
+    pnpm -C docs install
+
+# Run docs dev server
+docs-dev:
+    pnpm -C docs docs:dev
+
 # Pre-commit checks
 precommit:
     lefthook run pre-commit

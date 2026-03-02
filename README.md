@@ -1,55 +1,55 @@
 # Loom
 
-テキストでMIDIを織りなす、エンジニアのための音楽専用織り機
+Loom is a text-first DSL for MIDI composition, playback, and live coding.
 
-## 使い方
+## Quick Start
 
-### 主要コマンド
+```bash
+cargo build --release
 
-- `loom live <file>`
-    - 🎹 TUIによるインタラクティブモード（ホットスワップ対応）。
-    - ファイルの編集内容が即座に演奏に反映されます。
-- `loom save <file>`
-    - 💾 `.loom` ファイルを標準MIDIファイル (`.mid`) として保存します。
+# list MIDI ports
+loom ports
 
-### ユーティリティ
+# play once
+loom play examples/melody-simple.loom
 
-- `loom play <file>`
-    - 🎵 ファイルを一度だけ再生します（サクッとした確認用）。
-- `loom fmt <file>`
-    - 📝 `.loom` ファイルをフォーマットします。
-- `loom check <file>`
-    - ✅ 構文や構造をチェックします（CI/CDやバリデーション用）。
-- `loom parse <file>`
-    - 🔍 パースを行い、内部コンパイル結果を出力します（デバッグ/ドライラン用）。
+# live coding (hot reload)
+loom live examples/melody-simple.loom
 
-## 開発
+# export MIDI file
+loom save examples/melody-simple.loom
+```
 
-### Justfile
-便利なコマンドを `just` で実行できます：
-- `just live <file>`: ライブ演奏モード起動
-- `just save <file>`: MIDI保存
-- `just fmt`: DSL（.loom）のフォーマット
-- `just precommit`: 全てのチェック（clippy, test, fmt）を実行
+## Documentation
 
-### セットアップ
-- `mise` と `rustup` のセットアップが必要
-- `examples/` にサンプルを用意
-- `tests/fixtures/` にゴールデンテストを用意
+- Docs source: `docs/` (VitePress)
+- AI-oriented overview: `llms.txt` and `docs/llms.md`
 
-### テックスタック
-- **Language**: Rust
-- **TUI**: ratatui, crossterm
-- **MIDI**: midir, midly
-- **Parser**: nom
-- **CLI**: clap, miette
+### Run Docs Locally
 
-## examples
+```bash
+cd docs
+npm install
+npm run docs:dev
+```
 
-目的や内容が一目で分かるような命名規則を採用しています。
+## Repository Map
 
-- **機能確認用**: `feature-` プレフィクスを使用します（例: `feature-loop-basic.md`）。
-- **音楽デモ用**: 楽器名やジャンルをプレフィクスにします（例: `drums-basic.md`, `melody-simple.md`）。
-- **テスト用**: `test-` プレフィクスを使用します（例: `test-invalid-syntax.md`）。
+- `docs/`: all user-facing documentation
+  - `docs/language/spec.md`: language specification
+  - `docs/reference/formatter.md`: formatter specification
+  - `docs/reference/config.md`: global config reference
+  - `docs/concepts/*`: concept and philosophy
+- `examples/`: runnable `.loom` examples
+- `src/`: compiler, parser, runtime, commands
+- `tests/`: integration and snapshot tests
+- `llms.txt`: machine entrypoint for doc discovery
 
-既存のファイルと役割が被ってないことを確認してから追加してください。
+## Top-level Files Policy
+
+To keep the repository root focused and navigable:
+
+- Keep only entrypoint documents at top level (for example `README.md`, `LICENSE`, `llms.txt`).
+- Keep full user-facing documentation under `docs/`.
+- Avoid duplicating long-form docs between root and `docs/`.
+- Keep implementation and tests in `src/` and `tests/`.

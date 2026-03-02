@@ -1,0 +1,8 @@
+Loom LLM context entrypoint:
+- docs/llms.md
+
+Primary references:
+- docs/language/spec.md
+- docs/reference/formatter.md
+- docs/reference/config.md
+- examples/
