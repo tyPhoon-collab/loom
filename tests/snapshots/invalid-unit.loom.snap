@@ -4,11 +4,11 @@ expression: error_trace
 ---
 loom::parser::validation
 
-  × Validation error: Invalid signature 'Invalid': expected <numerator>/<denominator>
+  × Validation error: Invalid unit 'step': expected 'bar' or 'beat'
    ╭─[input:1:1]
  1 │ ---
    · ─┬─
    ·  ╰── Invalid value
- 2 │ title: "Invalid Signature"
+ 2 │ unit: "step"
    ╰────
-  help: Example: signature: 4/4
+  help: Example: unit: bar

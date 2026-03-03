@@ -1,0 +1,9 @@
+---
+loop: true
+unit: "bar"
+signature: "4/4"
+loop_range: "0 ~ 2"
+---
+
+# Track: 1
+C4 | ^ |

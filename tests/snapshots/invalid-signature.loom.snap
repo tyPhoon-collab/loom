@@ -2,6 +2,13 @@
 source: tests/error_test.rs
 expression: error_trace
 ---
-loom::compiler::invalid_signature
+loom::parser::validation
 
-  × Invalid signature 'Invalid': invalid numerator 'Invalid'
+  × Validation error: Invalid signature 'Invalid': expected <numerator>/<denominator>
+   ╭─[input:1:1]
+ 1 │ ---
+   · ─┬─
+   ·  ╰── Invalid value
+ 2 │ title: "Invalid Signature"
+   ╰────
+  help: Example: signature: 4/4

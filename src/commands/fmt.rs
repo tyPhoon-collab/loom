@@ -17,7 +17,7 @@ pub fn handle_fmt(input: Option<PathBuf>, check: bool) -> Result<()> {
         }
     };
 
-    let formatted = formatter::format_string(&content);
+    let formatted = formatter::format_string(&content)?;
 
     if check {
         if content != formatted {

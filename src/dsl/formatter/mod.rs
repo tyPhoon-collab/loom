@@ -3,10 +3,11 @@ pub mod parser;
 
 use crate::dsl::parser::ParsedLine;
 use crate::dsl::syntax::Symbol;
+use miette::Result;
 use std::fmt::Write;
 
-pub fn format_string(input: &str) -> String {
-    let lines = parser::parse_for_formatting(input);
+pub fn format_string(input: &str) -> Result<String> {
+    let lines = parser::parse_for_formatting(input)?;
     let mut output = String::new();
 
     let mut elements: Vec<OutputElement> = Vec::new();
@@ -81,7 +82,7 @@ pub fn format_string(input: &str) -> String {
         let content = match element {
             OutputElement::Data(data_lines) => {
                 let refs: Vec<&ParsedLine> = data_lines.iter().collect();
-                core::format_patterns(&refs)
+                core::format_patterns(&refs)?
             }
             OutputElement::Meta(meta_line) => format_meta_line(meta_line),
             OutputElement::Comments(comment_lines) => {
@@ -107,7 +108,7 @@ pub fn format_string(input: &str) -> String {
         output.push('\n');
     }
 
-    output
+    Ok(output)
 }
 
 enum OutputElement {

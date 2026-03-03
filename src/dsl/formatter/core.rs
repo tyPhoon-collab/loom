@@ -1,3 +1,4 @@
+use crate::dsl::error::ParseError;
 use crate::dsl::parser::ParsedLine;
 use crate::dsl::token::{Block, ModifierValue};
 use std::collections::HashMap;
@@ -283,14 +284,14 @@ fn format_modifier_block(
     Ok(())
 }
 
-pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
+pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
     if patterns.is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
 
     let context = prepare_context(patterns);
 
-    let (sorted_patterns, sorted_keys) = sort_patterns_and_mods(patterns);
+    let (sorted_patterns, sorted_keys) = sort_patterns_and_mods(patterns)?;
     let mut max_key_width = calculate_max_key_width(&sorted_keys);
     for p in patterns {
         if let ParsedLine::Modifier { kind, .. } = p {
@@ -399,31 +400,64 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> String {
             out.push('\n');
         }
     }
-    out
+    Ok(out)
 }
 
-fn sort_patterns_and_mods<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedLine>, Vec<String>) {
+fn parse_note_strict(note_text: &str, key: &str) -> Result<crate::dsl::note::Note, ParseError> {
+    crate::dsl::note::Note::from_str(note_text.trim()).map_err(|e| {
+        ParseError::from_validation(
+            key,
+            key,
+            format!(
+                "Invalid note `{}` in key `{}`: {}",
+                note_text.trim(),
+                key,
+                e
+            ),
+            Some("Use valid pitch/drum/MIDI note syntax in key list".to_string()),
+        )
+    })
+}
+
+fn sort_patterns_and_mods<'a>(
+    patterns: &[&'a ParsedLine],
+) -> Result<(Vec<&'a ParsedLine>, Vec<String>), ParseError> {
     let mut pattern_list: Vec<&ParsedLine> = patterns
         .iter()
         .filter(|p| matches!(p, ParsedLine::Pattern { .. }))
         .copied()
         .collect();
 
+    let mut max_by_ptr: HashMap<*const ParsedLine, u8> = HashMap::new();
+    let mut canonical_key_by_ptr: HashMap<*const ParsedLine, String> = HashMap::new();
+
+    for p in &pattern_list {
+        if let ParsedLine::Pattern { key, .. } = p {
+            let mut notes = Vec::new();
+            for raw in key.split(',') {
+                notes.push(parse_note_strict(raw, key)?);
+            }
+
+            if let Some(max_midi) = notes.iter().map(|n| n.to_midi()).max() {
+                max_by_ptr.insert(*p as *const ParsedLine, max_midi);
+            }
+
+            let mut sorted_notes = notes;
+            sorted_notes.sort_by_key(|n| n.to_midi());
+            let canonical_key = sorted_notes
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            canonical_key_by_ptr.insert(*p as *const ParsedLine, canonical_key);
+        }
+    }
+
     pattern_list.sort_by(|a, b| {
-        let (key_a, key_b) = match (a, b) {
-            (ParsedLine::Pattern { key: k1, .. }, ParsedLine::Pattern { key: k2, .. }) => (k1, k2),
-            _ => return std::cmp::Ordering::Equal,
-        };
-
-        let parse_midi_max = |key: &str| -> Option<u8> {
-            key.split(',')
-                .filter_map(|s| crate::dsl::note::Note::from_str(s.trim()).ok())
-                .map(|n| n.to_midi())
-                .max()
-        };
-
-        match (parse_midi_max(key_a), parse_midi_max(key_b)) {
-            (Some(max_a), Some(max_b)) => max_b.cmp(&max_a),
+        let max_a = max_by_ptr.get(&(*a as *const ParsedLine));
+        let max_b = max_by_ptr.get(&(*b as *const ParsedLine));
+        match (max_a, max_b) {
+            (Some(a), Some(b)) => b.cmp(a),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => std::cmp::Ordering::Equal,
@@ -433,33 +467,15 @@ fn sort_patterns_and_mods<'a>(patterns: &[&'a ParsedLine]) -> (Vec<&'a ParsedLin
     let mut sorted_keys = Vec::new();
     for p in &pattern_list {
         if let ParsedLine::Pattern { key, .. } = p {
-            let mut ns = key
-                .split(',')
-                .filter_map(|s| {
-                    let trimmed = s.trim();
-                    // Frontmatter handling (Manual handling as parser might expect full string)
-                    // The following line is syntactically incorrect in this context and has been omitted.
-                    // if i == 0 && trimmed == Symbol::TrackWrap.as_str() {
-                    crate::dsl::note::Note::from_str(trimmed)
-                        .ok()
-                        .map(|n| (n, trimmed.to_string()))
-                })
-                .collect::<Vec<(crate::dsl::note::Note, String)>>();
-
-            if ns.is_empty() {
-                sorted_keys.push(key.clone());
-            } else {
-                ns.sort_by(|(n1, _), (n2, _)| n1.to_midi().cmp(&n2.to_midi()));
-                let sk = ns
-                    .iter()
-                    .map(|(n, _)| n.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                sorted_keys.push(sk);
-            }
+            let ptr = *p as *const ParsedLine;
+            let canonical = canonical_key_by_ptr
+                .get(&ptr)
+                .cloned()
+                .unwrap_or_else(|| key.clone());
+            sorted_keys.push(canonical);
         }
     }
-    (pattern_list, sorted_keys)
+    Ok((pattern_list, sorted_keys))
 }
 
 fn calculate_max_key_width(keys: &[String]) -> usize {

@@ -1,8 +1,9 @@
+use crate::dsl::error::ParseError;
 use crate::dsl::parser::{self, ParsedLine};
 use crate::dsl::syntax::Symbol;
 
 /// Parse the entire source into a list of ParsedLine for formatting.
-pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
+pub fn parse_for_formatting(input: &str) -> Result<Vec<ParsedLine>, ParseError> {
     let mut lines = Vec::new();
     let mut in_frontmatter = false;
     let mut frontmatter_buffer = String::new();
@@ -31,11 +32,20 @@ pub fn parse_for_formatting(input: &str) -> Vec<ParsedLine> {
         // Use the strict parser for each line
         match parser::parse_line_entry(trimmed) {
             Ok((_, parsed)) => lines.push(parsed),
-            Err(_) => {
-                lines.push(ParsedLine::Comment(line.to_string()));
+            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+                return Err(ParseError::from_nom(line, input, format!("{:?}", e.code)));
             }
+            Err(_) => return Err(ParseError::from_nom(line, input, "Incomplete".to_string())),
         }
     }
 
-    lines
+    if in_frontmatter {
+        return Err(ParseError::from_yaml(
+            input,
+            input,
+            "Unclosed Frontmatter. Missing closing '---'".to_string(),
+        ));
+    }
+
+    Ok(lines)
 }

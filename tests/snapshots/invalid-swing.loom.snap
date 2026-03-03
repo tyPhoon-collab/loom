@@ -4,11 +4,11 @@ expression: error_trace
 ---
 loom::parser::validation
 
-  × Validation error: Invalid signature 'Invalid': expected <numerator>/<denominator>
+  × Validation error: Invalid swing.grid: 6 (expected power of two like 8 or 16)
    ╭─[input:1:1]
  1 │ ---
    · ─┬─
    ·  ╰── Invalid value
- 2 │ title: "Invalid Signature"
+ 2 │ swing:
    ╰────
-  help: Example: signature: 4/4
+  help: Examples: swing: 8, swing: 16, swing: { grid: 8, amount: 66 }

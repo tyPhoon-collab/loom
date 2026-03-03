@@ -4,11 +4,11 @@ expression: error_trace
 ---
 loom::parser::validation
 
-  × Validation error: Invalid signature 'Invalid': expected <numerator>/<denominator>
+  × Validation error: loop_range start must be >= 1 (1-based), got 0
    ╭─[input:1:1]
  1 │ ---
    · ─┬─
    ·  ╰── Invalid value
- 2 │ title: "Invalid Signature"
+ 2 │ loop: true
    ╰────
-  help: Example: signature: 4/4
+  help: Example: loop_range: "1 ~ 4"

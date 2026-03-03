@@ -27,8 +27,9 @@ impl App {
         let current_beat = Arc::new(Mutex::new(0.0));
         let player = LivePlayer::new(port_index, Arc::clone(&current_beat))?;
         // Initial compile
-        let content = fs::read_to_string(&path).unwrap_or_default();
-        let _ = Self::compile_and_update(&content, &player);
+        let content = fs::read_to_string(&path)
+            .map_err(|e| miette::miette!("Failed to read {}: {}", path.display(), e))?;
+        let _ = Self::compile_and_update(&content, &player)?;
 
         let midi_device_name = {
             if let Ok(midi_out) = midir::MidiOutput::new("Loom Info") {
@@ -80,7 +81,13 @@ impl App {
                     // Hot-swap
                     self.status_message = "File changed, recompiling...".to_string();
 
-                    let content = fs::read_to_string(&self.path).unwrap_or_default();
+                    let content = match fs::read_to_string(&self.path) {
+                        Ok(content) => content,
+                        Err(e) => {
+                            self.status_message = format!("Failed to read file: {}", e);
+                            continue;
+                        }
+                    };
 
                     match Self::compile_and_update(&content, &self.player) {
                         Ok((bpm, msg)) => {
@@ -88,10 +95,18 @@ impl App {
                             self.status_message = format!("Reloaded! {}", msg);
 
                             // Auto-format if valid
-                            let formatted = crate::dsl::formatter::format_string(&content);
-                            if content != formatted {
-                                if let Err(e) = fs::write(&self.path, &formatted) {
-                                    self.status_message = format!("Format save error: {}", e);
+                            match crate::dsl::formatter::format_string(&content) {
+                                Ok(formatted) => {
+                                    if content != formatted {
+                                        if let Err(e) = fs::write(&self.path, &formatted) {
+                                            self.status_message =
+                                                format!("Format save error: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    self.status_message =
+                                        format!("Format skipped due to parse error: {}", e);
                                 }
                             }
                         }

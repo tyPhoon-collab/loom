@@ -3,7 +3,7 @@ use crate::compiler::MidiEvent;
 use crate::dsl::token::Frontmatter;
 use crate::midi;
 use midir::MidiOutputConnection;
-use miette::Result;
+use miette::{miette, Result};
 use std::time::Instant;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -77,32 +77,35 @@ impl Core {
         }
     }
 
-    pub fn pause(&mut self) {
+    pub fn pause(&mut self) -> Result<()> {
         if self.state == PlaybackState::Playing {
             let bpm = self.store.metadata.bpm.max(1) as f64;
             self.seq_offset += self.start_time.elapsed().as_secs_f64() * (bpm / 60.0);
             self.state = PlaybackState::Paused;
-            self.silence_all();
+            self.silence_all()?;
         }
+        Ok(())
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> Result<()> {
         self.state = PlaybackState::Stopped;
         self.seq_offset = 0.0;
         self.last_processed_beat = -1.0;
-        self.silence_all();
+        self.silence_all()?;
+        Ok(())
     }
 
-    pub fn restart(&mut self) {
+    pub fn restart(&mut self) -> Result<()> {
         self.seq_offset = self.loop_range.map(|(s, _)| s).unwrap_or(0.0);
         self.last_processed_beat = self.seq_offset - 0.001;
         self.start_time = Instant::now();
-        self.silence_all();
+        self.silence_all()?;
+        Ok(())
     }
 
-    pub fn tick(&mut self) -> PlaybackState {
+    pub fn tick(&mut self) -> Result<PlaybackState> {
         if self.state != PlaybackState::Playing {
-            return self.state;
+            return Ok(self.state);
         }
 
         let bpm = self.store.metadata.bpm.max(1) as f64;
@@ -130,80 +133,112 @@ impl Core {
             loop_start + ((total_beats - loop_start) % loop_len)
         } else {
             if total_beats > loop_end {
-                self.stop();
-                return PlaybackState::Stopped;
+                self.stop()?;
+                return Ok(PlaybackState::Stopped);
             }
             total_beats
         };
 
         // Handle Wrap-around
         if current_beat < self.last_processed_beat {
-            self.silence_all();
+            self.silence_all()?;
             self.last_processed_beat = loop_start - 0.001; // Reset
         }
 
         // Process Notes and Control events
-        self.process_active_notes(current_beat);
-        self.process_new_events(current_beat);
+        self.process_active_notes(current_beat)?;
+        self.process_new_events(current_beat)?;
 
         self.last_processed_beat = current_beat;
-        PlaybackState::Playing
+        Ok(PlaybackState::Playing)
     }
 
-    fn process_active_notes(&mut self, current_beat: f64) {
-        let conn = &mut self.conn;
-        self.active_notes.retain(|n| {
-            if n.off_time <= current_beat {
-                let _ = conn.send(&[0x80 | n.channel, n.note, 0]);
-                false
+    fn process_active_notes(&mut self, current_beat: f64) -> Result<()> {
+        let mut i = 0;
+        while i < self.active_notes.len() {
+            if self.active_notes[i].off_time <= current_beat {
+                let channel = self.active_notes[i].channel;
+                let note = self.active_notes[i].note;
+                self.send_midi(&[0x80 | channel, note, 0])?;
+                self.active_notes.remove(i);
             } else {
-                true
+                i += 1;
             }
-        });
+        }
+        Ok(())
     }
 
-    fn process_new_events(&mut self, current_beat: f64) {
-        for event in &self.store.events {
-            if event.time() > self.last_processed_beat && event.time() <= current_beat {
-                match event {
-                    MidiEvent::Note {
-                        time,
-                        duration,
+    fn process_new_events(&mut self, current_beat: f64) -> Result<()> {
+        let events_to_emit: Vec<MidiEvent> = self
+            .store
+            .events
+            .iter()
+            .filter(|event| event.time() > self.last_processed_beat && event.time() <= current_beat)
+            .cloned()
+            .collect();
+
+        for event in events_to_emit {
+            match event {
+                MidiEvent::Note {
+                    time,
+                    duration,
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    self.send_midi(&[0x90 | channel, note, velocity])?;
+                    self.active_notes.push(ActiveNote {
                         channel,
                         note,
-                        velocity,
-                    } => {
-                        let _ = self.conn.send(&[0x90 | *channel, *note, *velocity]);
-                        self.active_notes.push(ActiveNote {
-                            channel: *channel,
-                            note: *note,
-                            off_time: *time + *duration,
-                        });
-                    }
-                    MidiEvent::ControlChange {
-                        channel, cc, value, ..
-                    } => {
-                        let _ = self.conn.send(&[0xB0 | *channel, *cc, *value]);
-                    }
-                    MidiEvent::ProgramChange {
-                        channel, program, ..
-                    } => {
-                        let _ = self.conn.send(&[0xC0 | *channel, *program]);
-                    }
+                        off_time: time + duration,
+                    });
+                }
+                MidiEvent::ControlChange {
+                    channel, cc, value, ..
+                } => {
+                    self.send_midi(&[0xB0 | channel, cc, value])?;
+                }
+                MidiEvent::ProgramChange {
+                    channel, program, ..
+                } => {
+                    self.send_midi(&[0xC0 | channel, program])?;
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn silence_all(&mut self) {
+    pub fn silence_all(&mut self) -> Result<()> {
+        let mut first_error: Option<String> = None;
+
         for n in &self.active_notes {
-            let _ = self.conn.send(&[0x80 | n.channel, n.note, 0]);
+            if let Err(e) = self.conn.send(&[0x80 | n.channel, n.note, 0]) {
+                if first_error.is_none() {
+                    first_error = Some(e.to_string());
+                }
+            }
         }
         self.active_notes.clear();
 
         // CC All Notes Off
         for i in 0..16 {
-            let _ = self.conn.send(&[0xB0 | i, 123, 0]);
+            if let Err(e) = self.conn.send(&[0xB0 | i, 123, 0]) {
+                if first_error.is_none() {
+                    first_error = Some(e.to_string());
+                }
+            }
         }
+
+        if let Some(msg) = first_error {
+            return Err(miette!("MIDI send failed while silencing: {}", msg));
+        }
+
+        Ok(())
+    }
+
+    fn send_midi(&mut self, data: &[u8]) -> Result<()> {
+        self.conn
+            .send(data)
+            .map_err(|e| miette!("MIDI send failed: {}", e))
     }
 }

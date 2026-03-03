@@ -62,6 +62,10 @@ pub enum CompileError {
         reason: String,
     },
 
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    InvalidModifierStructure(Box<InvalidModifierStructureData>),
+
     #[error("while compiling {context}")]
     #[diagnostic(code(loom::compiler::context))]
     Context {
@@ -72,6 +76,20 @@ pub enum CompileError {
 }
 
 type CompileResult<T> = std::result::Result<T, CompileError>;
+
+#[derive(Error, Debug, Diagnostic)]
+#[error(
+    "Invalid modifier structure for '{modifier}' at track '{track}', {context}, block {block_index}, value path {value_path}: {reason}"
+)]
+#[diagnostic(code(loom::compiler::invalid_modifier_structure))]
+pub struct InvalidModifierStructureData {
+    track: String,
+    context: String,
+    modifier: String,
+    block_index: usize,
+    value_path: String,
+    reason: String,
+}
 
 trait CompileContextExt<T> {
     fn with_compile_context(self, context: impl Into<String>) -> CompileResult<T>;
@@ -206,10 +224,19 @@ fn count_leaf_tokens(tokens: &[Token]) -> usize {
 /// - A scalar modifier value at a Group token position is broadcast to all
 ///   leaf tokens of that group.
 /// - `ModifierValue::Empty` at a Group position fills all leaves with Empty.
-fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec<ModifierValue> {
+fn expand_modifier_values(
+    tokens: &[Token],
+    mod_values: &[ModifierValue],
+    track_name: &str,
+    context: &str,
+    modifier_kind: ModifierKind,
+    block_index: usize,
+    path: &mut Vec<usize>,
+) -> CompileResult<Vec<ModifierValue>> {
     let mut result = Vec::new();
 
     for (i, token) in tokens.iter().enumerate() {
+        path.push(i);
         let mod_val = mod_values.get(i);
         match token {
             Token::Group(sub_tokens) => {
@@ -217,7 +244,15 @@ fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec
                 match mod_val {
                     Some(ModifierValue::Group(sub_vals)) => {
                         // Recurse: align sub-values with sub-tokens
-                        result.extend(expand_modifier_values(sub_tokens, sub_vals));
+                        result.extend(expand_modifier_values(
+                            sub_tokens,
+                            sub_vals,
+                            track_name,
+                            context,
+                            modifier_kind,
+                            block_index,
+                            path,
+                        )?);
                     }
                     Some(val @ (ModifierValue::Set(_) | ModifierValue::Latch(_))) => {
                         // Broadcast scalar to all leaves in the group
@@ -237,17 +272,32 @@ fn expand_modifier_values(tokens: &[Token], mod_values: &[ModifierValue]) -> Vec
                 // Leaf token: use modifier value directly, or Empty
                 match mod_val {
                     Some(ModifierValue::Group(_)) => {
-                        // Group modifier on a non-group token: ignore, treat as empty
-                        result.push(ModifierValue::Empty);
+                        let value_path = path
+                            .iter()
+                            .map(|idx| idx.to_string())
+                            .collect::<Vec<_>>()
+                            .join(".");
+                        return Err(CompileError::InvalidModifierStructure(Box::new(
+                            InvalidModifierStructureData {
+                                track: track_name.to_string(),
+                                context: context.to_string(),
+                                modifier: modifier_kind.to_string(),
+                                block_index,
+                                value_path,
+                                reason: "group value cannot be applied to a non-group token"
+                                    .to_string(),
+                            },
+                        )));
                     }
                     Some(val) => result.push(val.clone()),
                     None => result.push(ModifierValue::Empty),
                 }
             }
         }
+        path.pop();
     }
 
-    result
+    Ok(result)
 }
 
 struct CompilerContext<'a> {
@@ -305,7 +355,12 @@ impl Compiler {
     }
 
     /// Resolve modifier values for a line into per-block, per-leaf-token arrays (DFS order)
-    fn resolve_modifiers(&self, line: &crate::dsl::token::Line) -> ResolvedModifiers {
+    fn resolve_modifiers(
+        &self,
+        line: &crate::dsl::token::Line,
+        track_name: &str,
+        context: &str,
+    ) -> CompileResult<ResolvedModifiers> {
         let num_blocks = line.blocks.len();
 
         // Count leaf tokens per block (DFS)
@@ -352,7 +407,16 @@ impl Compiler {
 
                 // Get modifier values for this block, expanded to leaf level
                 let expanded = if let Some(raw_values) = maybe_raw_values {
-                    expand_modifier_values(&line.blocks[block_idx].tokens, raw_values)
+                    let mut path = Vec::new();
+                    expand_modifier_values(
+                        &line.blocks[block_idx].tokens,
+                        raw_values,
+                        track_name,
+                        context,
+                        modifier.kind,
+                        block_idx,
+                        &mut path,
+                    )?
                 } else {
                     vec![ModifierValue::Empty; num_leaves]
                 };
@@ -379,10 +443,10 @@ impl Compiler {
             }
         }
 
-        ResolvedModifiers {
+        Ok(ResolvedModifiers {
             velocities,
             pitches,
-        }
+        })
     }
 
     fn compile_track(
@@ -470,7 +534,7 @@ impl Compiler {
         let mut line_time = initial_time;
         let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
 
-        let resolved = self.resolve_modifiers(line);
+        let resolved = self.resolve_modifiers(line, track_name, context)?;
 
         let mut line_compiler = LineCompiler {
             channel,

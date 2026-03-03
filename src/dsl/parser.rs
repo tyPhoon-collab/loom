@@ -2,7 +2,7 @@ use super::error::ParseError;
 use super::syntax::Symbol;
 use super::token::{
     Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
-    ModifierValue, Note, Song, TemplateMacro, Token, Track, TrackInitEvent,
+    ModifierValue, Note, Song, SwingConfig, TemplateMacro, Token, Track, TrackInitEvent,
 };
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
@@ -675,6 +675,39 @@ fn parse_frontmatter(input: &str) -> IResult<&str, Frontmatter> {
     Ok((input, fm))
 }
 
+fn validate_swing_config(swing: &SwingConfig) -> std::result::Result<(), String> {
+    match swing {
+        SwingConfig::Detailed { grid, amount } => {
+            if *grid == 0 {
+                return Err("Invalid swing.grid: expected > 0".to_string());
+            }
+            if !grid.is_power_of_two() {
+                return Err(format!(
+                    "Invalid swing.grid: {} (expected power of two like 8 or 16)",
+                    grid
+                ));
+            }
+            if !(1..=99).contains(amount) {
+                return Err(format!("Invalid swing.amount: {} (expected 1..99)", amount));
+            }
+            Ok(())
+        }
+        SwingConfig::Numeric(grid) => {
+            if *grid == 0 {
+                return Ok(());
+            }
+            if !grid.is_power_of_two() {
+                return Err(format!(
+                    "Invalid swing value: {} (expected power of two like 8 or 16)",
+                    grid
+                ));
+            }
+            Ok(())
+        }
+        SwingConfig::Boolean(_) => Ok(()),
+    }
+}
+
 pub fn parse_song(source: String) -> Result<Song, ParseError> {
     let input = source.as_str();
 
@@ -702,6 +735,50 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
             format!("Invalid BPM: {}", metadata.bpm),
             Some("BPM must be between 1 and 999. Example: bpm: 120".to_string()),
         ));
+    }
+
+    let frontmatter_line = source.lines().next().unwrap_or(&source);
+    if let Err(msg) = crate::validation::parse_signature(&metadata.signature) {
+        return Err(ParseError::from_validation(
+            frontmatter_line,
+            &source,
+            msg,
+            Some("Example: signature: 4/4".to_string()),
+        ));
+    }
+    if let Err(msg) = crate::validation::validate_unit(&metadata.unit) {
+        return Err(ParseError::from_validation(
+            frontmatter_line,
+            &source,
+            msg,
+            Some("Example: unit: bar".to_string()),
+        ));
+    }
+    if let Err(msg) = validate_swing_config(&metadata.swing) {
+        return Err(ParseError::from_validation(
+            frontmatter_line,
+            &source,
+            msg,
+            Some("Examples: swing: 8, swing: 16, swing: { grid: 8, amount: 66 }".to_string()),
+        ));
+    }
+    if let Some(loop_range) = &metadata.loop_range {
+        if let Err(msg) = crate::validation::parse_loop_range_units(loop_range) {
+            return Err(ParseError::from_validation(
+                frontmatter_line,
+                &source,
+                msg,
+                Some("Example: loop_range: \"1 ~ 4\"".to_string()),
+            ));
+        }
+        if let Err(msg) = crate::validation::beats_per_unit(&metadata.unit, &metadata.signature) {
+            return Err(ParseError::from_validation(
+                frontmatter_line,
+                &source,
+                msg,
+                Some("Ensure both `unit` and `signature` are valid.".to_string()),
+            ));
+        }
     }
 
     let mut builder = SongBuilder::new(&source);

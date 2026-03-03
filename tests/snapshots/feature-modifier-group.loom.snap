@@ -140,7 +140,7 @@ expression: events
             duration: 0.3333333333333335,
             channel: 9,
             note: 38,
-            velocity: 100,
+            velocity: 80,
         },
     },
     TrackEvent {

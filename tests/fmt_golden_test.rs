@@ -28,7 +28,8 @@ fn test_fmt_golden() {
 
         let expected_path = expected_dir.join(file_name);
         if expected_path.exists() {
-            let actual = formatter::format_string(&input_content);
+            let actual = formatter::format_string(&input_content)
+                .unwrap_or_else(|e| panic!("Failed to format {}: {}", file_name, e));
             let expected = fs::read_to_string(&expected_path).unwrap();
             if actual.trim() != expected.trim() {
                 println!(

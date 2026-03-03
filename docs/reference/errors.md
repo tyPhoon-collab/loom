@@ -48,11 +48,14 @@ WIP. Structured error catalog will be added incrementally.
 - `invalid-fenced-codeblock-signature.loom`
 - `invalid-frontmatter.loom`
 - `invalid-init-u7.loom`
+- `invalid-loop-range.loom`
 - `invalid-modifier.loom`
 - `invalid-signature.loom`
+- `invalid-swing.loom`
 - `invalid-syntax.loom`
 - `invalid-template-arg-zero.loom`
 - `invalid-template-cycle.loom`
+- `invalid-unit.loom`
 - `missing-template-nested.loom`
 - `missing-template.loom`
 - `note-out-of-range-high.loom`
@@ -119,6 +122,20 @@ C4
 C4 | ^ |
 ````
 
+#### `invalid-loop-range.loom`
+
+````loom
+---
+loop: true
+unit: "bar"
+signature: "4/4"
+loop_range: "0 ~ 2"
+---
+
+# Track: 1
+C4 | ^ |
+````
+
 #### `invalid-modifier.loom`
 
 ````loom
@@ -133,6 +150,19 @@ v 10 |
 ---
 title: "Invalid Signature"
 signature: "Invalid"
+---
+
+# Track: 1
+C4 | ^ |
+````
+
+#### `invalid-swing.loom`
+
+````loom
+---
+swing:
+  grid: 6
+  amount: 120
 ---
 
 # Track: 1
@@ -181,6 +211,18 @@ C4 | ^ |
 
 # Track: 1
 [@A]
+````
+
+#### `invalid-unit.loom`
+
+````loom
+---
+unit: "step"
+signature: "4/4"
+---
+
+# Track: 1
+C4 | ^ |
 ````
 
 #### `missing-template-nested.loom`

@@ -97,19 +97,19 @@ fn run_player_loop(
                     core.play();
                 }
                 PlayerCommand::Pause => {
-                    core.pause();
+                    core.pause()?;
                 }
                 PlayerCommand::Restart => {
-                    core.restart();
+                    core.restart()?;
                 }
                 PlayerCommand::Stop => {
-                    core.stop();
+                    core.stop()?;
                     return Ok(());
                 }
             }
         }
 
-        let state = core.tick();
+        let state = core.tick()?;
         if state == PlaybackState::Playing || state == PlaybackState::Paused {
             if let Ok(mut beat) = current_beat_ref.lock() {
                 *beat = core.current_beat();

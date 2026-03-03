@@ -1,0 +1,9 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::compiler::context
+
+  × while compiling track 'Track'
+  ├─▶ while compiling pattern line in track sequence
+  ╰─▶ Invalid modifier structure for 'v' at track 'Track', track sequence, block 0, value path 0: group value cannot be applied to a non-group token
