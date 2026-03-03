@@ -115,6 +115,33 @@ Rules:
 - `character`: any UTF-8 character except newline
 - `digit`: `0..9`
 
+<!-- AUTO-GENERATED:DSL-SYMBOLS:START -->
+
+## Symbol Table (Auto)
+
+- `Note` => `^` - Note glyph
+- `Rest` => `.` - Rest glyph
+- `Sustain` => `-` - Sustain (tie) glyph
+- `BarStandard` => `|` - Standard bar line
+- `BarRepeatStart` => `|:` - Repeat start bar line
+- `BarRepeatEnd` => `:|` - Repeat end bar line
+- `BarDouble` => `:|:` - Double bar line / Section boundary
+- `TrackHeader` => `#` - Track header start symbol
+- `TrackHeaderSeparator` => `:` - Track header separator (name:channel)
+- `TrackHeaderMute` => `x` - Track header mute flag
+- `Comment` => `>` - Comment start symbol
+- `TrackWrap` => `---` - Track wrap / Frontmatter boundary
+- `GroupStart` => `[` - Group start
+- `GroupEnd` => `]` - Group end
+- `ModVelocity` => `v` - Velocity modifier selector
+- `ModPitch` => `p` - Pitch modifier selector
+- `ModLatch` => `!` - Modifier latch flag (!)
+- `Positive` => `+` - Modifier relative positive value (+)
+- `Negative` => `-` - Modifier relative negative value (-)
+- `Template` => `@` - Template prefix symbol (@)
+
+<!-- AUTO-GENERATED:DSL-SYMBOLS:END -->
+
 ## Track Wrapping
 
 `---` in a track body works as a continuation marker.

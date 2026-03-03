@@ -27,6 +27,18 @@ C4,E4,G4 | ^ |
 - `*N`: repeat expansion sequence
 - macros: `rev`, `arp`, `strum`, `vel:N`, `pan:N`
 
+<!-- AUTO-GENERATED:TEMPLATE-MACROS:START -->
+
+## Template Macros (Auto)
+
+- `rev`
+- `arp`
+- `strum`
+- `vel:N`
+- `pan:N`
+
+<!-- AUTO-GENERATED:TEMPLATE-MACROS:END -->
+
 ## Execution Rule
 
 Multiple expansions on the same line execute sequentially.

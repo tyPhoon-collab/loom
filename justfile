@@ -46,6 +46,14 @@ docs-install:
 docs-dev:
     pnpm -C docs docs:dev
 
+# Generate docs from source-of-truth (currently diagnostic codes -> docs/reference/errors.md)
+docs-gen:
+    cargo xtask gen-docs
+
+# Verify generated docs are up-to-date (fails when docs/reference/errors.md needs regeneration)
+docs-check:
+    cargo xtask check-docs
+
 # Pre-commit checks
 precommit:
     lefthook run pre-commit

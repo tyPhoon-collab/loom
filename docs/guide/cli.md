@@ -10,6 +10,33 @@
 - `loom fmt [input] [--check]`
 - `loom ports`
 
+<!-- AUTO-GENERATED:CLI-COMMANDS:START -->
+
+## Commands (Auto)
+
+- `loom check`: Check syntax of Loom file (CI/CD, Validation)
+- `loom parse`: Parse and output MIDI events (Dry run, formerly Run)
+  - `input`
+  - `--format`
+  - `--sort`
+  - `--filter`
+  - `--summary`
+- `loom play`: Real-time MIDI Playback (One-shot)
+  - `input`
+  - `-p, --port`
+- `loom live`: Interactive Live Coding Mode (TUI & Hot-swap)
+  - `input`
+  - `-p, --port`
+- `loom save`: Export to MIDI file
+  - `input`
+  - `output`
+- `loom fmt`: Format Loom file
+  - `input`
+  - `-c, --check`
+- `loom ports`: List available MIDI output ports
+
+<!-- AUTO-GENERATED:CLI-COMMANDS:END -->
+
 ## Port Resolution
 
 For `play` and `live`, the effective MIDI port is resolved in this order:

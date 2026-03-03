@@ -24,6 +24,9 @@ loom save examples/melody-simple.loom
 
 - Docs source: `docs/` (VitePress)
 - AI-oriented overview: `llms.txt` and `docs/llms.md`
+- Some documentation sections are auto-generated from source-of-truth in code/tests.
+  - Generate: `cargo xtask gen-docs` (or `just docs-gen`)
+  - Verify up-to-date: `cargo xtask check-docs` (or `just docs-check`)
 
 ### Run Docs Locally
 
