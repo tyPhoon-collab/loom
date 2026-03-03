@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::validation
+
+  × Validation error: Invalid MIDI channel: 17 (expected 1..16)
+   ╭─[input:1:1]
+ 1 │ # Track: 17
+   · ─────┬─────
+   ·      ╰── Invalid value
+ 2 │ C4 | ^ |
+   ╰────
+  help: MIDI channel must be between 1 and 16. Example: # Piano: 1

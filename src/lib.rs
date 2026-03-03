@@ -8,3 +8,4 @@ pub mod live_player;
 pub mod midi;
 pub mod player;
 pub mod sequencer;
+pub mod validation;

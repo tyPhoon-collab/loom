@@ -7,6 +7,5 @@ loom::compiler::context
   × while compiling track 'Track'
   ├─▶ while compiling template call 'A'
   ├─▶ while compiling nested template call 'B'
-  ├─▶ while compiling nested template call 'C'
-  ├─▶ while compiling nested template call 'A'
-  ╰─▶ Circular template reference detected: A -> B -> C -> A
+  ├─▶ while compiling nested template call 'Missing'
+  ╰─▶ Template not found: 'Missing' while compiling track 'Track', stack [A -> B -> Missing]

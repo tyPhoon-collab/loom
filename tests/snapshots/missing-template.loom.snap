@@ -2,6 +2,8 @@
 source: tests/error_test.rs
 expression: error_trace
 ---
-loom::compiler::base
+loom::compiler::context
 
-  × Compilation error: Template not found: NonExistent
+  × while compiling track 'Track'
+  ├─▶ while compiling template call 'NonExistent'
+  ╰─▶ Template not found: 'NonExistent' while compiling track 'Track', stack [NonExistent]

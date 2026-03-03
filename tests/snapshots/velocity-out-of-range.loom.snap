@@ -1,0 +1,10 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::compiler::context
+
+  × while compiling track 'Track'
+  ├─▶ while compiling pattern line in track sequence
+  ├─▶ while compiling pattern block emission
+  ╰─▶ Velocity out of range: 200 (expected 0..127) at track 'Track', track sequence, block 0, leaf 0

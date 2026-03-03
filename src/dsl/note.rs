@@ -72,15 +72,28 @@ impl std::fmt::Display for Note {
 }
 
 impl Note {
-    pub fn to_midi(&self) -> u8 {
+    pub fn to_midi_checked(&self) -> Result<u8> {
         match self {
             Note::Pitch { name, octave } => {
-                let offset = PITCH_MAP.get(name.as_str()).copied().unwrap_or(0);
-                ((octave + 2) * 12 + offset as i32).clamp(0, 127) as u8
+                let offset = PITCH_MAP
+                    .get(name.as_str())
+                    .copied()
+                    .ok_or_else(|| miette!("Invalid pitch name: {}", name))?;
+                let midi = (octave + 2) * 12 + offset as i32;
+                crate::validation::ensure_u7_i32(midi, "MIDI note")
+                    .map_err(|e| miette!("{} ({})", e, self))
             }
-            Note::Drum(alias) => DRUM_MAP.get(alias.as_str()).copied().unwrap_or(36),
-            Note::Midi(v) => *v,
+            Note::Drum(alias) => DRUM_MAP
+                .get(alias.as_str())
+                .copied()
+                .ok_or_else(|| miette!("Invalid drum alias: {}", alias)),
+            Note::Midi(v) => Ok(*v),
         }
+    }
+
+    pub fn to_midi(&self) -> u8 {
+        self.to_midi_checked()
+            .expect("validated note must be convertible to MIDI")
     }
 }
 
@@ -121,6 +134,10 @@ impl FromStr for Note {
             }
         }
 
+        if chars.peek().is_some() {
+            return Err(miette!("Invalid note format: {}", s));
+        }
+
         if pitch_part.is_empty() {
             return Err(miette!("Invalid note name: {}", s));
         }
@@ -130,7 +147,13 @@ impl FromStr for Note {
             return Err(miette!("Invalid pitch name: {}", pitch_part));
         }
 
-        let octave = octave_part.parse::<i32>().unwrap_or(3);
+        let octave = if octave_part.is_empty() {
+            3
+        } else {
+            octave_part
+                .parse::<i32>()
+                .map_err(|_| miette!("Invalid octave: {}", octave_part))?
+        };
         Ok(Note::Pitch {
             name: pitch_part,
             octave,

@@ -2,13 +2,6 @@
 source: tests/error_test.rs
 expression: error_trace
 ---
-loom::parser::base
+loom::compiler::invalid_signature
 
-  × Parse error: Char
-   ╭─[input:7:1]
- 6 │ # Track: 1
- 7 │ ```
-   · ─┬─
-   ·  ╰── Here
- 8 │ C4
-   ╰────
+  × Invalid signature 'Invalid': invalid numerator 'Invalid'

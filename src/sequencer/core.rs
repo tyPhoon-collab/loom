@@ -173,10 +173,9 @@ impl Core {
                         note,
                         velocity,
                     } => {
-                        let channel = (*channel).min(15);
-                        let _ = self.conn.send(&[0x90 | channel, *note, *velocity]);
+                        let _ = self.conn.send(&[0x90 | *channel, *note, *velocity]);
                         self.active_notes.push(ActiveNote {
-                            channel,
+                            channel: *channel,
                             note: *note,
                             off_time: *time + *duration,
                         });
@@ -184,14 +183,12 @@ impl Core {
                     MidiEvent::ControlChange {
                         channel, cc, value, ..
                     } => {
-                        let ch = (*channel).min(15);
-                        let _ = self.conn.send(&[0xB0 | ch, *cc, *value]);
+                        let _ = self.conn.send(&[0xB0 | *channel, *cc, *value]);
                     }
                     MidiEvent::ProgramChange {
                         channel, program, ..
                     } => {
-                        let ch = (*channel).min(15);
-                        let _ = self.conn.send(&[0xC0 | ch, *program]);
+                        let _ = self.conn.send(&[0xC0 | *channel, *program]);
                     }
                 }
             }

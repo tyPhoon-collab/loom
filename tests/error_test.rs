@@ -30,8 +30,7 @@ fn test_errors() {
         let result = parser::parse_song(content)
             .map_err(Report::new)
             .and_then(|song| {
-                let compiler_inst =
-                    compiler::Compiler::new(&song).expect("Failed to create compiler");
+                let compiler_inst = compiler::Compiler::new(&song)?;
                 compiler_inst.compile(&song)
             });
 

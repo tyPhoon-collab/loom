@@ -5,9 +5,10 @@ expression: error_trace
 loom::parser::base
 
   × Parse error: Verify
-   ╭─[input:3:1]
- 2 │ C4 | ^ |
- 3 │ v 10 |
-   · ───┬──
+   ╭─[input:2:1]
+ 1 │ # Track: 1
+ 2 │ [@A x0]
+   · ───┬───
    ·    ╰── Here
+ 3 │ 
    ╰────

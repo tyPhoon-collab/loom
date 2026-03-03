@@ -38,7 +38,7 @@ fn test_collect_init_events_order() {
 C4 | ^ |
 "#;
     let song = parse_song(source.to_string()).unwrap();
-    let events = compile_track_init_events(&song);
+    let events = compile_track_init_events(&song).unwrap();
 
     assert_eq!(
         events,
@@ -140,6 +140,18 @@ fn test_template_pipe_syntax_is_error() {
     let source = r#"
 # Lead: 1
 [@a|x2]
+
+# @a
+C4 | ^ |
+"#;
+    assert!(parse_song(source.to_string()).is_err());
+}
+
+#[test]
+fn test_template_structural_repeat_zero_is_error() {
+    let source = r#"
+# Lead: 1
+[@a x0]
 
 # @a
 C4 | ^ |

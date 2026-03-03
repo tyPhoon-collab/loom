@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::validation
+
+  × Validation error: Out of range '200': expected 0..127
+   ╭─[input:2:1]
+ 1 │ # Track: 1
+ 2 │ ## pc 200
+   · ────┬────
+   ·     ╰── Invalid value
+ 3 │ C4 | ^ |
+   ╰────

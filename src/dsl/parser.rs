@@ -35,6 +35,7 @@ pub enum ParsedLine {
     TemplateCalls(Vec<crate::dsl::token::TemplateCall>),
 }
 use miette::Result;
+use nom::error::{Error, ErrorKind};
 use nom::{
     branch::alt,
     bytes::complete::{take_until, take_while1},
@@ -171,7 +172,9 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = space0(input)?;
     let (input, channel_str) = digit1(input)?;
 
-    let channel = channel_str.parse::<u8>().unwrap_or(0);
+    let channel = channel_str
+        .parse::<u8>()
+        .map_err(|_| nom::Err::Failure(Error::new(channel_str, ErrorKind::Digit)))?;
     let (input, _) = space0.parse(input)?;
     let (input, muted_flag) = opt(Symbol::TrackHeaderMute.char()).parse(input)?;
 
@@ -185,16 +188,6 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     ))
 }
 
-fn parse_u7(raw: &str) -> std::result::Result<u8, String> {
-    let v = raw
-        .parse::<u16>()
-        .map_err(|_| format!("Invalid number '{}'", raw))?;
-    if v > 127 {
-        return Err(format!("Out of range '{}': expected 0..127", raw));
-    }
-    Ok(v as u8)
-}
-
 fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent, String> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
@@ -206,14 +199,18 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
             if parts.len() != 2 {
                 Err(format!("Usage: ## {} <0..127>", head))
             } else {
-                parse_u7(parts[1]).map(|program| TrackInitEvent::ProgramChange { program })
+                crate::validation::parse_u7(parts[1])
+                    .map(|program| TrackInitEvent::ProgramChange { program })
             }
         }
         "bank" => {
             if parts.len() != 2 {
                 Err("Usage: ## bank <msb>/<lsb>".to_string())
             } else if let Some((msb, lsb)) = parts[1].split_once('/') {
-                match (parse_u7(msb), parse_u7(lsb)) {
+                match (
+                    crate::validation::parse_u7(msb),
+                    crate::validation::parse_u7(lsb),
+                ) {
                     (Ok(msb), Ok(lsb)) => Ok(TrackInitEvent::BankSelect { msb, lsb }),
                     (Err(e), _) | (_, Err(e)) => Err(e),
                 }
@@ -225,7 +222,10 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
             if parts.len() != 3 {
                 Err("Usage: ## cc <controller 0..127> <value 0..127>".to_string())
             } else {
-                match (parse_u7(parts[1]), parse_u7(parts[2])) {
+                match (
+                    crate::validation::parse_u7(parts[1]),
+                    crate::validation::parse_u7(parts[2]),
+                ) {
                     (Ok(cc), Ok(value)) => Ok(TrackInitEvent::ControlChange { cc, value }),
                     (Err(e), _) | (_, Err(e)) => Err(e),
                 }
@@ -243,7 +243,8 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
                     "sustain" => 64,
                     _ => unreachable!(),
                 };
-                parse_u7(parts[1]).map(|value| TrackInitEvent::ControlChange { cc, value })
+                crate::validation::parse_u7(parts[1])
+                    .map(|value| TrackInitEvent::ControlChange { cc, value })
             }
         }
         _ => {
@@ -286,11 +287,11 @@ fn parse_template_macro(param: &str) -> std::result::Result<TemplateMacro, Strin
         "strum" => Ok(TemplateMacro::Strum),
         _ => {
             if let Some(raw) = param.strip_prefix("vel:") {
-                let v = parse_u7(raw)?;
+                let v = crate::validation::parse_u7(raw)?;
                 return Ok(TemplateMacro::Vel(v));
             }
             if let Some(raw) = param.strip_prefix("pan:") {
-                let v = parse_u7(raw)?;
+                let v = crate::validation::parse_u7(raw)?;
                 return Ok(TemplateMacro::Pan(v));
             }
             Err(format!("Unknown template macro '{}'", param))
@@ -350,26 +351,32 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
         if param_str.starts_with(Symbol::Positive.as_char())
             || param_str.starts_with(Symbol::Negative.as_char())
         {
-            if let Ok(val) = param_str.parse::<i32>() {
-                params.push(crate::dsl::token::TemplateParam::Transpose(val));
-            }
+            let val = param_str
+                .parse::<i32>()
+                .map_err(|_| nom::Err::Failure(Error::new(next_input, ErrorKind::Digit)))?;
+            params.push(crate::dsl::token::TemplateParam::Transpose(val));
         } else if let Some(stripped) = param_str.strip_prefix('x') {
-            if let Ok(val) = stripped.parse::<u32>() {
-                params.push(crate::dsl::token::TemplateParam::StructuralRepeat(val));
+            let val = stripped
+                .parse::<u32>()
+                .map_err(|_| nom::Err::Failure(Error::new(next_input, ErrorKind::Digit)))?;
+            if val == 0 {
+                return Err(nom::Err::Failure(Error::new(next_input, ErrorKind::Verify)));
             }
+            params.push(crate::dsl::token::TemplateParam::StructuralRepeat(val));
         } else if let Some(stripped) = param_str.strip_prefix('/') {
-            if let Ok(val) = stripped.parse::<u32>() {
-                if val > 0 {
-                    params.push(crate::dsl::token::TemplateParam::TimeScale(val));
-                }
+            let val = stripped
+                .parse::<u32>()
+                .map_err(|_| nom::Err::Failure(Error::new(next_input, ErrorKind::Digit)))?;
+            if val == 0 {
+                return Err(nom::Err::Failure(Error::new(next_input, ErrorKind::Verify)));
             }
+            params.push(crate::dsl::token::TemplateParam::TimeScale(val));
         } else {
             match parse_template_macro(param_str) {
                 Ok(macro_kind) => {
                     params.push(crate::dsl::token::TemplateParam::Macro(macro_kind));
                 }
                 Err(_) => {
-                    use nom::error::{Error, ErrorKind};
                     return Err(nom::Err::Failure(Error::new(next_input, ErrorKind::Verify)));
                 }
             }
@@ -393,7 +400,12 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
     if input_after_space.starts_with('*') {
         let (rest, _) = nom::character::complete::char('*')(input_after_space)?;
         let (rest, digits) = digit1(rest)?;
-        repeat = digits.parse().unwrap_or(1);
+        repeat = digits
+            .parse::<u32>()
+            .map_err(|_| nom::Err::Failure(Error::new(rest, ErrorKind::Digit)))?;
+        if repeat == 0 {
+            return Err(nom::Err::Failure(Error::new(rest, ErrorKind::Verify)));
+        }
         final_input = rest;
     }
 
@@ -509,7 +521,9 @@ fn parse_modifier_scalar(input: &str) -> IResult<&str, ModifierValue> {
         opt(alt((Symbol::Positive.char(), Symbol::Negative.char()))).parse(input)?;
     let (input, digits) = digit1.parse(input)?;
 
-    let val: i32 = digits.parse().unwrap_or(0);
+    let val: i32 = digits
+        .parse()
+        .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::Digit)))?;
     let val = match sign {
         Some(s) if s == Symbol::Negative.as_char() => -val,
         _ => val,
@@ -808,12 +822,12 @@ impl<'a> SongBuilder<'a> {
         line_str: &str,
         muted: bool,
     ) -> Result<(), ParseError> {
-        if !(1..=16).contains(&channel) {
+        if let Err(msg) = crate::validation::ensure_channel_1_based(channel) {
             return Err(ParseError::from_validation(
                 line_str,
                 self.source,
-                format!("Invalid MIDI channel: {}", channel),
-                Some("MIDI channel must be between 1 and 16.".to_string()),
+                msg,
+                Some("MIDI channel must be between 1 and 16. Example: # Piano: 1".to_string()),
             ));
         }
 

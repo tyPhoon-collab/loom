@@ -8,13 +8,82 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum CompileError {
-    #[error("Compilation error: {0}")]
-    #[diagnostic(code(loom::compiler::base))]
-    Base(String),
+    #[error("Invalid signature '{signature}': {reason}")]
+    #[diagnostic(code(loom::compiler::invalid_signature))]
+    InvalidSignature { signature: String, reason: String },
+
+    #[error("Invalid MIDI channel {channel} in {context} (expected 1..16)")]
+    #[diagnostic(code(loom::compiler::invalid_channel))]
+    InvalidChannel { channel: u8, context: String },
+
+    #[error("Template not found: '{template}' while compiling {context}")]
+    #[diagnostic(code(loom::compiler::template_not_found))]
+    TemplateNotFound { template: String, context: String },
 
     #[error("Circular template reference detected: {0}")]
     #[diagnostic(code(loom::compiler::circular_template_reference))]
     CircularTemplateReference(String),
+
+    #[error(
+        "Velocity out of range: {value} (expected 0..127) at track '{track}', {context}, block {block_index}, leaf {leaf_index}"
+    )]
+    #[diagnostic(code(loom::compiler::velocity_out_of_range))]
+    VelocityOutOfRange {
+        track: String,
+        context: String,
+        block_index: usize,
+        leaf_index: usize,
+        value: i32,
+    },
+
+    #[error(
+        "MIDI note out of range: {value} (expected 0..127) for '{note}' at track '{track}', {context}, block {block_index}, leaf {leaf_index}"
+    )]
+    #[diagnostic(code(loom::compiler::note_out_of_range))]
+    NoteOutOfRange {
+        track: String,
+        context: String,
+        block_index: usize,
+        leaf_index: usize,
+        note: String,
+        value: i32,
+    },
+
+    #[error(
+        "Invalid note '{note}' at track '{track}', {context}, block {block_index}, leaf {leaf_index}: {reason}"
+    )]
+    #[diagnostic(code(loom::compiler::invalid_note))]
+    InvalidNote {
+        track: String,
+        context: String,
+        block_index: usize,
+        leaf_index: usize,
+        note: String,
+        reason: String,
+    },
+
+    #[error("while compiling {context}")]
+    #[diagnostic(code(loom::compiler::context))]
+    Context {
+        context: String,
+        #[source]
+        source: Box<CompileError>,
+    },
+}
+
+type CompileResult<T> = std::result::Result<T, CompileError>;
+
+trait CompileContextExt<T> {
+    fn with_compile_context(self, context: impl Into<String>) -> CompileResult<T>;
+}
+
+impl<T> CompileContextExt<T> for CompileResult<T> {
+    fn with_compile_context(self, context: impl Into<String>) -> CompileResult<T> {
+        self.map_err(|source| CompileError::Context {
+            context: context.into(),
+            source: Box::new(source),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -191,11 +260,13 @@ struct CompilerContext<'a> {
 impl Compiler {
     pub fn new(song: &Song) -> Result<Self> {
         let sig_parts: Vec<&str> = song.metadata.signature.split('/').collect();
-        let num: f64 = sig_parts
-            .first()
-            .unwrap_or(&"4")
-            .parse()
-            .map_err(|_| CompileError::Base("Invalid signature numerator".to_string()))?;
+        let numerator_raw = sig_parts.first().copied().unwrap_or("4");
+        let num: f64 = sig_parts.first().unwrap_or(&"4").parse().map_err(|_| {
+            CompileError::InvalidSignature {
+                signature: song.metadata.signature.clone(),
+                reason: format!("invalid numerator '{}'", numerator_raw),
+            }
+        })?;
 
         let unit_per_block = if song.metadata.unit == "beat" {
             1.0
@@ -207,7 +278,8 @@ impl Compiler {
     }
 
     pub fn compile(&self, song: &Song) -> Result<Vec<MidiEvent>> {
-        let mut events = compile_track_init_events(song);
+        let mut events =
+            compile_track_init_events(song).with_compile_context("collecting track init events")?;
 
         for track in &song.tracks {
             if track.muted {
@@ -219,7 +291,8 @@ impl Compiler {
                 song.metadata.pitch,
                 &song.templates,
                 song.metadata.swing.values(),
-            )?;
+            )
+            .with_compile_context(format!("track '{}'", track.name))?;
         }
 
         events.sort_by(|a, b| {
@@ -319,7 +392,7 @@ impl Compiler {
         pitch_offset: i32,
         templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
         swing: Option<(u8, u8)>,
-    ) -> Result<()> {
+    ) -> CompileResult<()> {
         let mut section_start_time = 0.0;
         let mut section_max_time = 0.0;
         let mut call_stack = Vec::new();
@@ -336,13 +409,16 @@ impl Compiler {
                     let mut line_time = section_start_time;
                     self.compile_pattern_line(
                         line,
+                        &track.name,
+                        "track sequence",
                         track.channel,
                         ctx.events,
                         pitch_offset,
                         &mut line_time,
                         ctx.swing,
                         1.0,
-                    );
+                    )
+                    .with_compile_context("pattern line in track sequence")?;
                     if line_time > section_max_time {
                         section_max_time = line_time;
                     }
@@ -352,12 +428,14 @@ impl Compiler {
                     for call in sub_calls {
                         self.compile_template(
                             call,
+                            &track.name,
                             track.channel,
                             pitch_offset,
                             &mut seq_time,
                             &mut ctx,
                             1.0,
-                        )?;
+                        )
+                        .with_compile_context(format!("template call '{}'", call.name))?;
                     }
                     section_max_time = section_max_time.max(seq_time);
                 }
@@ -373,13 +451,21 @@ impl Compiler {
     fn compile_pattern_line(
         &self,
         line: &Line,
+        track_name: &str,
+        context: &str,
         channel: u8,
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
         current_time: &mut f64,
         swing: Option<(u8, u8)>,
         time_scale: f64,
-    ) {
+    ) -> CompileResult<()> {
+        let channel = crate::validation::to_zero_based_channel(channel).map_err(|_| {
+            CompileError::InvalidChannel {
+                channel,
+                context: format!("{} in track '{}'", context, track_name),
+            }
+        })?;
         let initial_time = *current_time;
         let mut line_time = initial_time;
         let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
@@ -392,6 +478,8 @@ impl Compiler {
             events,
             last_event_indices,
             pitch_offset,
+            track_name,
+            context,
             resolved_velocities: &resolved.velocities,
             resolved_pitches: &resolved.pitches,
             current_block_idx: 0,
@@ -414,11 +502,9 @@ impl Compiler {
                             let block_duration = self.unit_per_block * time_scale;
                             line_compiler.current_block_idx = buf_idx;
                             line_compiler.leaf_counter = 0;
-                            line_compiler.process_tokens(
-                                &buffered_block.tokens,
-                                line_time,
-                                block_duration,
-                            );
+                            line_compiler
+                                .process_tokens(&buffered_block.tokens, line_time, block_duration)
+                                .with_compile_context("repeat end expansion")?;
                             line_time += block_duration;
                         }
                         repeat_buffer.clear();
@@ -431,11 +517,9 @@ impl Compiler {
                             let block_duration = self.unit_per_block * time_scale;
                             line_compiler.current_block_idx = buf_idx;
                             line_compiler.leaf_counter = 0;
-                            line_compiler.process_tokens(
-                                &buffered_block.tokens,
-                                line_time,
-                                block_duration,
-                            );
+                            line_compiler
+                                .process_tokens(&buffered_block.tokens, line_time, block_duration)
+                                .with_compile_context("double bar repeat expansion")?;
                             line_time += block_duration;
                         }
                         repeat_buffer.clear();
@@ -448,7 +532,9 @@ impl Compiler {
             let block_duration = self.unit_per_block * time_scale;
             line_compiler.current_block_idx = block_idx;
             line_compiler.leaf_counter = 0;
-            line_compiler.process_tokens(&block.tokens, line_time, block_duration);
+            line_compiler
+                .process_tokens(&block.tokens, line_time, block_duration)
+                .with_compile_context("pattern block emission")?;
             line_time += block_duration;
 
             if in_repeat {
@@ -463,11 +549,9 @@ impl Compiler {
                         let block_duration = self.unit_per_block;
                         line_compiler.current_block_idx = buf_idx;
                         line_compiler.leaf_counter = 0;
-                        line_compiler.process_tokens(
-                            &buffered_block.tokens,
-                            line_time,
-                            block_duration,
-                        );
+                        line_compiler
+                            .process_tokens(&buffered_block.tokens, line_time, block_duration)
+                            .with_compile_context("line end repeat expansion")?;
                         line_time += block_duration;
                     }
                 }
@@ -476,26 +560,36 @@ impl Compiler {
         }
 
         *current_time = line_time;
+        Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compile_template(
         &self,
         call: &crate::dsl::token::TemplateCall,
+        track_name: &str,
         channel: u8,
         mut pitch_offset: i32,
         current_time: &mut f64,
         ctx: &mut CompilerContext,
         parent_time_scale: f64,
-    ) -> Result<()> {
+    ) -> CompileResult<()> {
         if ctx.call_stack.contains(&call.name) {
             let trace = ctx.call_stack.join(" -> ") + " -> " + &call.name;
-            return Err(CompileError::CircularTemplateReference(trace).into());
+            return Err(CompileError::CircularTemplateReference(trace));
         }
         ctx.call_stack.push(call.name.clone());
         let def = ctx
             .templates
             .get(&call.name)
-            .ok_or_else(|| CompileError::Base(format!("Template not found: {}", call.name)))?;
+            .ok_or_else(|| CompileError::TemplateNotFound {
+                template: call.name.clone(),
+                context: format!(
+                    "track '{}', stack [{}]",
+                    track_name,
+                    ctx.call_stack.join(" -> ")
+                ),
+            })?;
 
         let mut template_pitch_offset = 0;
         let mut structural_repeat = 1u32;
@@ -521,9 +615,16 @@ impl Compiler {
         // Track where new events start so we can apply macros later
         let events_start_idx = ctx.events.len();
         if let Some(value) = pan {
+            let zero_based_channel =
+                crate::validation::to_zero_based_channel(channel).map_err(|_| {
+                    CompileError::InvalidChannel {
+                        channel,
+                        context: format!("template pan macro in track '{}'", track_name),
+                    }
+                })?;
             ctx.events.push(MidiEvent::ControlChange {
                 time: *current_time,
-                channel: channel.saturating_sub(1).min(15),
+                channel: zero_based_channel,
                 cc: 10,
                 value,
             });
@@ -552,15 +653,20 @@ impl Compiler {
                             }
                         }
                         let mut line_time = section_start_time;
+                        let template_ctx =
+                            format!("template stack [{}]", ctx.call_stack.join(" -> "));
                         self.compile_pattern_line(
                             &line_repeated,
+                            track_name,
+                            &template_ctx,
                             channel,
                             ctx.events,
                             pitch_offset,
                             &mut line_time,
                             ctx.swing,
                             effective_time_scale,
-                        );
+                        )
+                        .with_compile_context("pattern line in template")?;
                         if line_time > section_max_time {
                             section_max_time = line_time;
                         }
@@ -570,12 +676,17 @@ impl Compiler {
                         for call in sub_calls {
                             self.compile_template(
                                 call,
+                                track_name,
                                 channel,
                                 pitch_offset,
                                 &mut seq_time,
                                 ctx,
                                 effective_time_scale,
-                            )?;
+                            )
+                            .with_compile_context(format!(
+                                "nested template call '{}'",
+                                call.name
+                            ))?;
                         }
                         section_max_time = section_max_time.max(seq_time);
                     }
@@ -598,14 +709,19 @@ impl Compiler {
     }
 }
 
-pub fn compile_track_init_events(song: &Song) -> Vec<MidiEvent> {
+pub fn compile_track_init_events(song: &Song) -> CompileResult<Vec<MidiEvent>> {
     let mut out = Vec::new();
 
     for track in &song.tracks {
         if track.muted {
             continue;
         }
-        let channel = track.channel.saturating_sub(1).min(15);
+        let channel = crate::validation::to_zero_based_channel(track.channel).map_err(|_| {
+            CompileError::InvalidChannel {
+                channel: track.channel,
+                context: format!("track init events for '{}'", track.name),
+            }
+        })?;
 
         for event in &track.init_events {
             match event {
@@ -642,7 +758,7 @@ pub fn compile_track_init_events(song: &Song) -> Vec<MidiEvent> {
         }
     }
 
-    out
+    Ok(out)
 }
 
 /// Apply a post-processing macro to a slice of generated MidiEvents.
@@ -774,6 +890,8 @@ struct LineCompiler<'a> {
     pitch_offset: i32,
     resolved_velocities: &'a [Vec<i32>],
     resolved_pitches: &'a [Vec<i32>],
+    track_name: &'a str,
+    context: &'a str,
     current_block_idx: usize,
     leaf_counter: usize,
     swing: Option<(u8, u8)>,
@@ -808,9 +926,14 @@ fn apply_swing_to_time(time: f64, swing: Option<(u8, u8)>) -> f64 {
 }
 
 impl<'a> LineCompiler<'a> {
-    fn process_tokens(&mut self, tokens: &[Token], start_time: f64, total_duration: f64) {
+    fn process_tokens(
+        &mut self,
+        tokens: &[Token],
+        start_time: f64,
+        total_duration: f64,
+    ) -> CompileResult<()> {
         if tokens.is_empty() {
-            return;
+            return Ok(());
         }
 
         let len = tokens.len() as f64;
@@ -832,8 +955,17 @@ impl<'a> LineCompiler<'a> {
                         .get(self.current_block_idx)
                         .and_then(|v| v.get(leaf_idx))
                         .copied()
-                        .unwrap_or(100)
-                        .clamp(0, 127) as u8;
+                        .unwrap_or(100);
+                    let velocity =
+                        crate::validation::ensure_u7_i32(velocity, "Velocity").map_err(|_| {
+                            CompileError::VelocityOutOfRange {
+                                track: self.track_name.to_string(),
+                                context: self.context.to_string(),
+                                block_index: self.current_block_idx,
+                                leaf_index: leaf_idx,
+                                value: velocity,
+                            }
+                        })?;
 
                     let pitch_mod = self
                         .resolved_pitches
@@ -843,19 +975,45 @@ impl<'a> LineCompiler<'a> {
                         .unwrap_or(0);
 
                     for (nth, note) in self.notes.iter().enumerate() {
+                        let base_note =
+                            note.to_midi_checked()
+                                .map_err(|e| CompileError::InvalidNote {
+                                    track: self.track_name.to_string(),
+                                    context: self.context.to_string(),
+                                    block_index: self.current_block_idx,
+                                    leaf_index: leaf_idx,
+                                    note: note.to_string(),
+                                    reason: e.to_string(),
+                                })? as i32;
                         let midi_val = match note {
-                            Note::Pitch { .. } | Note::Midi(_) => {
-                                (note.to_midi() as i32 + self.pitch_offset + pitch_mod)
-                                    .clamp(0, 127) as u8
-                            }
+                            Note::Pitch { .. } | Note::Midi(_) => crate::validation::ensure_u7_i32(
+                                base_note + self.pitch_offset + pitch_mod,
+                                "MIDI note",
+                            )
+                            .map_err(|_| CompileError::NoteOutOfRange {
+                                track: self.track_name.to_string(),
+                                context: self.context.to_string(),
+                                block_index: self.current_block_idx,
+                                leaf_index: leaf_idx,
+                                note: note.to_string(),
+                                value: base_note + self.pitch_offset + pitch_mod,
+                            })?,
                             Note::Drum(_) => {
-                                (note.to_midi() as i32 + pitch_mod).clamp(0, 127) as u8
+                                crate::validation::ensure_u7_i32(base_note + pitch_mod, "MIDI note")
+                                    .map_err(|_| CompileError::NoteOutOfRange {
+                                        track: self.track_name.to_string(),
+                                        context: self.context.to_string(),
+                                        block_index: self.current_block_idx,
+                                        leaf_index: leaf_idx,
+                                        note: note.to_string(),
+                                        value: base_note + pitch_mod,
+                                    })?
                             }
                         };
                         let event = MidiEvent::Note {
                             time: token_time,
                             duration: swung_duration,
-                            channel: self.channel - 1, // Fix: 0-indexed MIDI channel
+                            channel: self.channel,
                             note: midi_val,
                             velocity,
                         };
@@ -882,9 +1040,10 @@ impl<'a> LineCompiler<'a> {
                 }
                 Token::Group(sub_tokens) => {
                     // Recurse into group — leaf_counter continues from current position
-                    self.process_tokens(sub_tokens, unswung_start, duration_per_token);
+                    self.process_tokens(sub_tokens, unswung_start, duration_per_token)?;
                 }
             }
         }
+        Ok(())
     }
 }

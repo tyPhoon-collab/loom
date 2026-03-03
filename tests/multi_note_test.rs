@@ -1,6 +1,17 @@
+use loom::compiler::CompileError;
 use loom::compiler::Compiler;
 use loom::compiler::MidiEvent;
 use loom::dsl::parser::parse_song;
+
+fn has_variant(err: &CompileError, predicate: &dyn Fn(&CompileError) -> bool) -> bool {
+    if predicate(err) {
+        return true;
+    }
+    match err {
+        CompileError::Context { source, .. } => has_variant(source, predicate),
+        _ => false,
+    }
+}
 
 #[test]
 fn test_compile_multi_note() {
@@ -90,4 +101,40 @@ v     | !60          |                          |
     assert!(note_events
         .iter()
         .all(|e| matches!(e, MidiEvent::Note { velocity: 60, .. })));
+}
+
+#[test]
+fn test_velocity_out_of_range_is_compile_error() {
+    let source = r#"
+# Track: 1
+C4 | ^ |
+v  | 200 |
+"#;
+    let song = parse_song(source.to_string()).unwrap();
+    let compiler = Compiler::new(&song).unwrap();
+    let err = compiler.compile(&song).unwrap_err();
+    let compile_err = err
+        .downcast_ref::<CompileError>()
+        .expect("error should be CompileError");
+    assert!(has_variant(compile_err, &|e| {
+        matches!(e, CompileError::VelocityOutOfRange { .. })
+    }));
+}
+
+#[test]
+fn test_pitch_result_out_of_range_is_compile_error() {
+    let source = r#"
+# Track: 1
+C4 | ^ |
+p  | +200 |
+"#;
+    let song = parse_song(source.to_string()).unwrap();
+    let compiler = Compiler::new(&song).unwrap();
+    let err = compiler.compile(&song).unwrap_err();
+    let compile_err = err
+        .downcast_ref::<CompileError>()
+        .expect("error should be CompileError");
+    assert!(has_variant(compile_err, &|e| {
+        matches!(e, CompileError::NoteOutOfRange { .. })
+    }));
 }
