@@ -4,4 +4,4 @@ next.md
 .DS_Store
 
 /docs/node_modules
-/docs/.vitepress
+/docs/.vitepress/cache

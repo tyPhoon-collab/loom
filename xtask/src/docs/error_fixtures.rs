@@ -1,9 +1,9 @@
 use std::fs;
 
-use super::util::list_loom_files;
+use super::util::list_loom_files_flat;
 
 pub fn build_error_fixture_samples() -> Result<String, String> {
-    let mut names = list_loom_files("tests/fixtures/errors/input")?;
+    let mut names = list_loom_files_flat("tests/fixtures/errors/input")?;
     names.sort();
 
     let mut out = String::new();

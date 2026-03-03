@@ -15,13 +15,13 @@ cargo build --release
 loom ports
 
 # one-shot playback
-loom play examples/melody-simple.loom
+loom play examples/starter/melody-simple.loom
 
 # live coding (hot reload)
-loom live examples/melody-simple.loom
+loom live examples/starter/melody-simple.loom
 
 # save as .mid
-loom save examples/melody-simple.loom
+loom save examples/starter/melody-simple.loom
 ```
 
 ## Next

@@ -7,8 +7,8 @@ title: "Modifier Group Demo"
 
 # Drums: 10
 
-> Group内の個別サブトークンにベロシティを指定するデモ
-> 「.」はデフォルト値(Empty)を明示。[. . . 80] で4つ目だけvel=80
+> Demo assigning velocity to individual sub-tokens inside a Group.
+> \".\" means explicit default (Empty). In [. . . 80], only the 4th gets vel=80.
 
 hh | ^  ^  ^           ^   |
 sn | .   ^   [^ . . ^]     |
@@ -17,7 +17,7 @@ bd | ^  .  ^           .   |
 
 # Piano: 1
 
-> 単一値はGroup全体に一括適用
+> A scalar value is broadcast to the entire Group.
 
 C3 | ^   ^ [^ ^ ^ ^]  |
 v  | 100   60         |

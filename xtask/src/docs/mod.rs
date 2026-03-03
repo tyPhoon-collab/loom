@@ -47,7 +47,31 @@ pub fn run(check_only: bool) -> Result<(), String> {
             file: "docs/examples/index.md",
             start: "<!-- AUTO-GENERATED:EXAMPLES-INDEX:START -->",
             end: "<!-- AUTO-GENERATED:EXAMPLES-INDEX:END -->",
-            content: examples_index::build_examples_index()?,
+            content: examples_index::build_examples_overview()?,
+        },
+        DocTarget {
+            file: "docs/examples/starter.md",
+            start: "<!-- AUTO-GENERATED:EXAMPLES-STARTER:START -->",
+            end: "<!-- AUTO-GENERATED:EXAMPLES-STARTER:END -->",
+            content: examples_index::build_examples_category("Starter", "starter", true)?,
+        },
+        DocTarget {
+            file: "docs/examples/musical.md",
+            start: "<!-- AUTO-GENERATED:EXAMPLES-MUSICAL:START -->",
+            end: "<!-- AUTO-GENERATED:EXAMPLES-MUSICAL:END -->",
+            content: examples_index::build_examples_category("Musical", "musical", true)?,
+        },
+        DocTarget {
+            file: "docs/examples/live-coding.md",
+            start: "<!-- AUTO-GENERATED:EXAMPLES-LIVE:START -->",
+            end: "<!-- AUTO-GENERATED:EXAMPLES-LIVE:END -->",
+            content: examples_index::build_examples_category("Live Coding", "live-coding", true)?,
+        },
+        DocTarget {
+            file: "docs/examples/internals.md",
+            start: "<!-- AUTO-GENERATED:EXAMPLES-INTERNALS:START -->",
+            end: "<!-- AUTO-GENERATED:EXAMPLES-INTERNALS:END -->",
+            content: examples_index::build_examples_category("Internals", "internals", false)?,
         },
     ];
 

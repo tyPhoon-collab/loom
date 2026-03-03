@@ -11,13 +11,13 @@ cargo build --release
 loom ports
 
 # play once
-loom play examples/melody-simple.loom
+loom play examples/starter/melody-simple.loom
 
 # live coding (hot reload)
-loom live examples/melody-simple.loom
+loom live examples/starter/melody-simple.loom
 
 # export MIDI file
-loom save examples/melody-simple.loom
+loom save examples/starter/melody-simple.loom
 ```
 
 ## Documentation

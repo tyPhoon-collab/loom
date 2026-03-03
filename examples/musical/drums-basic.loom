@@ -7,8 +7,8 @@ title: "Drum Pattern"
 
 # Drums: 10
 
-> Kickは4つ打ち
-> Snareの2拍目に注目: [^ ^ ^] で1拍の中に3連打（ロール）を入れる
+> Kick plays four-on-the-floor.
+> Focus on beat 2 of the snare: [^ ^ ^] inserts a triplet roll within one beat.
 
 kick  | ^ .  ^      . ^ . ^ . |
 snare | . . [^ ^ ^] . . . ^ . |

@@ -1,6 +1,7 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 
-pub fn list_loom_files(dir: &str) -> Result<Vec<String>, String> {
+pub fn list_loom_files_flat(dir: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let entries = fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir, e))?;
     for entry in entries {
@@ -18,6 +19,39 @@ pub fn list_loom_files(dir: &str) -> Result<Vec<String>, String> {
         }
     }
     Ok(out)
+}
+
+pub fn list_loom_files_recursive(dir: &str) -> Result<Vec<String>, String> {
+    let root = Path::new(dir);
+    let mut out = Vec::new();
+    walk_loom_files(root, root, &mut out)?;
+    Ok(out)
+}
+
+fn walk_loom_files(root: &Path, current: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    let entries = fs::read_dir(current)
+        .map_err(|e| format!("failed to read {}: {}", current.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        let path: PathBuf = entry.path();
+        if path.is_dir() {
+            walk_loom_files(root, &path, out)?;
+            continue;
+        }
+        if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext == "loom")
+        {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| format!("failed to strip prefix: {}", e))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push(rel);
+        }
+    }
+    Ok(())
 }
 
 pub fn replace_between_markers(

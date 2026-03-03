@@ -1,0 +1,23 @@
+---
+bpm: 120
+signature: 4/4
+unit: bar
+title: "Modifier Demo"
+---
+
+# Piano: 1
+
+> Demo of velocity and pitch modifiers.
+> The v line controls velocity, and the p line controls pitch shift.
+
+C3 | ^ ^ ^ ^ |
+v  | !80     |
+p  | +2      |
+
+# Drums: 10
+
+> !127 latches the value; 60 is one-shot (then returns to default).
+
+kick  | ^ . ^ . |
+v     | !127  60 |
+snare | . ^ . ^ |

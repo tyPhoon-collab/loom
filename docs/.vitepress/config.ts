@@ -43,7 +43,13 @@ export default defineConfig({
       },
       {
         text: "Examples",
-        items: [{ text: "Overview", link: "/examples/" }]
+        items: [
+          { text: "Overview", link: "/examples/" },
+          { text: "Starter", link: "/examples/starter" },
+          { text: "Musical", link: "/examples/musical" },
+          { text: "Live Coding", link: "/examples/live-coding" },
+          { text: "Internals", link: "/examples/internals" }
+        ]
       }
     ]
   }

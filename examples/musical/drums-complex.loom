@@ -7,8 +7,8 @@ title: "Complex Drum Pattern"
 
 # Drums: 10
 
-> 1小節目の頭に Crash、2小節目の終わりに Tom Fill を入れたパターン。
-> hc (closed) と ho (open) の使い分けによる表情付け。
+> Pattern with a crash at the start of bar 1 and a tom fill at the end of bar 2.
+> Uses hc (closed) and ho (open) hi-hat contrast for expression.
 
 crash | ^ . . . | . . . . |
 hc    | ^ ^ ^ ^ | ^ ^ ^ . |
