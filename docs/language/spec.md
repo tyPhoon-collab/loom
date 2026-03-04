@@ -12,11 +12,12 @@ TrackHeader = "#" , space , name , ":" , space , channel , [ space , "x" ] , new
 ## Lines
 
 ```ebnf
-Line         = CommentLine | PatternLine | EmptyLine | TrackWrap ;
+Line         = CommentLine | PatternLine | SeqLine | EmptyLine | TrackWrap ;
 CommentLine  = ">" , { character } , newline ;
 EmptyLine    = { space } , newline ;
 TrackWrap    = "---" , newline ;
 PatternLine  = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , CommentLine ] ;
+SeqLine      = "seq" , space , Bar , SeqBlock , { Bar , SeqBlock } , Bar , [ space , CommentLine ] ;
 ```
 
 ## Patterns and Tokens
@@ -38,6 +39,11 @@ NoteOn      = "^" ;
 Rest        = "." ;
 Sustain     = "-" ;
 Group       = "[" , { Token | space } , "]" ;
+SeqBlock    = { SeqToken | space } ;
+SeqToken    = SeqNote | Rest | Sustain | SeqGroup ;
+SeqGroup    = "[" , { SeqToken | space } , "]" ;
+SeqNote     = NoteName | Chord ;
+Chord       = NoteName , "," , NoteName , { "," , NoteName } ;
 ```
 
 Notes:
@@ -45,6 +51,9 @@ Notes:
 - `NoteName` is case-insensitive (for example, `c4` and `C4`).
 - `MidiNote` must be `0..127`.
 - `DrumName` is case-sensitive.
+- `seq` is a sugar syntax: per-token notes/chords are written directly in the grid.
+- `seq` currently requires explicit octave in each note (for example `C4`).
+- For independent sustain per voice, use the standard pattern grid (`^ . -`) across separate rows.
 
 ## Modifier Lines
 
@@ -55,6 +64,7 @@ ModifierLine   = ModifierKind , space , Bar , { ModifierEntry | space } , { Bar 
 ModifierKind   = "v" | "p" ;
 ModifierEntry  = ModifierValue | ModifierGroup | ModifierEmpty ;
 ModifierValue  = [ "!" ] , [ "+" | "-" ] , digits ;
+ModifierNoteList = [ "+" | "-" ] , digits , "," , [ "+" | "-" ] , digits , { "," , [ "+" | "-" ] , digits } ;
 ModifierGroup  = "[" , { ModifierEntry | space } , "]" ;
 ModifierEmpty  = "." ;
 ```
@@ -66,6 +76,7 @@ ModifierEmpty  = "." ;
 - Empty slot: Uses latch value if active, otherwise default.
 - `[...]` (Group): Aligns sub-values 1:1 with pattern group sub-tokens.
 - Scalar at group position: Broadcast to all leaves of that group.
+- `100,80` note-list value is supported for `seq` chord tokens (length must match chord size).
 
 ## Templates
 

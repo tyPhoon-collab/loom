@@ -24,6 +24,12 @@ fn modifier_value_width(val: &ModifierValue) -> usize {
         ModifierValue::Set(v) => format!("{}", v).len(),
         ModifierValue::Latch(v) => format!("!{}", v).len(),
         ModifierValue::Empty => 1,
+        ModifierValue::NoteList(vals) => vals
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+            .len(),
         ModifierValue::Group(vals) => {
             // [v1 v2 ...] — brackets + spaces + each value
             if vals.is_empty() {
@@ -41,6 +47,11 @@ fn modifier_value_str(val: &ModifierValue) -> String {
         ModifierValue::Set(v) => format!("{}", v),
         ModifierValue::Latch(v) => format!("!{}", v),
         ModifierValue::Empty => ".".to_string(),
+        ModifierValue::NoteList(vals) => vals
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         ModifierValue::Group(vals) => {
             let inner: Vec<String> = vals
                 .iter()
@@ -433,6 +444,11 @@ fn sort_patterns_and_mods<'a>(
 
     for p in &pattern_list {
         if let ParsedLine::Pattern { key, .. } = p {
+            if key == "seq" {
+                canonical_key_by_ptr.insert(*p as *const ParsedLine, "seq".to_string());
+                continue;
+            }
+
             let mut notes = Vec::new();
             for raw in key.split(',') {
                 notes.push(parse_note_strict(raw, key)?);

@@ -1,0 +1,13 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::base
+
+  × Parse error: Verify
+   ╭─[input:2:1]
+ 1 │ # Lead: 1
+ 2 │ seq | C4 H4 E4 . |
+   · ─────────┬────────
+   ·          ╰── Here
+   ╰────

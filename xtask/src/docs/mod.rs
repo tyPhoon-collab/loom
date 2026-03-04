@@ -67,12 +67,6 @@ pub fn run(check_only: bool) -> Result<(), String> {
             end: "<!-- AUTO-GENERATED:EXAMPLES-LIVE:END -->",
             content: examples_index::build_examples_category("Live Coding", "live-coding", true)?,
         },
-        DocTarget {
-            file: "docs/examples/internals.md",
-            start: "<!-- AUTO-GENERATED:EXAMPLES-INTERNALS:START -->",
-            end: "<!-- AUTO-GENERATED:EXAMPLES-INTERNALS:END -->",
-            content: examples_index::build_examples_category("Internals", "internals", false)?,
-        },
     ];
 
     for target in targets {

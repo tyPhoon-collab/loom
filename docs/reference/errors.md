@@ -29,6 +29,7 @@ WIP. Structured error catalog will be added incrementally.
 - `loom::compiler::circular_template_reference`
 - `loom::compiler::context`
 - `loom::compiler::invalid_channel`
+- `loom::compiler::invalid_modifier_structure`
 - `loom::compiler::invalid_note`
 - `loom::compiler::invalid_signature`
 - `loom::compiler::note_out_of_range`
@@ -49,7 +50,10 @@ WIP. Structured error catalog will be added incrementally.
 - `invalid-frontmatter.loom`
 - `invalid-init-u7.loom`
 - `invalid-loop-range.loom`
+- `invalid-modifier-structure.loom`
 - `invalid-modifier.loom`
+- `invalid-seq-modifier-arity.loom`
+- `invalid-seq-note.loom`
 - `invalid-signature.loom`
 - `invalid-swing.loom`
 - `invalid-syntax.loom`
@@ -136,12 +140,35 @@ loop_range: "0 ~ 2"
 C4 | ^ |
 ````
 
+#### `invalid-modifier-structure.loom`
+
+````loom
+# Track: 1
+C4 | ^ ^ |
+v  | [90 80] 70 |
+````
+
 #### `invalid-modifier.loom`
 
 ````loom
 # Track: 1
 C4 | ^ |
 v 10 |
+````
+
+#### `invalid-seq-modifier-arity.loom`
+
+````loom
+# Lead: 1
+seq | G4,B4 C5 |
+v   | 100,80,60 . |
+````
+
+#### `invalid-seq-note.loom`
+
+````loom
+# Lead: 1
+seq | C4 H4 E4 . |
 ````
 
 #### `invalid-signature.loom`

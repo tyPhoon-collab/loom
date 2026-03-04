@@ -3,10 +3,11 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Note,              // ^
-    Rest,              // .
-    Sustain,           // -
-    Group(Vec<Token>), // [...]
+    Note,                   // ^
+    Rest,                   // .
+    Sustain,                // -
+    Group(Vec<Token>),      // [...]
+    NoteLiteral(Vec<Note>), // C4 or C4,E4
 }
 
 impl Token {
@@ -30,6 +31,14 @@ impl std::fmt::Display for Token {
                     write!(f, "{}", t)?;
                 }
                 write!(f, "]")
+            }
+            Token::NoteLiteral(notes) => {
+                let joined = notes
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                write!(f, "{}", joined)
             }
         }
     }
@@ -61,6 +70,7 @@ pub enum ModifierValue {
     Empty,
     Set(i32),
     Latch(i32),
+    NoteList(Vec<i32>), // 100,80 (per-note values for a single token)
     Group(Vec<ModifierValue>),
 }
 

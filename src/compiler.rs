@@ -201,9 +201,15 @@ pub struct Compiler {
 }
 
 /// Resolved modifier values for a line, flattened per block (DFS leaf order)
+#[derive(Debug, Clone)]
+enum ResolvedModifierValue {
+    Scalar(i32),
+    PerNote(Vec<i32>),
+}
+
 struct ResolvedModifiers {
-    velocities: Vec<Vec<i32>>, // per block, per leaf token (DFS order)
-    pitches: Vec<Vec<i32>>,    // per block, per leaf token (DFS order)
+    velocities: Vec<Vec<ResolvedModifierValue>>, // per block, per leaf token (DFS order)
+    pitches: Vec<Vec<ResolvedModifierValue>>,    // per block, per leaf token (DFS order)
 }
 
 /// Count the number of leaf tokens (non-Group) in a token tree via DFS
@@ -259,6 +265,24 @@ fn expand_modifier_values(
                         for _ in 0..leaf_count {
                             result.push(val.clone());
                         }
+                    }
+                    Some(ModifierValue::NoteList(_)) => {
+                        let value_path = path
+                            .iter()
+                            .map(|idx| idx.to_string())
+                            .collect::<Vec<_>>()
+                            .join(".");
+                        return Err(CompileError::InvalidModifierStructure(Box::new(
+                            InvalidModifierStructureData {
+                                track: track_name.to_string(),
+                                context: context.to_string(),
+                                modifier: modifier_kind.to_string(),
+                                block_index,
+                                value_path,
+                                reason: "note-list value cannot be applied to a group token"
+                                    .to_string(),
+                            },
+                        )));
                     }
                     Some(ModifierValue::Empty) | None => {
                         // Fill with Empty for all leaves
@@ -371,13 +395,15 @@ impl Compiler {
             .collect();
 
         // Initialize with defaults
-        let mut velocities: Vec<Vec<i32>> = leaves_per_block
+        let mut velocities: Vec<Vec<ResolvedModifierValue>> = leaves_per_block
             .iter()
-            .map(|&n| vec![ModifierKind::Velocity.default_value(); n])
+            .map(|&n| {
+                vec![ResolvedModifierValue::Scalar(ModifierKind::Velocity.default_value()); n]
+            })
             .collect();
-        let mut pitches: Vec<Vec<i32>> = leaves_per_block
+        let mut pitches: Vec<Vec<ResolvedModifierValue>> = leaves_per_block
             .iter()
-            .map(|&n| vec![ModifierKind::Pitch.default_value(); n])
+            .map(|&n| vec![ResolvedModifierValue::Scalar(ModifierKind::Pitch.default_value()); n])
             .collect();
 
         for modifier in &line.modifiers {
@@ -427,16 +453,21 @@ impl Compiler {
                     let mod_val = expanded.get(leaf_idx).unwrap_or(&ModifierValue::Empty);
                     match mod_val {
                         ModifierValue::Set(v) => {
-                            *target_slot = *v;
+                            *target_slot = ResolvedModifierValue::Scalar(*v);
                             latch_value = None; // One-shot: clear latch
                         }
                         ModifierValue::Latch(v) => {
-                            *target_slot = *v;
+                            *target_slot = ResolvedModifierValue::Scalar(*v);
                             latch_value = Some(*v);
+                        }
+                        ModifierValue::NoteList(vals) => {
+                            *target_slot = ResolvedModifierValue::PerNote(vals.clone());
+                            latch_value = None;
                         }
                         ModifierValue::Empty | ModifierValue::Group(_) => {
                             // If latched, continue with latch value; otherwise default
-                            *target_slot = latch_value.unwrap_or(default_val);
+                            *target_slot =
+                                ResolvedModifierValue::Scalar(latch_value.unwrap_or(default_val));
                         }
                     }
                 }
@@ -532,7 +563,7 @@ impl Compiler {
         })?;
         let initial_time = *current_time;
         let mut line_time = initial_time;
-        let last_event_indices: Vec<Option<usize>> = vec![None; line.notes.len()];
+        let last_event_indices: Vec<usize> = Vec::new();
 
         let resolved = self.resolve_modifiers(line, track_name, context)?;
 
@@ -950,10 +981,10 @@ struct LineCompiler<'a> {
     channel: u8,
     notes: &'a [Note],
     events: &'a mut Vec<MidiEvent>,
-    last_event_indices: Vec<Option<usize>>,
+    last_event_indices: Vec<usize>,
     pitch_offset: i32,
-    resolved_velocities: &'a [Vec<i32>],
-    resolved_pitches: &'a [Vec<i32>],
+    resolved_velocities: &'a [Vec<ResolvedModifierValue>],
+    resolved_pitches: &'a [Vec<ResolvedModifierValue>],
     track_name: &'a str,
     context: &'a str,
     current_block_idx: usize,
@@ -990,6 +1021,189 @@ fn apply_swing_to_time(time: f64, swing: Option<(u8, u8)>) -> f64 {
 }
 
 impl<'a> LineCompiler<'a> {
+    fn emit_note_set(
+        &mut self,
+        note_set: &[Note],
+        token_time: f64,
+        swung_duration: f64,
+        leaf_idx: usize,
+    ) -> CompileResult<()> {
+        let velocity_values = self
+            .resolved_velocities
+            .get(self.current_block_idx)
+            .and_then(|v| v.get(leaf_idx))
+            .cloned()
+            .unwrap_or(ResolvedModifierValue::Scalar(100));
+
+        let pitch_values = self
+            .resolved_pitches
+            .get(self.current_block_idx)
+            .and_then(|v| v.get(leaf_idx))
+            .cloned()
+            .unwrap_or(ResolvedModifierValue::Scalar(0));
+
+        let velocity_at = |idx: usize| -> CompileResult<i32> {
+            match &velocity_values {
+                ResolvedModifierValue::Scalar(v) => Ok(*v),
+                ResolvedModifierValue::PerNote(values) => {
+                    values.get(idx).copied().ok_or_else(|| {
+                        CompileError::InvalidModifierStructure(Box::new(
+                            InvalidModifierStructureData {
+                                track: self.track_name.to_string(),
+                                context: self.context.to_string(),
+                                modifier: ModifierKind::Velocity.to_string(),
+                                block_index: self.current_block_idx,
+                                value_path: format!("{}", leaf_idx),
+                                reason: format!(
+                                    "note-list length {} does not match note count {}",
+                                    values.len(),
+                                    note_set.len()
+                                ),
+                            },
+                        ))
+                    })
+                }
+            }
+        };
+
+        let pitch_at = |idx: usize| -> CompileResult<i32> {
+            match &pitch_values {
+                ResolvedModifierValue::Scalar(v) => Ok(*v),
+                ResolvedModifierValue::PerNote(values) => {
+                    values.get(idx).copied().ok_or_else(|| {
+                        CompileError::InvalidModifierStructure(Box::new(
+                            InvalidModifierStructureData {
+                                track: self.track_name.to_string(),
+                                context: self.context.to_string(),
+                                modifier: ModifierKind::Pitch.to_string(),
+                                block_index: self.current_block_idx,
+                                value_path: format!("{}", leaf_idx),
+                                reason: format!(
+                                    "note-list length {} does not match note count {}",
+                                    values.len(),
+                                    note_set.len()
+                                ),
+                            },
+                        ))
+                    })
+                }
+            }
+        };
+
+        if let ResolvedModifierValue::PerNote(values) = &velocity_values {
+            if values.len() != note_set.len() {
+                return Err(CompileError::InvalidModifierStructure(Box::new(
+                    InvalidModifierStructureData {
+                        track: self.track_name.to_string(),
+                        context: self.context.to_string(),
+                        modifier: ModifierKind::Velocity.to_string(),
+                        block_index: self.current_block_idx,
+                        value_path: format!("{}", leaf_idx),
+                        reason: format!(
+                            "note-list length {} does not match note count {}",
+                            values.len(),
+                            note_set.len()
+                        ),
+                    },
+                )));
+            }
+        }
+        if let ResolvedModifierValue::PerNote(values) = &pitch_values {
+            if values.len() != note_set.len() {
+                return Err(CompileError::InvalidModifierStructure(Box::new(
+                    InvalidModifierStructureData {
+                        track: self.track_name.to_string(),
+                        context: self.context.to_string(),
+                        modifier: ModifierKind::Pitch.to_string(),
+                        block_index: self.current_block_idx,
+                        value_path: format!("{}", leaf_idx),
+                        reason: format!(
+                            "note-list length {} does not match note count {}",
+                            values.len(),
+                            note_set.len()
+                        ),
+                    },
+                )));
+            }
+        }
+
+        let velocity = velocity_at(0)?;
+        let velocity = crate::validation::ensure_u7_i32(velocity, "Velocity").map_err(|_| {
+            CompileError::VelocityOutOfRange {
+                track: self.track_name.to_string(),
+                context: self.context.to_string(),
+                block_index: self.current_block_idx,
+                leaf_index: leaf_idx,
+                value: velocity,
+            }
+        })?;
+
+        self.last_event_indices.clear();
+        for (note_idx, note) in note_set.iter().enumerate() {
+            let velocity = match &velocity_values {
+                ResolvedModifierValue::Scalar(_) => velocity,
+                ResolvedModifierValue::PerNote(_) => {
+                    let raw_velocity = velocity_at(note_idx)?;
+                    crate::validation::ensure_u7_i32(raw_velocity, "Velocity").map_err(|_| {
+                        CompileError::VelocityOutOfRange {
+                            track: self.track_name.to_string(),
+                            context: self.context.to_string(),
+                            block_index: self.current_block_idx,
+                            leaf_index: leaf_idx,
+                            value: raw_velocity,
+                        }
+                    })?
+                }
+            };
+            let pitch_mod = pitch_at(note_idx)?;
+            let base_note = note
+                .to_midi_checked()
+                .map_err(|e| CompileError::InvalidNote {
+                    track: self.track_name.to_string(),
+                    context: self.context.to_string(),
+                    block_index: self.current_block_idx,
+                    leaf_index: leaf_idx,
+                    note: note.to_string(),
+                    reason: e.to_string(),
+                })? as i32;
+            let midi_val = match note {
+                Note::Pitch { .. } | Note::Midi(_) => crate::validation::ensure_u7_i32(
+                    base_note + self.pitch_offset + pitch_mod,
+                    "MIDI note",
+                )
+                .map_err(|_| CompileError::NoteOutOfRange {
+                    track: self.track_name.to_string(),
+                    context: self.context.to_string(),
+                    block_index: self.current_block_idx,
+                    leaf_index: leaf_idx,
+                    note: note.to_string(),
+                    value: base_note + self.pitch_offset + pitch_mod,
+                })?,
+                Note::Drum(_) => {
+                    crate::validation::ensure_u7_i32(base_note + pitch_mod, "MIDI note").map_err(
+                        |_| CompileError::NoteOutOfRange {
+                            track: self.track_name.to_string(),
+                            context: self.context.to_string(),
+                            block_index: self.current_block_idx,
+                            leaf_index: leaf_idx,
+                            note: note.to_string(),
+                            value: base_note + pitch_mod,
+                        },
+                    )?
+                }
+            };
+            self.events.push(MidiEvent::Note {
+                time: token_time,
+                duration: swung_duration,
+                channel: self.channel,
+                note: midi_val,
+                velocity,
+            });
+            self.last_event_indices.push(self.events.len() - 1);
+        }
+        Ok(())
+    }
+
     fn process_tokens(
         &mut self,
         tokens: &[Token],
@@ -1012,92 +1226,23 @@ impl<'a> LineCompiler<'a> {
 
             match token {
                 Token::Note => {
-                    // Get velocity and pitch modifier for this leaf token
                     let leaf_idx = self.leaf_counter;
-                    let velocity = self
-                        .resolved_velocities
-                        .get(self.current_block_idx)
-                        .and_then(|v| v.get(leaf_idx))
-                        .copied()
-                        .unwrap_or(100);
-                    let velocity =
-                        crate::validation::ensure_u7_i32(velocity, "Velocity").map_err(|_| {
-                            CompileError::VelocityOutOfRange {
-                                track: self.track_name.to_string(),
-                                context: self.context.to_string(),
-                                block_index: self.current_block_idx,
-                                leaf_index: leaf_idx,
-                                value: velocity,
-                            }
-                        })?;
-
-                    let pitch_mod = self
-                        .resolved_pitches
-                        .get(self.current_block_idx)
-                        .and_then(|v| v.get(leaf_idx))
-                        .copied()
-                        .unwrap_or(0);
-
-                    for (nth, note) in self.notes.iter().enumerate() {
-                        let base_note =
-                            note.to_midi_checked()
-                                .map_err(|e| CompileError::InvalidNote {
-                                    track: self.track_name.to_string(),
-                                    context: self.context.to_string(),
-                                    block_index: self.current_block_idx,
-                                    leaf_index: leaf_idx,
-                                    note: note.to_string(),
-                                    reason: e.to_string(),
-                                })? as i32;
-                        let midi_val = match note {
-                            Note::Pitch { .. } | Note::Midi(_) => crate::validation::ensure_u7_i32(
-                                base_note + self.pitch_offset + pitch_mod,
-                                "MIDI note",
-                            )
-                            .map_err(|_| CompileError::NoteOutOfRange {
-                                track: self.track_name.to_string(),
-                                context: self.context.to_string(),
-                                block_index: self.current_block_idx,
-                                leaf_index: leaf_idx,
-                                note: note.to_string(),
-                                value: base_note + self.pitch_offset + pitch_mod,
-                            })?,
-                            Note::Drum(_) => {
-                                crate::validation::ensure_u7_i32(base_note + pitch_mod, "MIDI note")
-                                    .map_err(|_| CompileError::NoteOutOfRange {
-                                        track: self.track_name.to_string(),
-                                        context: self.context.to_string(),
-                                        block_index: self.current_block_idx,
-                                        leaf_index: leaf_idx,
-                                        note: note.to_string(),
-                                        value: base_note + pitch_mod,
-                                    })?
-                            }
-                        };
-                        let event = MidiEvent::Note {
-                            time: token_time,
-                            duration: swung_duration,
-                            channel: self.channel,
-                            note: midi_val,
-                            velocity,
-                        };
-                        self.events.push(event);
-                        self.last_event_indices[nth] = Some(self.events.len() - 1);
-                    }
+                    self.emit_note_set(self.notes, token_time, swung_duration, leaf_idx)?;
+                    self.leaf_counter += 1;
+                }
+                Token::NoteLiteral(note_set) => {
+                    let leaf_idx = self.leaf_counter;
+                    self.emit_note_set(note_set, token_time, swung_duration, leaf_idx)?;
                     self.leaf_counter += 1;
                 }
                 Token::Rest => {
-                    for (nth, _) in self.notes.iter().enumerate() {
-                        self.last_event_indices[nth] = None;
-                    }
+                    self.last_event_indices.clear();
                     self.leaf_counter += 1;
                 }
                 Token::Sustain => {
-                    for (nth, _) in self.notes.iter().enumerate() {
-                        if let Some(idx) = self.last_event_indices[nth] {
-                            if let MidiEvent::Note { duration, .. } = &mut self.events[idx] {
-                                *duration += swung_duration;
-                            }
+                    for idx in &self.last_event_indices {
+                        if let MidiEvent::Note { duration, .. } = &mut self.events[*idx] {
+                            *duration += swung_duration;
                         }
                     }
                     self.leaf_counter += 1;

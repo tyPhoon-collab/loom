@@ -6,7 +6,6 @@ pub fn build_examples_overview() -> Result<String, String> {
     let starter = list_category_files("starter")?;
     let musical = list_category_files("musical")?;
     let live = list_category_files("live-coding")?;
-    let internals = list_category_files("internals")?;
 
     let mut out = String::new();
     out.push_str("## Category Summary (Auto)\n\n");
@@ -23,10 +22,6 @@ pub fn build_examples_overview() -> Result<String, String> {
     out.push_str(&format!(
         "| [Live Coding](/examples/live-coding) | {} |\n",
         live.len()
-    ));
-    out.push_str(&format!(
-        "| [Internals](/examples/internals) | {} |\n",
-        internals.len()
     ));
     Ok(out)
 }

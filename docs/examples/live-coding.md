@@ -131,7 +131,7 @@ title: "Modifier Group Demo"
 
 hh | ^  ^  ^           ^   |
 sn | .   ^   [^ . . ^]     |
-v  |         [. . . 80]    |
+v  | .   .   [. . . 80]    |
 bd | ^  .  ^           .   |
 
 # Piano: 1

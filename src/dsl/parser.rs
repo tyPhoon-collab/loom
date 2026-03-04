@@ -90,11 +90,67 @@ fn parse_token(input: &str) -> IResult<&str, Token> {
     .parse(input)
 }
 
+fn parse_seq_note_literal(input: &str) -> IResult<&str, Token> {
+    let (input, raw) = take_while1(|c: char| {
+        !c.is_whitespace()
+            && c != Symbol::GroupEnd.as_char()
+            && c != Symbol::BarStandard.as_char()
+            && c != ':'
+    })
+    .parse(input)?;
+
+    let mut notes = Vec::new();
+    for part in raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
+        }
+        let note = Note::from_str(trimmed)
+            .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::Verify)))?;
+        notes.push(note);
+    }
+
+    if notes.is_empty() {
+        return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
+    }
+
+    Ok((input, Token::NoteLiteral(notes)))
+}
+
+fn parse_seq_token_group(input: &str) -> IResult<&str, Token> {
+    map(
+        delimited(
+            Symbol::GroupStart.char(),
+            delimited(space0, many0(parse_seq_token), space0),
+            Symbol::GroupEnd.char(),
+        ),
+        Token::Group,
+    )
+    .parse(input)
+}
+
+fn parse_seq_token(input: &str) -> IResult<&str, Token> {
+    preceded(
+        space0,
+        alt((
+            parse_token_rest,
+            parse_token_sustain,
+            parse_seq_token_group,
+            parse_seq_note_literal,
+        )),
+    )
+    .parse(input)
+}
+
 // --- Block Parser ---
 // function removed
 
 fn parse_block_tokens_only(input: &str) -> IResult<&str, Vec<Token>> {
     terminated(many0(parse_token), space0).parse(input)
+}
+
+fn parse_seq_block_tokens_only(input: &str) -> IResult<&str, Vec<Token>> {
+    terminated(many0(parse_seq_token), space0).parse(input)
 }
 
 // --- Bar Parser ---
@@ -149,6 +205,40 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)>
                 // 3. `Empty` -> Error(EOF). Break.
                 // Return blocks=[Block(|, A)], end_bar=|.
 
+                break;
+            }
+        }
+    }
+
+    Ok((current_input, (blocks, current_bar)))
+}
+
+pub(crate) fn parse_seq_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)> {
+    let (input, first_bar) = parse_bar(input)?;
+
+    let mut blocks = Vec::new();
+    let mut current_input = input;
+    let mut current_bar = first_bar;
+
+    loop {
+        let (input_after_tokens, tokens) = parse_seq_block_tokens_only(current_input)?;
+
+        match parse_bar(input_after_tokens) {
+            Ok((rest, next_bar)) => {
+                blocks.push(Block {
+                    start_bar: current_bar,
+                    tokens,
+                });
+                current_input = rest;
+                current_bar = next_bar;
+            }
+            Err(_) => {
+                if !tokens.is_empty() {
+                    return Err(nom::Err::Failure(Error::new(
+                        input_after_tokens,
+                        ErrorKind::Tag,
+                    )));
+                }
                 break;
             }
         }
@@ -476,6 +566,27 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
     }
 }
 
+fn parse_seq_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = nom::bytes::complete::tag("seq")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, (blocks, end_bar)) = parse_seq_line_blocks(input)?;
+
+    let (input, _) = space0(input)?;
+    let (input, trailing_comment) =
+        opt(preceded(Symbol::Comment.char(), not_line_ending)).parse(input)?;
+
+    Ok((
+        input,
+        ParsedLine::Pattern {
+            key: "seq".to_string(),
+            notes: Vec::new(),
+            blocks,
+            end_bar,
+            trailing_comment: trailing_comment.map(|s: &str| s.trim().to_string()),
+        },
+    ))
+}
+
 fn parse_empty_line(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = space0.parse(input)?;
     let (input, _) = eof.parse(input)?;
@@ -539,10 +650,52 @@ fn parse_modifier_scalar(input: &str) -> IResult<&str, ModifierValue> {
     ))
 }
 
+fn parse_signed_i32_no_latch(input: &str) -> IResult<&str, i32> {
+    let (input, sign) =
+        opt(alt((Symbol::Positive.char(), Symbol::Negative.char()))).parse(input)?;
+    let (input, digits) = digit1.parse(input)?;
+    let val: i32 = digits
+        .parse()
+        .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::Digit)))?;
+    let val = match sign {
+        Some(s) if s == Symbol::Negative.as_char() => -val,
+        _ => val,
+    };
+    Ok((input, val))
+}
+
+fn parse_modifier_note_list(input: &str) -> IResult<&str, ModifierValue> {
+    let (mut input, _) = space0(input)?;
+    let (rest, first) = parse_signed_i32_no_latch(input)?;
+    input = rest;
+    let (rest, _) = space0(input)?;
+    input = rest;
+
+    if !input.starts_with(',') {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+
+    let mut values = vec![first];
+    while input.starts_with(',') {
+        let (rest, _) = nom::character::complete::char(',')(input)?;
+        let (rest, _) = space0(rest)?;
+        let (rest, value) = parse_signed_i32_no_latch(rest)?;
+        let (rest, _) = space0(rest)?;
+        values.push(value);
+        input = rest;
+    }
+
+    Ok((input, ModifierValue::NoteList(values)))
+}
+
 fn parse_modifier_value(input: &str) -> IResult<&str, ModifierValue> {
     alt((
         parse_modifier_group,
         parse_modifier_empty,
+        parse_modifier_note_list,
         parse_modifier_scalar,
     ))
     .parse(input)
@@ -654,6 +807,7 @@ pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
         parse_template_list,
         parse_empty_line,
         parse_modifier_line,
+        parse_seq_pattern_line,
         parse_pattern_line,
     ))
     .parse(input)

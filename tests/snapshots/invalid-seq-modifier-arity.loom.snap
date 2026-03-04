@@ -1,0 +1,10 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::compiler::context
+
+  × while compiling track 'Lead'
+  ├─▶ while compiling pattern line in track sequence
+  ├─▶ while compiling pattern block emission
+  ╰─▶ Invalid modifier structure for 'v' at track 'Lead', track sequence, block 0, value path 0: note-list length 3 does not match note count 2

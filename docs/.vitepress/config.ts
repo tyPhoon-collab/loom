@@ -47,8 +47,7 @@ export default defineConfig({
           { text: "Overview", link: "/examples/" },
           { text: "Starter", link: "/examples/starter" },
           { text: "Musical", link: "/examples/musical" },
-          { text: "Live Coding", link: "/examples/live-coding" },
-          { text: "Internals", link: "/examples/internals" }
+          { text: "Live Coding", link: "/examples/live-coding" }
         ]
       }
     ]
