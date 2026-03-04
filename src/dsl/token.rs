@@ -236,6 +236,76 @@ pub enum TrackInitEvent {
     ControlChange { cc: u8, value: u8 },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackInitLabel {
+    Pc,
+    Sound,
+    Bank,
+    Cc,
+    Pan,
+    Volume,
+    Expression,
+    Mod,
+    Sustain,
+}
+
+impl std::fmt::Display for TrackInitLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TrackInitLabel::Pc => "pc",
+            TrackInitLabel::Sound => "sound",
+            TrackInitLabel::Bank => "bank",
+            TrackInitLabel::Cc => "cc",
+            TrackInitLabel::Pan => "pan",
+            TrackInitLabel::Volume => "volume",
+            TrackInitLabel::Expression => "expression",
+            TrackInitLabel::Mod => "mod",
+            TrackInitLabel::Sustain => "sustain",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl TrackInitEvent {
+    pub fn format_with_label(&self, label: TrackInitLabel) -> String {
+        match (label, self) {
+            (TrackInitLabel::Pc, TrackInitEvent::ProgramChange { program })
+            | (TrackInitLabel::Sound, TrackInitEvent::ProgramChange { program }) => {
+                format!("{} {}", label, program)
+            }
+            (TrackInitLabel::Bank, TrackInitEvent::BankSelect { msb, lsb }) => {
+                format!("{} {}/{}", label, msb, lsb)
+            }
+            (TrackInitLabel::Cc, TrackInitEvent::ControlChange { cc, value }) => {
+                format!("{} {} {}", label, cc, value)
+            }
+            (TrackInitLabel::Pan, TrackInitEvent::ControlChange { cc, value }) => {
+                debug_assert_eq!(*cc, 10);
+                format!("{} {}", label, value)
+            }
+            (TrackInitLabel::Volume, TrackInitEvent::ControlChange { cc, value }) => {
+                debug_assert_eq!(*cc, 7);
+                format!("{} {}", label, value)
+            }
+            (TrackInitLabel::Expression, TrackInitEvent::ControlChange { cc, value }) => {
+                debug_assert_eq!(*cc, 11);
+                format!("{} {}", label, value)
+            }
+            (TrackInitLabel::Mod, TrackInitEvent::ControlChange { cc, value }) => {
+                debug_assert_eq!(*cc, 1);
+                format!("{} {}", label, value)
+            }
+            (TrackInitLabel::Sustain, TrackInitEvent::ControlChange { cc, value }) => {
+                debug_assert_eq!(*cc, 64);
+                format!("{} {}", label, value)
+            }
+            (_, TrackInitEvent::ProgramChange { program }) => format!("pc {}", program),
+            (_, TrackInitEvent::BankSelect { msb, lsb }) => format!("bank {}/{}", msb, lsb),
+            (_, TrackInitEvent::ControlChange { cc, value }) => format!("cc {} {}", cc, value),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum SwingConfig {

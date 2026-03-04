@@ -12,8 +12,9 @@ TrackHeader = "#" , space , name , ":" , space , channel , [ space , "x" ] , new
 ## Lines
 
 ```ebnf
-Line         = CommentLine | PatternLine | SeqLine | EmptyLine | TrackWrap ;
+Line         = CommentLine | InitLine | PatternLine | SeqLine | EmptyLine | TrackWrap ;
 CommentLine  = ">" , { character } , newline ;
+InitLine     = "##" , space , InitCommand , newline ;
 EmptyLine    = { space } , newline ;
 TrackWrap    = "---" , newline ;
 PatternLine  = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , CommentLine ] ;
@@ -54,6 +55,18 @@ Notes:
 - `seq` is a sugar syntax: per-token notes/chords are written directly in the grid.
 - `seq` currently requires explicit octave in each note (for example `C4`).
 - For independent sustain per voice, use the standard pattern grid (`^ . -`) across separate rows.
+
+Init command forms:
+
+- `pc <0..127>` / `sound <0..127>`
+- `bank <msb>/<lsb>`
+- `cc <controller 0..127> <value 0..127>`
+- `pan <0..127>` / `volume <0..127>` / `expression <0..127>` / `mod <0..127>` / `sustain <0..127>`
+
+Whitespace handling note:
+
+- Parsing is whitespace-tolerant around init/header tokens.
+- Canonical spacing (for example `# Track: 1`, `## pc 4`) is defined by the formatter, not by the language acceptance rules.
 
 ## Modifier Lines
 

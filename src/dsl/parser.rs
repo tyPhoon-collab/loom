@@ -3,6 +3,7 @@ use super::syntax::Symbol;
 use super::token::{
     Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
     ModifierValue, Note, Song, SwingConfig, TemplateMacro, Token, Track, TrackInitEvent,
+    TrackInitLabel,
 };
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
@@ -12,7 +13,10 @@ pub enum ParsedLine {
         channel: u8,
         muted: bool,
     },
-    TrackInit(TrackInitEvent),
+    TrackInit {
+        event: TrackInitEvent,
+        label: TrackInitLabel,
+    },
     Pattern {
         key: String,
         notes: Vec<Note>,
@@ -278,7 +282,9 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     ))
 }
 
-fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent, String> {
+fn parse_track_init_command(
+    command: &str,
+) -> std::result::Result<(TrackInitEvent, TrackInitLabel), String> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
         return Err("Missing init command after '##'".to_string());
@@ -289,8 +295,13 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
             if parts.len() != 2 {
                 Err(format!("Usage: ## {} <0..127>", head))
             } else {
+                let label = if head == "sound" {
+                    TrackInitLabel::Sound
+                } else {
+                    TrackInitLabel::Pc
+                };
                 crate::validation::parse_u7(parts[1])
-                    .map(|program| TrackInitEvent::ProgramChange { program })
+                    .map(|program| (TrackInitEvent::ProgramChange { program }, label))
             }
         }
         "bank" => {
@@ -301,7 +312,10 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
                     crate::validation::parse_u7(msb),
                     crate::validation::parse_u7(lsb),
                 ) {
-                    (Ok(msb), Ok(lsb)) => Ok(TrackInitEvent::BankSelect { msb, lsb }),
+                    (Ok(msb), Ok(lsb)) => Ok((
+                        TrackInitEvent::BankSelect { msb, lsb },
+                        TrackInitLabel::Bank,
+                    )),
                     (Err(e), _) | (_, Err(e)) => Err(e),
                 }
             } else {
@@ -316,7 +330,10 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
                     crate::validation::parse_u7(parts[1]),
                     crate::validation::parse_u7(parts[2]),
                 ) {
-                    (Ok(cc), Ok(value)) => Ok(TrackInitEvent::ControlChange { cc, value }),
+                    (Ok(cc), Ok(value)) => Ok((
+                        TrackInitEvent::ControlChange { cc, value },
+                        TrackInitLabel::Cc,
+                    )),
                     (Err(e), _) | (_, Err(e)) => Err(e),
                 }
             }
@@ -333,8 +350,16 @@ fn parse_track_init_command(command: &str) -> std::result::Result<TrackInitEvent
                     "sustain" => 64,
                     _ => unreachable!(),
                 };
+                let label = match head.as_str() {
+                    "pan" => TrackInitLabel::Pan,
+                    "volume" => TrackInitLabel::Volume,
+                    "expression" => TrackInitLabel::Expression,
+                    "mod" => TrackInitLabel::Mod,
+                    "sustain" => TrackInitLabel::Sustain,
+                    _ => unreachable!(),
+                };
                 crate::validation::parse_u7(parts[1])
-                    .map(|value| TrackInitEvent::ControlChange { cc, value })
+                    .map(|value| (TrackInitEvent::ControlChange { cc, value }, label))
             }
         }
         _ => {
@@ -396,7 +421,7 @@ fn parse_track_init_line(input: &str) -> IResult<&str, ParsedLine> {
     let command = rest.trim();
 
     match parse_track_init_command(command) {
-        Ok(event) => Ok((input, ParsedLine::TrackInit(event))),
+        Ok((event, label)) => Ok((input, ParsedLine::TrackInit { event, label })),
         Err(_) => Err(nom::Err::Failure(nom::error::Error::new(
             input,
             nom::error::ErrorKind::Verify,
@@ -953,7 +978,7 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 ParsedLine::TrackWrap => {
                     builder.add_section(line_str)?;
                 }
-                ParsedLine::TrackInit(event) => {
+                ParsedLine::TrackInit { event, .. } => {
                     builder.add_track_init(line_str, event)?;
                 }
                 ParsedLine::TemplateHeader { name } => {

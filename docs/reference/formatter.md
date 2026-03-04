@@ -13,6 +13,15 @@ Semantics-preserving means:
 - bar structure is preserved
 - token structure is preserved
 
+## Header Spacing Normalization
+
+The formatter normalizes header/init spacing to a canonical form.
+
+- Track header: exactly one space after `#`, and exactly one space after `:`.
+  - canonical: `# Track: 1`
+- Track init: exactly one space after `##`, and exactly one space between label and value(s).
+  - canonical: `## pc 4`
+
 ## Vertical Layout (Islands of Meta)
 
 Loom treats metadata-like lines as isolated islands to keep the score readable.
