@@ -311,6 +311,7 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
     }
 
     let mut pattern_to_mods: HashMap<*const ParsedLine, Vec<&ParsedLine>> = HashMap::new();
+    let mut standalone_mods: Vec<&ParsedLine> = Vec::new();
     let mut current_pattern: Option<*const ParsedLine> = None;
     for p in patterns {
         match p {
@@ -321,6 +322,8 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
             ParsedLine::Modifier { .. } => {
                 if let Some(cp) = current_pattern {
                     pattern_to_mods.get_mut(&cp).unwrap().push(p);
+                } else {
+                    standalone_mods.push(p);
                 }
             }
             _ => {}
@@ -407,6 +410,40 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
             if let Some(mc) = m_comment {
                 let padding = max_line_width.saturating_sub(m_buf.len());
                 write!(out, "{:padding$} > {}", "", mc, padding = padding).unwrap();
+            }
+            out.push('\n');
+        }
+    }
+
+    // Keep modifiers that are not currently attached to a pattern (e.g. separated by comment lines).
+    // We use a compact standalone rendering instead of dropping them.
+    for m in standalone_mods {
+        if let ParsedLine::Modifier {
+            kind,
+            blocks,
+            end_bar,
+            trailing_comment,
+        } = m
+        {
+            let mut m_line = String::new();
+            write!(m_line, "{} ", kind).unwrap();
+            for block in blocks {
+                m_line.push_str(&block.start_bar.to_string());
+                if !block.values.is_empty() {
+                    m_line.push(' ');
+                    for (i, val) in block.values.iter().enumerate() {
+                        if i > 0 {
+                            m_line.push(' ');
+                        }
+                        m_line.push_str(&modifier_value_str(val));
+                    }
+                    m_line.push(' ');
+                }
+            }
+            write!(m_line, "{}", end_bar).unwrap();
+            out.push_str(&m_line);
+            if let Some(c) = trailing_comment {
+                write!(out, " > {}", c).unwrap();
             }
             out.push('\n');
         }
