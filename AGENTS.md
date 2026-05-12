@@ -1,0 +1,4 @@
+- miseでツールを管理する
+- justでタスクを管理する
+- docsでloomのドキュメントを管理する
+- docsはVitePressによってデプロイされる

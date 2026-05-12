@@ -46,3 +46,5 @@ For `play` and `live`, the effective MIDI port is resolved in this order:
 3. default `0`
 
 See [Global Config](/reference/config).
+
+For local sound output, see [Playback](/guide/playback).

@@ -16,6 +16,7 @@ export default defineConfig({
         text: "Guide",
         items: [
           { text: "Getting Started", link: "/guide/getting-started" },
+          { text: "Playback", link: "/guide/playback" },
           { text: "CLI", link: "/guide/cli" }
         ]
       },
@@ -37,6 +38,7 @@ export default defineConfig({
         text: "Reference",
         items: [
           { text: "Global Config", link: "/reference/config" },
+          { text: "General MIDI Programs", link: "/reference/general-midi-programs" },
           { text: "Formatter", link: "/reference/formatter" },
           { text: "Errors", link: "/reference/errors" }
         ]

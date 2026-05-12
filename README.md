@@ -4,6 +4,17 @@ Loom is a text-first DSL for MIDI composition, playback, and live coding.
 
 ## Quick Start
 
+Loom sends MIDI to an external synth. For local playback, start FluidSynth first:
+
+```bash
+# Nix
+nix run nixpkgs#fluidsynth -- -a coreaudio -m coremidi ~/Library/Audio/Sounds/Banks/FluidR3_GM.sf2
+
+# Homebrew
+brew install fluid-synth
+fluidsynth -a coreaudio -m coremidi ~/Library/Audio/Sounds/Banks/FluidR3_GM.sf2
+```
+
 ```bash
 cargo build --release
 
@@ -23,6 +34,7 @@ loom save examples/starter/melody-simple.loom
 ## Documentation
 
 - Docs source: `docs/` (VitePress)
+- Playback setup: `docs/guide/playback.md`
 - AI-oriented overview: `llms.txt` and `docs/llms.md`
 - Some documentation sections are auto-generated from source-of-truth in code/tests.
   - Generate: `cargo xtask gen-docs` (or `just docs-gen`)

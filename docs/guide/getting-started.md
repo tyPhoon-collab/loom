@@ -10,6 +10,9 @@ cargo build --release
 
 ## Basic Commands
 
+Start a MIDI synth first. See [Playback](/guide/playback) for the recommended
+FluidSynth setup.
+
 ```bash
 # list MIDI ports
 loom ports
@@ -27,4 +30,5 @@ loom save examples/starter/melody-simple.loom
 ## Next
 
 - Learn the [CLI](/guide/cli)
+- Set up [Playback](/guide/playback)
 - Learn the [Language Specification](/language/spec)
