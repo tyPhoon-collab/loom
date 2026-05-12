@@ -8,3 +8,4 @@ next.md
 /docs/.vitepress/.temp
 /docs/.vitepress/dist
 /.pnpm-store
+/.wrangler
