@@ -53,7 +53,7 @@ impl Player {
     }
 }
 
-// Helper to parse "1 ~ 4" from metadata
+// Helper to parse "0..4" from metadata
 fn parse_loop_range(range_str: &str, default_unit: &str, signature: &str) -> Result<(f64, f64)> {
     use miette::miette;
 
@@ -62,9 +62,8 @@ fn parse_loop_range(range_str: &str, default_unit: &str, signature: &str) -> Res
     let beats_per_unit =
         crate::validation::beats_per_unit(default_unit, signature).map_err(|e| miette!("{}", e))?;
 
-    // Convert 1-based unit index to 0-based beats
-    // Start is inclusive (beginning of unit), End is inclusive (end of unit)
-    let start_beats = (start_val - 1.0) * beats_per_unit;
+    // Convert half-open unit range to beats: start inclusive, end exclusive.
+    let start_beats = start_val * beats_per_unit;
     let end_beats = end_val * beats_per_unit;
 
     Ok((start_beats, end_beats))

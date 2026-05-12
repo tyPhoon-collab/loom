@@ -9,6 +9,14 @@ Track       = TrackHeader , { Line } ;
 TrackHeader = "#" , space , name , ":" , space , channel , [ space , "x" ] , newline ;
 ```
 
+Frontmatter keys:
+
+- `loop_range`: half-open unit range written as `start..end`.
+  - `start` is inclusive and must be `>= 0`.
+  - `end` is exclusive and must be greater than `start`.
+  - Values are interpreted in the current `unit` (`bar` or `beat`).
+  - Example: `loop_range: 0..1` loops the first bar when `unit: bar`.
+
 ## Lines
 
 ```ebnf

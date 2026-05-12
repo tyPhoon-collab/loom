@@ -947,7 +947,7 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 frontmatter_line,
                 &source,
                 msg,
-                Some("Example: loop_range: \"1 ~ 4\"".to_string()),
+                Some("Example: loop_range: 0..4".to_string()),
             ));
         }
         if let Err(msg) = crate::validation::beats_per_unit(&metadata.unit, &metadata.signature) {

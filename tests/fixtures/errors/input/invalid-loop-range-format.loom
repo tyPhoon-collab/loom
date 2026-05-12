@@ -2,7 +2,7 @@
 loop: true
 unit: "bar"
 signature: "4/4"
-loop_range: 1..1
+loop_range: 1 ~ 1
 ---
 
 # Track: 1

@@ -82,35 +82,37 @@ pub fn beats_per_unit(unit: &str, signature: &str) -> std::result::Result<f64, S
 }
 
 pub fn parse_loop_range_units(range_str: &str) -> std::result::Result<(f64, f64), String> {
-    let parts: Vec<&str> = range_str.split('~').collect();
-    if parts.len() != 2 {
+    let Some((start_raw, end_raw)) = range_str.split_once("..") else {
         return Err(format!(
-            "Invalid loop_range format. Expected 'start ~ end' (e.g. '1 ~ 4'), got '{}'",
+            "Invalid loop_range format. Expected 'start..end' (e.g. '0..1'), got '{}'",
+            range_str
+        ));
+    };
+    if end_raw.contains("..") {
+        return Err(format!(
+            "Invalid loop_range format. Expected 'start..end' (e.g. '0..1'), got '{}'",
             range_str
         ));
     }
 
-    let start = parts[0]
+    let start = start_raw
         .trim()
         .parse::<f64>()
-        .map_err(|_| format!("Invalid loop_range start '{}'", parts[0].trim()))?;
-    let end = parts[1]
+        .map_err(|_| format!("Invalid loop_range start '{}'", start_raw.trim()))?;
+    let end = end_raw
         .trim()
         .parse::<f64>()
-        .map_err(|_| format!("Invalid loop_range end '{}'", parts[1].trim()))?;
+        .map_err(|_| format!("Invalid loop_range end '{}'", end_raw.trim()))?;
 
     if !start.is_finite() || !end.is_finite() {
         return Err("loop_range start/end must be finite numbers".to_string());
     }
-    if start < 1.0 {
-        return Err(format!(
-            "loop_range start must be >= 1 (1-based), got {}",
-            start
-        ));
+    if start < 0.0 {
+        return Err(format!("loop_range start must be >= 0, got {}", start));
     }
-    if end < start {
+    if end <= start {
         return Err(format!(
-            "loop_range end must be >= start (start={}, end={})",
+            "loop_range end must be > start (start={}, end={})",
             start, end
         ));
     }

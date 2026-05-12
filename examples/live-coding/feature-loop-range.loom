@@ -3,13 +3,13 @@ bpm: 120
 title: "Loop Range"
 loop: true
 unit: bar
-loop_range: "1 ~ 1"
+loop_range: 0..1
 ---
 
 # Piano: 1
 
 > This should loop ONLY the first bar indefinitely.
-> using smart syntax "1, 1" (implies "1 bar ~ 1 bar")
+> Range is half-open: 0..1 means from bar 0 to before bar 1.
 
 c3 | ^ ^ ^ ^ | . . . . |
 e3 | . . . . | ^ ^ ^ ^ |

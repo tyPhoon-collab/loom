@@ -49,6 +49,7 @@ WIP. Structured error catalog will be added incrementally.
 - `invalid-fenced-codeblock-signature.loom`
 - `invalid-frontmatter.loom`
 - `invalid-init-u7.loom`
+- `invalid-loop-range-format.loom`
 - `invalid-loop-range.loom`
 - `invalid-modifier-structure.loom`
 - `invalid-modifier.loom`
@@ -126,6 +127,20 @@ C4
 C4 | ^ |
 ````
 
+#### `invalid-loop-range-format.loom`
+
+````loom
+---
+loop: true
+unit: "bar"
+signature: "4/4"
+loop_range: 1 ~ 1
+---
+
+# Track: 1
+C4 | ^ |
+````
+
 #### `invalid-loop-range.loom`
 
 ````loom
@@ -133,7 +148,7 @@ C4 | ^ |
 loop: true
 unit: "bar"
 signature: "4/4"
-loop_range: "0 ~ 2"
+loop_range: 1..1
 ---
 
 # Track: 1
