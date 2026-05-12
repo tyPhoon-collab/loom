@@ -1,8 +1,21 @@
+glob_matcher: doublestar
+
 pre-commit:
-  commands:
-    fmt:
-      run: cargo fmt --all -- --check
-    clippy:
-      run: cargo clippy -- -D warnings
-    test:
-      run: cargo test --all-targets --all-features
+  jobs:
+    - name: rust
+      glob:
+        - "**/*.rs"
+        - "**/Cargo.toml"
+        - "Cargo.lock"
+        - "rust-toolchain*"
+        - ".cargo/**"
+        - "clippy.toml"
+        - "rustfmt.toml"
+      group:
+        jobs:
+          - name: fmt
+            run: cargo fmt --all -- --check
+          - name: clippy
+            run: cargo clippy -- -D warnings
+          - name: test
+            run: cargo test --all-targets --all-features
