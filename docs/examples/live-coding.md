@@ -10,6 +10,7 @@ Examples focused on templates, modifiers, repeats, and real-time iteration.
 
 #### Index
 
+- `examples/live-coding/feature-humanize.loom`
 - `examples/live-coding/feature-init-events.loom`
 - `examples/live-coding/feature-loop-basic.loom`
 - `examples/live-coding/feature-loop-range.loom`
@@ -32,6 +33,24 @@ Examples focused on templates, modifiers, repeats, and real-time iteration.
 - `examples/live-coding/feature-track-wrap.loom`
 
 #### Samples
+
+##### `examples/live-coding/feature-humanize.loom`
+
+````loom
+---
+bpm: 120
+title: "Humanize"
+humanize:
+  timing: 0.015
+  velocity: 5
+  seed: 42
+---
+
+# Piano: 1
+
+C4 | ^ . ^ . |
+E4 | . ^ . ^ |
+````
 
 ##### `examples/live-coding/feature-init-events.loom`
 

@@ -1,0 +1,13 @@
+---
+bpm: 120
+title: "Humanize"
+humanize:
+  timing: 0.015
+  velocity: 5
+  seed: 42
+---
+
+# Piano: 1
+
+C4 | ^ . ^ . |
+E4 | . ^ . ^ |

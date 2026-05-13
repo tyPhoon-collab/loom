@@ -362,6 +362,8 @@ pub struct Frontmatter {
     pub r#loop: bool,
     #[allow(dead_code)]
     pub loop_range: Option<String>,
+    #[serde(default)]
+    pub humanize: Humanize,
 }
 
 fn default_bpm() -> u32 {
@@ -373,6 +375,57 @@ fn default_signature() -> String {
 }
 fn default_unit() -> String {
     "bar".to_string()
+}
+
+fn default_humanize_timing() -> f64 {
+    0.015
+}
+
+fn default_humanize_velocity() -> u16 {
+    5
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum Humanize {
+    Bool(bool),
+    Config(HumanizeConfig),
+}
+
+impl Default for Humanize {
+    fn default() -> Self {
+        Self::Bool(false)
+    }
+}
+
+impl Humanize {
+    pub fn values(&self) -> Option<HumanizeConfig> {
+        match self {
+            Self::Bool(false) => None,
+            Self::Bool(true) => Some(HumanizeConfig::default()),
+            Self::Config(config) => Some(config.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+pub struct HumanizeConfig {
+    #[serde(default = "default_humanize_timing")]
+    pub timing: f64,
+    #[serde(default = "default_humanize_velocity")]
+    pub velocity: u16,
+    #[serde(default)]
+    pub seed: u64,
+}
+
+impl Default for HumanizeConfig {
+    fn default() -> Self {
+        Self {
+            timing: default_humanize_timing(),
+            velocity: default_humanize_velocity(),
+            seed: 0,
+        }
+    }
 }
 
 impl Default for Frontmatter {
@@ -387,6 +440,7 @@ impl Default for Frontmatter {
             swing: SwingConfig::default(),
             r#loop: false,
             loop_range: None,
+            humanize: Humanize::default(),
         }
     }
 }

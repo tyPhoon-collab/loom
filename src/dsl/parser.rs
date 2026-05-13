@@ -941,6 +941,19 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
             Some("Examples: swing: 8, swing: 16, swing: { grid: 8, amount: 66 }".to_string()),
         ));
     }
+    if let Some(humanize) = metadata.humanize.values() {
+        if let Err(msg) = crate::validation::validate_humanize(humanize.timing, humanize.velocity) {
+            return Err(ParseError::from_validation(
+                frontmatter_line,
+                &source,
+                msg,
+                Some(
+                    "Examples: humanize: true, humanize: { timing: 0.015, velocity: 5, seed: 42 }"
+                        .to_string(),
+                ),
+            ));
+        }
+    }
     if let Some(loop_range) = &metadata.loop_range {
         if let Err(msg) = crate::validation::parse_loop_range_units(loop_range) {
             return Err(ParseError::from_validation(

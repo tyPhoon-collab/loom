@@ -16,6 +16,13 @@ Frontmatter keys:
   - `end` is exclusive and must be greater than `start`.
   - Values are interpreted in the current `unit` (`bar` or `beat`).
   - Example: `loop_range: 0..1` loops the first bar when `unit: bar`.
+- `humanize`: adds deterministic micro-variation to note timing and velocity.
+  - `false` or omitted disables humanize.
+  - `true` uses default settings.
+  - Map form can override `timing`, `velocity`, and `seed`.
+  - `timing` is the maximum timing offset in beats. Default `0.015`.
+  - `velocity` is the maximum MIDI velocity offset. Default `5`.
+  - `seed` changes the deterministic variation pattern. Default `0`.
 
 ## Lines
 

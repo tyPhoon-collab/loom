@@ -118,3 +118,19 @@ pub fn parse_loop_range_units(range_str: &str) -> std::result::Result<(f64, f64)
     }
     Ok((start, end))
 }
+
+pub fn validate_humanize(timing: f64, velocity: u16) -> std::result::Result<(), String> {
+    if !timing.is_finite() {
+        return Err("humanize.timing must be a finite number".to_string());
+    }
+    if timing < 0.0 {
+        return Err(format!("humanize.timing must be >= 0, got {}", timing));
+    }
+    if velocity > 127 {
+        return Err(format!(
+            "humanize.velocity out of range: {} (expected 0..127)",
+            velocity
+        ));
+    }
+    Ok(())
+}

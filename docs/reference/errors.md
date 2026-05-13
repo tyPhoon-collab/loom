@@ -48,6 +48,8 @@ WIP. Structured error catalog will be added incrementally.
 - `invalid-fenced-codeblock-modifier.loom`
 - `invalid-fenced-codeblock-signature.loom`
 - `invalid-frontmatter.loom`
+- `invalid-humanize-timing.loom`
+- `invalid-humanize-velocity.loom`
 - `invalid-init-u7.loom`
 - `invalid-loop-range-format.loom`
 - `invalid-loop-range.loom`
@@ -117,6 +119,30 @@ signature: 4/4
 ```
 C4
 ```
+````
+
+#### `invalid-humanize-timing.loom`
+
+````loom
+---
+humanize:
+  timing: -0.01
+---
+
+# Track: 1
+C4 | ^ |
+````
+
+#### `invalid-humanize-velocity.loom`
+
+````loom
+---
+humanize:
+  velocity: 200
+---
+
+# Track: 1
+C4 | ^ |
 ````
 
 #### `invalid-init-u7.loom`

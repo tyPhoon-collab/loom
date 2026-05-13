@@ -1,0 +1,46 @@
+---
+source: tests/examples_test.rs
+expression: events
+---
+[
+    TrackEvent {
+        track: "Piano",
+        event: Note {
+            time: 0.0,
+            duration: 1.0,
+            channel: 0,
+            note: 72,
+            velocity: 100,
+        },
+    },
+    TrackEvent {
+        track: "Piano",
+        event: Note {
+            time: 0.985581,
+            duration: 1.0,
+            channel: 0,
+            note: 76,
+            velocity: 97,
+        },
+    },
+    TrackEvent {
+        track: "Piano",
+        event: Note {
+            time: 2.002804,
+            duration: 1.0,
+            channel: 0,
+            note: 72,
+            velocity: 101,
+        },
+    },
+    TrackEvent {
+        track: "Piano",
+        event: Note {
+            time: 2.994881,
+            duration: 1.0,
+            channel: 0,
+            note: 76,
+            velocity: 96,
+        },
+    },
+]

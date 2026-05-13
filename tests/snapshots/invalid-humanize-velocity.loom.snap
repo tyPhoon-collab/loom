@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::validation
+
+  × Validation error: humanize.velocity out of range: 200 (expected 0..127)
+   ╭─[input:1:1]
+ 1 │ ---
+   · ─┬─
+   ·  ╰── Invalid value
+ 2 │ humanize:
+   ╰────
+  help: Examples: humanize: true, humanize: { timing: 0.015, velocity: 5, seed: 42 }

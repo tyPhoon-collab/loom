@@ -1,0 +1,14 @@
+---
+source: tests/error_test.rs
+expression: error_trace
+---
+loom::parser::validation
+
+  × Validation error: humanize.timing must be >= 0, got -0.01
+   ╭─[input:1:1]
+ 1 │ ---
+   · ─┬─
+   ·  ╰── Invalid value
+ 2 │ humanize:
+   ╰────
+  help: Examples: humanize: true, humanize: { timing: 0.015, velocity: 5, seed: 42 }
