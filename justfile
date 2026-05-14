@@ -24,6 +24,9 @@ fmt-loom file *args:
 live file *args:
     cargo run -- live {{file}} {{args}}
 
+studio file *args:
+    cargo run -- studio {{file}} {{args}}
+
 play file *args:
     cargo run -- play {{file}} {{args}}
 

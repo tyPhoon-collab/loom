@@ -43,6 +43,13 @@ pub enum Commands {
         #[arg(short, long)]
         port: Option<usize>,
     },
+    /// Integrated TUI composer
+    Studio {
+        input: PathBuf,
+        /// MIDI output port index
+        #[arg(short, long)]
+        port: Option<usize>,
+    },
     /// Export to MIDI file
     Save {
         input: PathBuf,

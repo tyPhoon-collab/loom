@@ -23,6 +23,9 @@ loom play examples/starter/melody-simple.loom
 # live coding (hot reload)
 loom live examples/starter/melody-simple.loom
 
+# integrated TUI composer
+loom studio examples/starter/melody-simple.loom
+
 # save as .mid
 loom save examples/starter/melody-simple.loom
 ```

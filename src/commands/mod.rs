@@ -5,6 +5,7 @@ pub mod parse;
 pub mod play;
 pub mod ports;
 pub mod save;
+pub mod studio;
 
 use crate::cli::Commands;
 use loom::config::{load_global_config, GlobalConfig};
@@ -30,6 +31,10 @@ pub fn run(command: Commands) -> Result<()> {
         Commands::Live { input, port } => {
             let port = resolve_midi_port(port, config);
             live::handle_live(input, port, loaded_config.status_message())
+        }
+        Commands::Studio { input, port } => {
+            let port = resolve_midi_port(port, config);
+            studio::handle_studio(input, port, loaded_config.status_message())
         }
         Commands::Save { input, output } => save::handle_save(input, output),
         Commands::Fmt { input, check } => fmt::handle_fmt(input, check),
