@@ -55,6 +55,7 @@ impl Core {
             self.seq_offset += elapsed * (old_bpm / 60.0);
             self.start_time = Instant::now();
         }
+        self.loop_range = loop_range_beats(&metadata);
         self.store.update(events, metadata);
     }
 
@@ -258,5 +259,48 @@ impl Core {
         self.conn
             .send(data)
             .map_err(|e| miette!("MIDI send failed: {}", e))
+    }
+}
+
+fn loop_range_beats(metadata: &Frontmatter) -> Option<(f64, f64)> {
+    let range = metadata.loop_range.as_ref()?;
+    let (start, end) = crate::validation::parse_loop_range_units(range).ok()?;
+    let beats_per_unit =
+        crate::validation::beats_per_unit(&metadata.unit, &metadata.signature).ok()?;
+    Some((start * beats_per_unit, end * beats_per_unit))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loop_range_beats;
+    use crate::dsl::token::Frontmatter;
+
+    #[test]
+    fn loop_range_beats_converts_bar_units() {
+        let metadata = Frontmatter {
+            signature: "3/4".to_string(),
+            unit: "bar".to_string(),
+            loop_range: Some("1..3".to_string()),
+            ..Frontmatter::default()
+        };
+
+        assert_eq!(loop_range_beats(&metadata), Some((3.0, 9.0)));
+    }
+
+    #[test]
+    fn loop_range_beats_keeps_beat_units() {
+        let metadata = Frontmatter {
+            signature: "3/4".to_string(),
+            unit: "beat".to_string(),
+            loop_range: Some("3..9".to_string()),
+            ..Frontmatter::default()
+        };
+
+        assert_eq!(loop_range_beats(&metadata), Some((3.0, 9.0)));
+    }
+
+    #[test]
+    fn loop_range_beats_is_none_without_range() {
+        assert_eq!(loop_range_beats(&Frontmatter::default()), None);
     }
 }

@@ -170,6 +170,12 @@ pub(super) fn replace_char_range(
     line.replace_range(start..end, replacement);
 }
 
+pub(super) fn char_range(line: &str, start_col: usize, end_col: usize) -> String {
+    let start = char_to_byte_index(line, start_col);
+    let end = char_to_byte_index(line, end_col);
+    line[start..end].to_string()
+}
+
 pub(super) fn delete_note_token(line: &mut String, note: &NoteTokenSpan) {
     let chars: Vec<char> = line.chars().collect();
     let mut start_col = note.start_col;

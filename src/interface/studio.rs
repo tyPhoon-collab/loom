@@ -14,10 +14,10 @@ use ratatui::{
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::{
-    bar_at_or_near_col, bar_spans_in_line, delete_note_token, insert_at_col, is_note_token_char,
-    is_seq_line, note_at_or_near_col, note_spans_in_line, ordered_bar_span_bounds,
-    ordered_note_span_bounds, replace_char_range, BarSpan, NoteTokenSpan, SelectableTokenKind,
-    StudioSelection,
+    bar_at_or_near_col, bar_spans_in_line, char_range, delete_note_token, insert_at_col,
+    is_note_token_char, is_seq_line, note_at_or_near_col, note_spans_in_line,
+    ordered_bar_span_bounds, ordered_note_span_bounds, replace_char_range, BarSpan, NoteTokenSpan,
+    SelectableTokenKind, StudioSelection,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -277,7 +277,10 @@ impl StudioApp {
                 self.replace_selected_tokens("-")?;
             }
             KeyCode::Char('d') => {
-                self.duplicate_selected_notes()?;
+                self.duplicate_selection()?;
+            }
+            KeyCode::Enter => {
+                self.apply_selected_loop_range()?;
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.expand_selection_horizontal(-1);
@@ -987,6 +990,17 @@ impl StudioApp {
         Ok(())
     }
 
+    fn duplicate_selection(&mut self) -> Result<()> {
+        if matches!(
+            self.selection,
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
+        ) {
+            self.duplicate_selected_bars()
+        } else {
+            self.duplicate_selected_notes()
+        }
+    }
+
     fn duplicate_selected_notes(&mut self) -> Result<()> {
         let selected_indices = self.selected_note_indices();
         let selected_notes = self.selected_note_spans();
@@ -1044,6 +1058,89 @@ impl StudioApp {
             if selected_notes.len() == 1 { "" } else { "s" }
         );
         self.audition_candidate(audition);
+        Ok(())
+    }
+
+    fn duplicate_selected_bars(&mut self) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "d applies to bar selection only".into();
+            return Ok(());
+        }
+
+        let row = selected_bars[0].row;
+        if selected_bars.iter().any(|bar| bar.row != row) {
+            self.status_message = "Bar duplicate currently supports one line at a time".into();
+            return Ok(());
+        }
+
+        let first = selected_bars.first().cloned().unwrap();
+        let last = selected_bars.last().cloned().unwrap();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return Ok(());
+        };
+
+        let insertion = char_range(line, first.start_col + 1, last.end_col);
+        insert_at_col(line, last.end_col, &insertion);
+
+        let inserted_indices: Vec<usize> =
+            (last.index + 1..=last.index + selected_bars.len()).collect();
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_bar_selection_from_row_indices(row, &inserted_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Duplicated {} bar{}",
+            selected_bars.len(),
+            if selected_bars.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    fn apply_selected_loop_range(&mut self) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "Loop range applies to bar selection only".into();
+            return Ok(());
+        }
+
+        let Some(start_index) = selected_bars.iter().map(|bar| bar.index).min() else {
+            return Ok(());
+        };
+        let Some(end_index) = selected_bars.iter().map(|bar| bar.index).max() else {
+            return Ok(());
+        };
+
+        let source = self.source();
+        let loop_range = match loop_range_for_bar_indices(&source, start_index, end_index) {
+            Ok(loop_range) => loop_range,
+            Err(message) => {
+                self.status_message = message;
+                return Ok(());
+            }
+        };
+        match set_loop_range_frontmatter(&source, &loop_range) {
+            Ok(source) => {
+                self.push_source_undo();
+                self.replace_source(source);
+                self.restore_bar_selection_from_row_indices(
+                    selected_bars[0].row,
+                    &(start_index..=end_index).collect::<Vec<_>>(),
+                );
+                self.sync_selection_visual();
+                self.dirty = true;
+                self.compile_and_update_current_source()?;
+                self.status_message = format!("Loop range: {}", loop_range);
+            }
+            Err(message) => {
+                self.status_message = message;
+            }
+        }
         Ok(())
     }
 
@@ -1322,6 +1419,32 @@ impl StudioApp {
             .collect()
     }
 
+    fn selected_bar_spans(&self) -> Vec<BarSpan> {
+        let bars = self.bar_spans();
+        match &self.selection {
+            Some(StudioSelection::Bar { span }) => bars
+                .iter()
+                .position(|bar| bar == span)
+                .and_then(|index| bars.get(index).cloned())
+                .map(|bar| vec![bar])
+                .unwrap_or_default(),
+            Some(StudioSelection::BarRange { anchor, focus }) => {
+                let Some(anchor_index) = bars.iter().position(|bar| bar == anchor) else {
+                    return Vec::new();
+                };
+                let Some(focus_index) = bars.iter().position(|bar| bar == focus) else {
+                    return Vec::new();
+                };
+                let start = anchor_index.min(focus_index);
+                let end = anchor_index.max(focus_index);
+                (start..=end)
+                    .filter_map(|index| bars.get(index).cloned())
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn restore_note_selection_from_indices(&mut self, selected_indices: &[usize]) {
         let notes = self.note_token_spans();
         match selected_indices {
@@ -1349,6 +1472,40 @@ impl StudioApp {
                     return;
                 };
                 self.selection = Some(StudioSelection::NoteRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+        }
+    }
+
+    fn restore_bar_selection_from_row_indices(&mut self, row: usize, selected_indices: &[usize]) {
+        let bars = self.bar_spans_on_line(row);
+        match selected_indices {
+            [] => {
+                self.selection = None;
+            }
+            [index] => {
+                if let Some(bar) = bars.iter().find(|bar| bar.index == *index) {
+                    self.selection = Some(StudioSelection::Bar { span: bar.clone() });
+                }
+            }
+            indices => {
+                let Some(first) = indices
+                    .first()
+                    .and_then(|index| bars.iter().find(|bar| bar.index == *index))
+                else {
+                    self.selection = None;
+                    return;
+                };
+                let Some(last) = indices
+                    .last()
+                    .and_then(|index| bars.iter().find(|bar| bar.index == *index))
+                else {
+                    self.selection = None;
+                    return;
+                };
+                self.selection = Some(StudioSelection::BarRange {
                     anchor: first.clone(),
                     focus: last.clone(),
                 });
@@ -1554,7 +1711,7 @@ impl StudioApp {
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {
-                "h/l move | H/L extend | j/k vertical | x delete | r rest | s sustain | d duplicate | Esc"
+                "h/l move | H/L extend | Enter loop | d duplicate | x delete | r rest | s sustain | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));
@@ -1690,6 +1847,112 @@ fn toggle_loop_frontmatter(source: &str) -> std::result::Result<(String, bool), 
     Ok((finish_source(lines), true))
 }
 
+fn loop_range_for_bar_indices(
+    source: &str,
+    start_index: usize,
+    end_index: usize,
+) -> std::result::Result<String, String> {
+    let song = parser::parse_song(source.to_string())
+        .map_err(|e| format!("Cannot set loop range: {}", e))?;
+
+    if song.metadata.unit == "beat" {
+        let beats_per_bar = crate::validation::beats_per_unit("bar", &song.metadata.signature)
+            .map_err(|message| format!("Cannot set loop range: {}", message))?;
+        let start = start_index as f64 * beats_per_bar;
+        let end = (end_index + 1) as f64 * beats_per_bar;
+        Ok(format_loop_range_number(start, end))
+    } else {
+        Ok(format!("{}..{}", start_index, end_index + 1))
+    }
+}
+
+fn format_loop_range_number(start: f64, end: f64) -> String {
+    format!("{}..{}", format_loop_bound(start), format_loop_bound(end))
+}
+
+fn format_loop_bound(value: f64) -> String {
+    if value.fract().abs() < f64::EPSILON {
+        format!("{}", value as u64)
+    } else {
+        format!("{:.4}", value)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
+fn set_loop_range_frontmatter(
+    source: &str,
+    loop_range: &str,
+) -> std::result::Result<String, String> {
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+
+    if !matches!(lines.first().map(|line| line.as_str()), Some("---")) {
+        let source = if source.is_empty() {
+            format!("---\nloop: true\nloop_range: {}\n---\n", loop_range)
+        } else {
+            format!(
+                "---\nloop: true\nloop_range: {}\n---\n\n{}",
+                loop_range, source
+            )
+        };
+        return Ok(source);
+    }
+
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line == "---").then_some(index))
+    else {
+        return Err("Loop range failed: frontmatter block is not closed".to_string());
+    };
+
+    let mut loop_line = None;
+    let mut loop_range_line = None;
+    for (index, line) in lines.iter().enumerate().take(end_index).skip(1) {
+        let trimmed = line.trim();
+        if trimmed.starts_with("loop:") {
+            match trimmed {
+                "loop: true" | "loop: false" => loop_line = Some(index),
+                _ => {
+                    return Err(
+                        "Loop range supports only simple `loop: true` or `loop: false`".to_string(),
+                    );
+                }
+            }
+        } else if trimmed.starts_with("loop_range:") {
+            if trimmed == "loop_range:" {
+                return Err("Loop range supports only simple `loop_range: start..end`".to_string());
+            }
+            loop_range_line = Some(index);
+        }
+    }
+
+    if let Some(index) = loop_line {
+        lines[index] = "loop: true".to_string();
+    } else {
+        lines.insert(end_index, "loop: true".to_string());
+        if let Some(index) = loop_range_line.as_mut() {
+            *index += 1;
+        }
+    }
+
+    if let Some(index) = loop_range_line {
+        lines[index] = format!("loop_range: {}", loop_range);
+    } else {
+        let insert_index = lines
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find_map(|(index, line)| (line == "---").then_some(index))
+            .unwrap_or(lines.len());
+        lines.insert(insert_index, format!("loop_range: {}", loop_range));
+    }
+
+    Ok(finish_source(lines))
+}
+
 fn parse_track_header_channel(line: &str) -> Option<u8> {
     let trimmed = line.trim();
     if trimmed.starts_with("##") || !trimmed.starts_with('#') {
@@ -1715,7 +1978,10 @@ fn finish_source(lines: Vec<String>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_track_header_channel, toggle_loop_frontmatter, transpose_line};
+    use super::{
+        loop_range_for_bar_indices, parse_track_header_channel, set_loop_range_frontmatter,
+        toggle_loop_frontmatter, transpose_line,
+    };
 
     #[test]
     fn transpose_pitch_list_before_bar() {
@@ -1787,6 +2053,40 @@ mod tests {
         assert_eq!(parse_track_header_channel("# Drums: 10 mute"), Some(9));
         assert_eq!(parse_track_header_channel("## sound 1"), None);
         assert_eq!(parse_track_header_channel("# Invalid: 17"), None);
+    }
+
+    #[test]
+    fn set_loop_range_adds_frontmatter_when_missing() {
+        let source = set_loop_range_frontmatter("# Piano: 1\nC4 | ^ |\n", "0..1").unwrap();
+        assert_eq!(
+            source,
+            "---\nloop: true\nloop_range: 0..1\n---\n\n# Piano: 1\nC4 | ^ |\n"
+        );
+    }
+
+    #[test]
+    fn set_loop_range_updates_existing_scalars() {
+        let source = set_loop_range_frontmatter(
+            "---\nloop: false\nloop_range: 1..2\n---\n# Piano: 1\n",
+            "0..4",
+        )
+        .unwrap();
+        assert_eq!(
+            source,
+            "---\nloop: true\nloop_range: 0..4\n---\n# Piano: 1\n"
+        );
+    }
+
+    #[test]
+    fn loop_range_uses_bar_unit_indices() {
+        let source = "---\nunit: bar\nsignature: 3/4\n---\n# Piano: 1\nC4 | ^ | ^ |\n";
+        assert_eq!(loop_range_for_bar_indices(source, 1, 2).unwrap(), "1..3");
+    }
+
+    #[test]
+    fn loop_range_converts_to_beats_for_beat_unit() {
+        let source = "---\nunit: beat\nsignature: 3/4\n---\n# Piano: 1\nC4 | ^ | ^ |\n";
+        assert_eq!(loop_range_for_bar_indices(source, 1, 2).unwrap(), "3..9");
     }
 }
 
