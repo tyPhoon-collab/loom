@@ -4,7 +4,7 @@ use crate::dsl::token::Frontmatter;
 use crate::midi;
 use midir::MidiOutputConnection;
 use miette::{miette, Result};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PlaybackState {
@@ -68,9 +68,10 @@ impl Core {
 
     pub fn play(&mut self) {
         if self.state != PlaybackState::Playing {
+            let was_stopped = self.state == PlaybackState::Stopped;
             self.state = PlaybackState::Playing;
             self.start_time = Instant::now();
-            if self.state == PlaybackState::Stopped {
+            if was_stopped {
                 self.seq_offset = self.loop_range.map(|(s, _)| s).unwrap_or(0.0);
                 self.last_processed_beat = self.seq_offset - 0.001; // Ensure start notes trigger
             }
@@ -101,6 +102,23 @@ impl Core {
         self.start_time = Instant::now();
         self.silence_all()?;
         Ok(())
+    }
+
+    pub fn preview_note(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        duration: Duration,
+    ) -> Result<bool> {
+        if self.state == PlaybackState::Playing {
+            return Ok(false);
+        }
+
+        self.send_midi(&[0x90 | channel, note, velocity])?;
+        std::thread::sleep(duration);
+        self.send_midi(&[0x80 | channel, note, 0])?;
+        Ok(true)
     }
 
     pub fn tick(&mut self) -> Result<PlaybackState> {

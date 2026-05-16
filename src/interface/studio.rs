@@ -3,6 +3,7 @@ use crate::dsl::note::Note;
 use crate::dsl::{formatter, parser};
 use crate::event::Event;
 use crate::live_player::LivePlayer;
+use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use miette::{IntoDiagnostic, Result};
 use ratatui::{
@@ -316,7 +317,13 @@ impl StudioApp {
         Ok(())
     }
 
-    fn handle_tick(&mut self, _event: Event) {}
+    fn handle_tick(&mut self, _event: Event) {
+        self.sync_playback_state();
+    }
+
+    fn sync_playback_state(&mut self) {
+        self.is_playing = self.player.playback_state() == PlaybackState::Playing;
+    }
 
     fn source(&self) -> String {
         let mut source = self.textarea.lines().join("\n");
@@ -596,12 +603,14 @@ impl StudioApp {
             }
         }
 
+        let cursor = self.textarea.cursor();
+        let audition = self.audition_candidate_from_lines(&lines, start, end, (cursor.0, cursor.1));
+
         if changed == 0 {
             self.status_message = "No transposable notes in selection".into();
             return Ok(());
         }
 
-        let cursor = self.textarea.cursor();
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
         self.textarea
@@ -618,6 +627,7 @@ impl StudioApp {
             semitones,
             if semitones.abs() == 1 { "" } else { "s" }
         );
+        self.audition_candidate(audition);
         Ok(())
     }
 
@@ -640,6 +650,10 @@ impl StudioApp {
                 replacements.push((note, new_token));
             }
         }
+
+        let audition = replacements
+            .first()
+            .map(|(note, token)| (note.row, token.clone()));
 
         if replacements.is_empty() {
             self.status_message = "No transposable note selected".into();
@@ -673,6 +687,7 @@ impl StudioApp {
             if replacements.len() == 1 { "" } else { "s" },
             semitones
         );
+        self.audition_candidate(audition);
         Ok(())
     }
 
@@ -811,6 +826,7 @@ impl StudioApp {
         self.replace_source(lines.join("\n"));
         self.restore_note_selection_from_indices(&inserted_indices);
         self.sync_selection_visual();
+        let audition = self.audition_candidate_from_indices(&inserted_indices);
         self.dirty = true;
         self.compile_and_update_current_source()?;
         self.status_message = format!(
@@ -818,6 +834,7 @@ impl StudioApp {
             selected_notes.len(),
             if selected_notes.len() == 1 { "" } else { "s" }
         );
+        self.audition_candidate(audition);
         Ok(())
     }
 
@@ -839,6 +856,90 @@ impl StudioApp {
             }
         }
         Ok(())
+    }
+
+    fn audition_candidate_from_lines(
+        &self,
+        lines: &[String],
+        start_row: usize,
+        end_row: usize,
+        cursor: (usize, usize),
+    ) -> Option<(usize, String)> {
+        let preferred_row = if (start_row..=end_row).contains(&cursor.0) {
+            cursor.0
+        } else {
+            start_row
+        };
+
+        note_at_or_near_col(
+            self.auditionable_spans_in_line(lines, preferred_row),
+            cursor.1,
+        )
+        .or_else(|| {
+            (start_row..=end_row).find_map(|row| {
+                self.auditionable_spans_in_line(lines, row)
+                    .into_iter()
+                    .next()
+            })
+        })
+        .map(|note| (note.row, note.token))
+    }
+
+    fn auditionable_spans_in_line(&self, lines: &[String], row: usize) -> Vec<NoteTokenSpan> {
+        lines
+            .get(row)
+            .map(|line| {
+                note_spans_in_line(row, line)
+                    .into_iter()
+                    .filter(|note| note.kind == SelectableTokenKind::Note)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn audition_candidate_from_indices(&self, indices: &[usize]) -> Option<(usize, String)> {
+        let notes = self.note_token_spans();
+        indices.iter().find_map(|index| {
+            notes
+                .get(*index)
+                .filter(|note| note.kind == SelectableTokenKind::Note)
+                .map(|note| (note.row, note.token.clone()))
+        })
+    }
+
+    fn audition_candidate(&mut self, candidate: Option<(usize, String)>) {
+        let Some((row, token)) = candidate else {
+            return;
+        };
+        self.sync_playback_state();
+        if self.is_playing {
+            return;
+        }
+        if self.preview_token(row, &token).is_some() {
+            self.status_message
+                .push_str(&format!(" | Audition: {}", token));
+        }
+    }
+
+    fn preview_token(&self, row: usize, token: &str) -> Option<()> {
+        let note = token.parse::<Note>().ok()?;
+        let midi = note.to_midi_checked().ok()?;
+        let channel = match note {
+            Note::Drum(_) => 9,
+            _ => self.track_channel_for_row(row)?,
+        };
+        self.player
+            .preview_note(channel, midi, 96, Duration::from_millis(180));
+        Some(())
+    }
+
+    fn track_channel_for_row(&self, row: usize) -> Option<u8> {
+        self.textarea
+            .lines()
+            .iter()
+            .take(row + 1)
+            .rev()
+            .find_map(|line| parse_track_header_channel(line))
     }
 
     fn push_source_undo(&mut self) {
@@ -1317,6 +1418,23 @@ fn toggle_loop_frontmatter(source: &str) -> std::result::Result<(String, bool), 
     Ok((finish_source(lines), true))
 }
 
+fn parse_track_header_channel(line: &str) -> Option<u8> {
+    let trimmed = line.trim();
+    if trimmed.starts_with("##") || !trimmed.starts_with('#') {
+        return None;
+    }
+
+    let (_, rest) = trimmed.split_once(':')?;
+    let channel = rest
+        .trim_start()
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>()
+        .parse::<u8>()
+        .ok()?;
+    crate::validation::to_zero_based_channel(channel).ok()
+}
+
 fn finish_source(lines: Vec<String>) -> String {
     let mut source = lines.join("\n");
     source.push('\n');
@@ -1325,7 +1443,7 @@ fn finish_source(lines: Vec<String>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{toggle_loop_frontmatter, transpose_line};
+    use super::{parse_track_header_channel, toggle_loop_frontmatter, transpose_line};
 
     #[test]
     fn transpose_pitch_list_before_bar() {
@@ -1389,6 +1507,14 @@ mod tests {
             err,
             "Loop toggle supports only simple `loop: true` or `loop: false`"
         );
+    }
+
+    #[test]
+    fn parse_track_header_channel_returns_zero_based_channel() {
+        assert_eq!(parse_track_header_channel("# Piano: 2"), Some(1));
+        assert_eq!(parse_track_header_channel("# Drums: 10 mute"), Some(9));
+        assert_eq!(parse_track_header_channel("## sound 1"), None);
+        assert_eq!(parse_track_header_channel("# Invalid: 17"), None);
     }
 }
 
