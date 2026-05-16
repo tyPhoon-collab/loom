@@ -161,6 +161,9 @@ impl StudioApp {
             KeyCode::Char('V') => {
                 self.enter_line_select_mode();
             }
+            KeyCode::Char('L') => {
+                self.toggle_loop()?;
+            }
             KeyCode::Char('w') => {
                 self.save()?;
             }
@@ -818,6 +821,26 @@ impl StudioApp {
         Ok(())
     }
 
+    fn toggle_loop(&mut self) -> Result<()> {
+        match toggle_loop_frontmatter(&self.source()) {
+            Ok((source, enabled)) => {
+                self.push_source_undo();
+                self.replace_source(source);
+                self.dirty = true;
+                self.compile_and_update_current_source()?;
+                self.status_message = if enabled {
+                    "Loop: on".into()
+                } else {
+                    "Loop: off".into()
+                };
+            }
+            Err(message) => {
+                self.status_message = message;
+            }
+        }
+        Ok(())
+    }
+
     fn push_source_undo(&mut self) {
         self.source_undo_stack.push(self.source());
         const MAX_SOURCE_UNDO: usize = 32;
@@ -1246,9 +1269,63 @@ fn midi_to_loom_pitch(midi: u8) -> String {
     format!("{}{}", name, octave)
 }
 
+fn toggle_loop_frontmatter(source: &str) -> std::result::Result<(String, bool), String> {
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+
+    if !matches!(lines.first().map(|line| line.as_str()), Some("---")) {
+        let source = if source.is_empty() {
+            "---\nloop: true\n---\n".to_string()
+        } else {
+            format!("---\nloop: true\n---\n\n{}", source)
+        };
+        return Ok((source, true));
+    }
+
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line == "---").then_some(index))
+    else {
+        return Err("Loop toggle failed: frontmatter block is not closed".to_string());
+    };
+
+    for line in lines.iter_mut().take(end_index).skip(1) {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("loop:") {
+            continue;
+        }
+
+        match trimmed {
+            "loop: true" => {
+                *line = "loop: false".to_string();
+                return Ok((finish_source(lines), false));
+            }
+            "loop: false" => {
+                *line = "loop: true".to_string();
+                return Ok((finish_source(lines), true));
+            }
+            _ => {
+                return Err(
+                    "Loop toggle supports only simple `loop: true` or `loop: false`".to_string(),
+                );
+            }
+        }
+    }
+
+    lines.insert(end_index, "loop: true".to_string());
+    Ok((finish_source(lines), true))
+}
+
+fn finish_source(lines: Vec<String>) -> String {
+    let mut source = lines.join("\n");
+    source.push('\n');
+    source
+}
+
 #[cfg(test)]
 mod tests {
-    use super::transpose_line;
+    use super::{toggle_loop_frontmatter, transpose_line};
 
     #[test]
     fn transpose_pitch_list_before_bar() {
@@ -1276,6 +1353,42 @@ mod tests {
         let (line, changed) = transpose_line("seq | D4 . Eb4 A#3 |", 1).unwrap();
         assert!(changed);
         assert_eq!(line, "seq | D#4 . E4 B3 |");
+    }
+
+    #[test]
+    fn toggle_loop_adds_frontmatter_when_missing() {
+        let (source, enabled) = toggle_loop_frontmatter("# Piano: 1\nC4 | ^ |\n").unwrap();
+        assert!(enabled);
+        assert_eq!(source, "---\nloop: true\n---\n\n# Piano: 1\nC4 | ^ |\n");
+    }
+
+    #[test]
+    fn toggle_loop_adds_key_to_existing_frontmatter() {
+        let (source, enabled) =
+            toggle_loop_frontmatter("---\nbpm: 100\n---\n# Piano: 1\n").unwrap();
+        assert!(enabled);
+        assert_eq!(source, "---\nbpm: 100\nloop: true\n---\n# Piano: 1\n");
+    }
+
+    #[test]
+    fn toggle_loop_turns_on_and_off() {
+        let (source, enabled) =
+            toggle_loop_frontmatter("---\nloop: false\n---\n# Piano: 1\n").unwrap();
+        assert!(enabled);
+        assert_eq!(source, "---\nloop: true\n---\n# Piano: 1\n");
+
+        let (source, enabled) = toggle_loop_frontmatter(&source).unwrap();
+        assert!(!enabled);
+        assert_eq!(source, "---\nloop: false\n---\n# Piano: 1\n");
+    }
+
+    #[test]
+    fn toggle_loop_rejects_non_simple_loop_value() {
+        let err = toggle_loop_frontmatter("---\nloop:\n  enabled: true\n---\n").unwrap_err();
+        assert_eq!(
+            err,
+            "Loop toggle supports only simple `loop: true` or `loop: false`"
+        );
     }
 }
 
