@@ -13,9 +13,24 @@ pub(super) enum StudioSelection {
         anchor: NoteTokenSpan,
         focus: NoteTokenSpan,
     },
+    Bar {
+        span: BarSpan,
+    },
+    BarRange {
+        anchor: BarSpan,
+        focus: BarSpan,
+    },
     LineRange {
         anchor_row: usize,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct BarSpan {
+    pub(super) row: usize,
+    pub(super) start_col: usize,
+    pub(super) end_col: usize,
+    pub(super) index: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +108,44 @@ pub(super) fn note_at_or_near_col(notes: Vec<NoteTokenSpan>, col: usize) -> Opti
         .cloned()
         .or_else(|| notes.iter().find(|note| note.start_col >= col).cloned())
         .or_else(|| notes.into_iter().next_back())
+}
+
+pub(super) fn bar_spans_in_line(row: usize, line: &str) -> Vec<BarSpan> {
+    let pipe_cols: Vec<usize> = line
+        .chars()
+        .enumerate()
+        .filter_map(|(col, ch)| (ch == '|').then_some(col))
+        .collect();
+
+    pipe_cols
+        .windows(2)
+        .enumerate()
+        .map(|(index, pair)| BarSpan {
+            row,
+            start_col: pair[0],
+            end_col: pair[1] + 1,
+            index,
+        })
+        .collect()
+}
+
+pub(super) fn bar_at_or_near_col(bars: Vec<BarSpan>, col: usize) -> Option<BarSpan> {
+    bars.iter()
+        .find(|bar| col >= bar.start_col && col < bar.end_col)
+        .cloned()
+        .or_else(|| bars.iter().find(|bar| bar.start_col >= col).cloned())
+        .or_else(|| bars.into_iter().next_back())
+}
+
+pub(super) fn ordered_bar_span_bounds<'a>(
+    left: &'a BarSpan,
+    right: &'a BarSpan,
+) -> (&'a BarSpan, &'a BarSpan) {
+    if (left.row, left.start_col) <= (right.row, right.start_col) {
+        (left, right)
+    } else {
+        (right, left)
+    }
 }
 
 pub(super) fn ordered_note_span_bounds<'a>(
@@ -208,8 +261,9 @@ fn char_to_byte_index(input: &str, char_index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_note_token, insert_at_col, note_at_or_near_col, note_spans_in_line,
-        ordered_note_span_bounds, replace_char_range, SelectableTokenKind,
+        bar_at_or_near_col, bar_spans_in_line, delete_note_token, insert_at_col,
+        note_at_or_near_col, note_spans_in_line, ordered_bar_span_bounds, ordered_note_span_bounds,
+        replace_char_range, SelectableTokenKind,
     };
 
     #[test]
@@ -319,5 +373,35 @@ mod tests {
         let (start, end) = ordered_note_span_bounds(&notes[2], &notes[0]);
         assert_eq!(start.token, "D4");
         assert_eq!(end.token, "Eb4");
+    }
+
+    #[test]
+    fn bar_spans_select_between_pipes_including_delimiters() {
+        let bars = bar_spans_in_line(0, "C4 | ^ . | . ^ |");
+        assert_eq!(bars.len(), 2);
+        assert_eq!(
+            (bars[0].start_col, bars[0].end_col, bars[0].index),
+            (3, 10, 0)
+        );
+        assert_eq!(
+            (bars[1].start_col, bars[1].end_col, bars[1].index),
+            (9, 16, 1)
+        );
+    }
+
+    #[test]
+    fn bar_select_falls_forward_and_back() {
+        let bars = bar_spans_in_line(0, "seq | C4 . | D4 . |");
+        assert_eq!(bar_at_or_near_col(bars.clone(), 6).unwrap().index, 0);
+        assert_eq!(bar_at_or_near_col(bars.clone(), 13).unwrap().index, 1);
+        assert_eq!(bar_at_or_near_col(bars, 99).unwrap().index, 1);
+    }
+
+    #[test]
+    fn ordered_bar_span_bounds_sorts_by_position() {
+        let bars = bar_spans_in_line(0, "seq | C4 . | D4 . |");
+        let (start, end) = ordered_bar_span_bounds(&bars[1], &bars[0]);
+        assert_eq!(start.index, 0);
+        assert_eq!(end.index, 1);
     }
 }

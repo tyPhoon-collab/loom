@@ -14,9 +14,10 @@ use ratatui::{
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::{
-    delete_note_token, insert_at_col, is_note_token_char, is_seq_line, note_at_or_near_col,
-    note_spans_in_line, ordered_note_span_bounds, replace_char_range, NoteTokenSpan,
-    SelectableTokenKind, StudioSelection,
+    bar_at_or_near_col, bar_spans_in_line, delete_note_token, insert_at_col, is_note_token_char,
+    is_seq_line, note_at_or_near_col, note_spans_in_line, ordered_bar_span_bounds,
+    ordered_note_span_bounds, replace_char_range, BarSpan, NoteTokenSpan, SelectableTokenKind,
+    StudioSelection,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -162,6 +163,12 @@ impl StudioApp {
             KeyCode::Char('V') => {
                 self.enter_line_select_mode();
             }
+            KeyCode::Char('b') => {
+                self.enter_bar_select_mode();
+            }
+            KeyCode::Char('B') => {
+                self.enter_line_bar_select_mode();
+            }
             KeyCode::Char('L') => {
                 self.toggle_loop()?;
             }
@@ -273,25 +280,25 @@ impl StudioApp {
                 self.duplicate_selected_notes()?;
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_note_selection(-1);
+                self.expand_selection_horizontal(-1);
             }
             KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_note_selection(1);
+                self.expand_selection_horizontal(1);
             }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_note_selection_vertical(-1);
+                self.expand_selection_vertical(-1);
             }
             KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_note_selection_vertical(1);
+                self.expand_selection_vertical(1);
             }
             KeyCode::Up | KeyCode::Char('k') => self.move_selection_vertical(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_vertical(1),
-            KeyCode::Left | KeyCode::Char('h') => self.move_note_selection(-1),
-            KeyCode::Right | KeyCode::Char('l') => self.move_note_selection(1),
-            KeyCode::Char('H') => self.expand_note_selection(-1),
-            KeyCode::Char('J') => self.expand_note_selection_vertical(1),
-            KeyCode::Char('K') => self.expand_note_selection_vertical(-1),
-            KeyCode::Char('L') => self.expand_note_selection(1),
+            KeyCode::Left | KeyCode::Char('h') => self.move_selection_horizontal(-1),
+            KeyCode::Right | KeyCode::Char('l') => self.move_selection_horizontal(1),
+            KeyCode::Char('H') => self.expand_selection_horizontal(-1),
+            KeyCode::Char('J') => self.expand_selection_vertical(1),
+            KeyCode::Char('K') => self.expand_selection_vertical(-1),
+            KeyCode::Char('L') => self.expand_selection_horizontal(1),
             _ => {}
         }
         Ok(())
@@ -369,11 +376,77 @@ impl StudioApp {
         self.status_message = format!("Select mode: {}", self.selection_label());
     }
 
+    fn enter_bar_select_mode(&mut self) {
+        let cursor = self.textarea.cursor();
+        let Some(bar) = self.bar_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No bar on this line".into();
+            return;
+        };
+
+        self.mode = StudioMode::Select;
+        self.selection = Some(StudioSelection::Bar { span: bar });
+        self.sync_selection_visual();
+        self.status_message = format!("Select mode: {}", self.selection_label());
+    }
+
+    fn enter_line_bar_select_mode(&mut self) {
+        let row = self.textarea.cursor().0;
+        let bars = self.bar_spans_on_line(row);
+        match (bars.first(), bars.last()) {
+            (Some(first), Some(last)) if first == last => {
+                self.mode = StudioMode::Select;
+                self.selection = Some(StudioSelection::Bar {
+                    span: first.clone(),
+                });
+            }
+            (Some(first), Some(last)) => {
+                self.mode = StudioMode::Select;
+                self.selection = Some(StudioSelection::BarRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+            _ => {
+                self.status_message = "No bars on this line".into();
+                return;
+            }
+        }
+        self.sync_selection_visual();
+        self.status_message = format!("Select mode: {}", self.selection_label());
+    }
+
     fn exit_select_mode(&mut self) {
         self.selection = None;
         self.textarea.cancel_selection();
         self.mode = StudioMode::Normal;
         self.status_message = format!("Normal mode: {}", self.cursor_label());
+    }
+
+    fn move_selection_horizontal(&mut self, direction: i32) {
+        match self.selection {
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
+                self.move_bar_selection(direction);
+            }
+            _ => self.move_note_selection(direction),
+        }
+    }
+
+    fn expand_selection_horizontal(&mut self, direction: i32) {
+        match self.selection {
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
+                self.expand_bar_selection(direction);
+            }
+            _ => self.expand_note_selection(direction),
+        }
+    }
+
+    fn expand_selection_vertical(&mut self, direction: i32) {
+        match self.selection {
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
+                self.expand_bar_selection_vertical(direction);
+            }
+            _ => self.expand_note_selection_vertical(direction),
+        }
     }
 
     fn move_note_selection(&mut self, direction: i32) {
@@ -447,6 +520,77 @@ impl StudioApp {
         self.expand_note_selection_to(note);
     }
 
+    fn move_bar_selection(&mut self, direction: i32) {
+        let Some(current) = self.focus_bar() else {
+            self.status_message = "No bar selected. Press b first.".into();
+            return;
+        };
+        let bars = self.bar_spans();
+        let Some(index) = bars.iter().position(|bar| bar == &current) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return;
+        };
+
+        let next_index = if direction < 0 {
+            index.checked_sub(1)
+        } else {
+            (index + 1 < bars.len()).then_some(index + 1)
+        };
+
+        let Some(next_index) = next_index else {
+            self.status_message = "No more bars".into();
+            return;
+        };
+
+        self.set_bar_selection(bars[next_index].clone());
+    }
+
+    fn expand_bar_selection(&mut self, direction: i32) {
+        let Some(focus) = self.focus_bar() else {
+            self.status_message = "No bar selected. Press b first.".into();
+            return;
+        };
+        let bars = self.bar_spans();
+        let Some(focus_index) = bars.iter().position(|bar| bar == &focus) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return;
+        };
+
+        let next_index = if direction < 0 {
+            focus_index.checked_sub(1)
+        } else {
+            (focus_index + 1 < bars.len()).then_some(focus_index + 1)
+        };
+
+        let Some(next_index) = next_index else {
+            self.status_message = "No more bars".into();
+            return;
+        };
+
+        self.expand_bar_selection_to(bars[next_index].clone());
+    }
+
+    fn expand_bar_selection_vertical(&mut self, direction: i32) {
+        let Some(focus) = self.focus_bar() else {
+            self.status_message = "No bar selected. Press b first.".into();
+            return;
+        };
+        let next_row = if direction < 0 {
+            focus.row.checked_sub(1)
+        } else {
+            (focus.row + 1 < self.textarea.lines().len()).then_some(focus.row + 1)
+        };
+        let Some(next_row) = next_row else {
+            self.status_message = "No more lines".into();
+            return;
+        };
+        let Some(bar) = self.nearest_bar_on_line(next_row, focus.start_col) else {
+            self.status_message = "No bar on target line".into();
+            return;
+        };
+        self.expand_bar_selection_to(bar);
+    }
+
     fn move_selection_vertical(&mut self, direction: i32) {
         match self.selection {
             Some(StudioSelection::LineRange { .. }) => {
@@ -458,6 +602,28 @@ impl StudioApp {
                 self.textarea.move_cursor(cursor_move);
                 self.sync_selection_visual();
                 self.status_message = format!("Select mode: {}", self.selection_label());
+            }
+            Some(StudioSelection::Bar {
+                span: BarSpan { row, start_col, .. },
+            })
+            | Some(StudioSelection::BarRange {
+                focus: BarSpan { row, start_col, .. },
+                ..
+            }) => {
+                let next_row = if direction < 0 {
+                    row.checked_sub(1)
+                } else {
+                    (row + 1 < self.textarea.lines().len()).then_some(row + 1)
+                };
+                let Some(next_row) = next_row else {
+                    self.status_message = "No more lines".into();
+                    return;
+                };
+                let Some(bar) = self.nearest_bar_on_line(next_row, start_col) else {
+                    self.status_message = "No bar on target line".into();
+                    return;
+                };
+                self.set_bar_selection(bar);
             }
             Some(StudioSelection::Note { row, start_col, .. })
             | Some(StudioSelection::NoteRange {
@@ -497,6 +663,12 @@ impl StudioApp {
         self.status_message = format!("Select mode: {}", self.selection_label());
     }
 
+    fn set_bar_selection(&mut self, bar: BarSpan) {
+        self.selection = Some(StudioSelection::Bar { span: bar });
+        self.sync_selection_visual();
+        self.status_message = format!("Select mode: {}", self.selection_label());
+    }
+
     fn expand_note_selection_to(&mut self, focus: NoteTokenSpan) {
         let anchor = match &self.selection {
             Some(StudioSelection::Note {
@@ -524,6 +696,21 @@ impl StudioApp {
         self.status_message = format!("Select mode: {}", self.selection_label());
     }
 
+    fn expand_bar_selection_to(&mut self, focus: BarSpan) {
+        let anchor = match &self.selection {
+            Some(StudioSelection::Bar { span }) => span.clone(),
+            Some(StudioSelection::BarRange { anchor, .. }) => anchor.clone(),
+            _ => {
+                self.status_message = "Current selection is not a bar selection".into();
+                return;
+            }
+        };
+
+        self.selection = Some(StudioSelection::BarRange { anchor, focus });
+        self.sync_selection_visual();
+        self.status_message = format!("Select mode: {}", self.selection_label());
+    }
+
     fn sync_selection_visual(&mut self) {
         let Some(selection) = self.selection.clone() else {
             return;
@@ -545,6 +732,21 @@ impl StudioApp {
             }
             StudioSelection::NoteRange { anchor, focus } => {
                 let (start, end) = ordered_note_span_bounds(&anchor, &focus);
+                self.textarea
+                    .move_cursor(CursorMove::Jump(start.row as u16, start.start_col as u16));
+                self.textarea.start_selection();
+                self.textarea
+                    .move_cursor(CursorMove::Jump(end.row as u16, end.end_col as u16));
+            }
+            StudioSelection::Bar { span } => {
+                self.textarea
+                    .move_cursor(CursorMove::Jump(span.row as u16, span.start_col as u16));
+                self.textarea.start_selection();
+                self.textarea
+                    .move_cursor(CursorMove::Jump(span.row as u16, span.end_col as u16));
+            }
+            StudioSelection::BarRange { anchor, focus } => {
+                let (start, end) = ordered_bar_span_bounds(&anchor, &focus);
                 self.textarea
                     .move_cursor(CursorMove::Jump(start.row as u16, start.start_col as u16));
                 self.textarea.start_selection();
@@ -587,6 +789,13 @@ impl StudioApp {
             Some(StudioSelection::Note { .. } | StudioSelection::NoteRange { .. })
         ) {
             return self.transpose_selected_notes(semitones);
+        }
+        if matches!(
+            self.selection,
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
+        ) {
+            self.status_message = "Bar transpose is not implemented yet".into();
+            return Ok(());
         }
 
         let (start, end) = self.selected_line_range();
@@ -960,6 +1169,10 @@ impl StudioApp {
             Some(StudioSelection::NoteRange { anchor, focus }) => {
                 (anchor.row.min(focus.row), anchor.row.max(focus.row))
             }
+            Some(StudioSelection::Bar { span }) => (span.row, span.row),
+            Some(StudioSelection::BarRange { anchor, focus }) => {
+                (anchor.row.min(focus.row), anchor.row.max(focus.row))
+            }
             None => {
                 let row = self.textarea.cursor().0;
                 (row, row)
@@ -1000,6 +1213,30 @@ impl StudioApp {
                     _ => "no notes".to_string(),
                 }
             }
+            Some(StudioSelection::Bar { span }) => {
+                format!("bar {} on line {}", span.index + 1, span.row + 1)
+            }
+            Some(StudioSelection::BarRange { anchor, focus }) => {
+                let (start, end) = ordered_bar_span_bounds(anchor, focus);
+                if start == end {
+                    format!("bar {} on line {}", start.index + 1, start.row + 1)
+                } else if start.row == end.row {
+                    format!(
+                        "bars {}..{} on line {}",
+                        start.index + 1,
+                        end.index + 1,
+                        start.row + 1
+                    )
+                } else {
+                    format!(
+                        "bars line {}:{} to line {}:{}",
+                        start.row + 1,
+                        start.index + 1,
+                        end.row + 1,
+                        end.index + 1
+                    )
+                }
+            }
             Some(StudioSelection::LineRange { .. }) | None => {
                 let (start, end) = self.selected_line_range();
                 if start == end {
@@ -1027,6 +1264,14 @@ impl StudioApp {
                 kind: *kind,
             }),
             Some(StudioSelection::NoteRange { focus, .. }) => Some(focus.clone()),
+            _ => None,
+        }
+    }
+
+    fn focus_bar(&self) -> Option<BarSpan> {
+        match &self.selection {
+            Some(StudioSelection::Bar { span }) => Some(span.clone()),
+            Some(StudioSelection::BarRange { focus, .. }) => Some(focus.clone()),
             _ => None,
         }
     }
@@ -1115,10 +1360,20 @@ impl StudioApp {
         note_at_or_near_col(self.note_spans_on_line(row), col)
     }
 
+    fn bar_at_or_after_cursor(&self, row: usize, col: usize) -> Option<BarSpan> {
+        bar_at_or_near_col(self.bar_spans_on_line(row), col)
+    }
+
     fn nearest_note_on_line(&self, row: usize, col: usize) -> Option<NoteTokenSpan> {
         self.note_spans_on_line(row)
             .into_iter()
             .min_by_key(|note| note.start_col.abs_diff(col))
+    }
+
+    fn nearest_bar_on_line(&self, row: usize, col: usize) -> Option<BarSpan> {
+        self.bar_spans_on_line(row)
+            .into_iter()
+            .min_by_key(|bar| bar.start_col.abs_diff(col))
     }
 
     fn note_token_spans(&self) -> Vec<NoteTokenSpan> {
@@ -1130,11 +1385,28 @@ impl StudioApp {
             .collect()
     }
 
+    fn bar_spans(&self) -> Vec<BarSpan> {
+        self.textarea
+            .lines()
+            .iter()
+            .enumerate()
+            .flat_map(|(row, _)| self.bar_spans_on_line(row))
+            .collect()
+    }
+
     fn note_spans_on_line(&self, row: usize) -> Vec<NoteTokenSpan> {
         self.textarea
             .lines()
             .get(row)
             .map(|line| note_spans_in_line(row, line))
+            .unwrap_or_default()
+    }
+
+    fn bar_spans_on_line(&self, row: usize) -> Vec<BarSpan> {
+        self.textarea
+            .lines()
+            .get(row)
+            .map(|line| bar_spans_in_line(row, line))
             .unwrap_or_default()
     }
 
@@ -1278,11 +1550,11 @@ impl StudioApp {
 
         let help = match self.mode {
             StudioMode::Normal => {
-                "i ins | v note select | V line select | +/- transpose | [] octave | space play | w save"
+                "i ins | v note | V line | b bar | B line bars | +/- transpose | space play | w save"
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {
-                "h/l move | H/L extend | x delete | r rest | s sustain | d duplicate | Esc"
+                "h/l move | H/L extend | j/k vertical | x delete | r rest | s sustain | d duplicate | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));
