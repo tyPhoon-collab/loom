@@ -13,8 +13,9 @@ use ratatui::{
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::{
-    is_note_token_char, note_at_or_near_col, note_spans_in_line, ordered_note_span_bounds,
-    replace_char_range, NoteTokenSpan, StudioSelection,
+    delete_note_token, insert_at_col, is_note_token_char, is_seq_line, note_at_or_near_col,
+    note_spans_in_line, ordered_note_span_bounds, replace_char_range, NoteTokenSpan,
+    SelectableTokenKind, StudioSelection,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -255,6 +256,18 @@ impl StudioApp {
             KeyCode::Char('[') => {
                 self.apply_transpose(-12);
             }
+            KeyCode::Char('x') => {
+                self.delete_selected_notes()?;
+            }
+            KeyCode::Char('r') => {
+                self.replace_selected_tokens(".")?;
+            }
+            KeyCode::Char('s') => {
+                self.replace_selected_tokens("-")?;
+            }
+            KeyCode::Char('d') => {
+                self.duplicate_selected_notes()?;
+            }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.expand_note_selection(-1);
             }
@@ -330,7 +343,7 @@ impl StudioApp {
     fn enter_note_select_mode(&mut self) {
         let cursor = self.textarea.cursor();
         let Some(note) = self.note_at_or_after_cursor(cursor.0, cursor.1) else {
-            self.status_message = "No note token on this line".into();
+            self.status_message = "No editable token on this line".into();
             return;
         };
 
@@ -340,6 +353,7 @@ impl StudioApp {
             start_col: note.start_col,
             end_col: note.end_col,
             token: note.token,
+            kind: note.kind,
         });
         self.sync_selection_visual();
         self.status_message = format!("Select mode: {}", self.selection_label());
@@ -354,12 +368,12 @@ impl StudioApp {
 
     fn move_note_selection(&mut self, direction: i32) {
         let Some(current) = self.focus_note() else {
-            self.status_message = "No note selected. Press v on a note first.".into();
+            self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
         let notes = self.note_token_spans();
         let Some(index) = notes.iter().position(|note| note == &current) else {
-            self.status_message = "Selected note no longer exists".into();
+            self.status_message = "Selected token no longer exists".into();
             return;
         };
 
@@ -370,7 +384,7 @@ impl StudioApp {
         };
 
         let Some(next_index) = next_index else {
-            self.status_message = "No more note tokens".into();
+            self.status_message = "No more editable tokens".into();
             return;
         };
 
@@ -379,12 +393,12 @@ impl StudioApp {
 
     fn expand_note_selection(&mut self, direction: i32) {
         let Some(focus) = self.focus_note() else {
-            self.status_message = "No note selected. Press v on a note first.".into();
+            self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
         let notes = self.note_token_spans();
         let Some(focus_index) = notes.iter().position(|note| note == &focus) else {
-            self.status_message = "Selected note no longer exists".into();
+            self.status_message = "Selected token no longer exists".into();
             return;
         };
 
@@ -395,7 +409,7 @@ impl StudioApp {
         };
 
         let Some(next_index) = next_index else {
-            self.status_message = "No more note tokens".into();
+            self.status_message = "No more editable tokens".into();
             return;
         };
 
@@ -404,7 +418,7 @@ impl StudioApp {
 
     fn expand_note_selection_vertical(&mut self, direction: i32) {
         let Some(focus) = self.focus_note() else {
-            self.status_message = "No note selected. Press v on a note first.".into();
+            self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
         let next_row = if direction < 0 {
@@ -417,7 +431,7 @@ impl StudioApp {
             return;
         };
         let Some(note) = self.nearest_note_on_line(next_row, focus.start_col) else {
-            self.status_message = "No note token on target line".into();
+            self.status_message = "No editable token on target line".into();
             return;
         };
         self.expand_note_selection_to(note);
@@ -450,7 +464,7 @@ impl StudioApp {
                     return;
                 };
                 let Some(note) = self.nearest_note_on_line(next_row, start_col) else {
-                    self.status_message = "No note token on target line".into();
+                    self.status_message = "No editable token on target line".into();
                     return;
                 };
                 self.set_note_selection(note);
@@ -467,6 +481,7 @@ impl StudioApp {
             start_col: note.start_col,
             end_col: note.end_col,
             token: note.token,
+            kind: note.kind,
         });
         self.sync_selection_visual();
         self.status_message = format!("Select mode: {}", self.selection_label());
@@ -479,11 +494,13 @@ impl StudioApp {
                 start_col,
                 end_col,
                 token,
+                kind,
             }) => NoteTokenSpan {
                 row: *row,
                 start_col: *start_col,
                 end_col: *end_col,
                 token: token.clone(),
+                kind: *kind,
             },
             Some(StudioSelection::NoteRange { anchor, .. }) => anchor.clone(),
             _ => {
@@ -605,12 +622,15 @@ impl StudioApp {
         let selected_indices = self.selected_note_indices();
         let selected_notes = self.selected_note_spans();
         if selected_notes.is_empty() {
-            self.status_message = "No note selected".into();
+            self.status_message = "No editable token selected".into();
             return Ok(());
         }
 
         let mut replacements = Vec::new();
         for note in selected_notes {
+            if note.kind != SelectableTokenKind::Note {
+                continue;
+            }
             let mut changed = false;
             let new_token = transpose_note_token(&note.token, semitones, &mut changed)?;
             if changed {
@@ -632,7 +652,7 @@ impl StudioApp {
         });
         for (note, new_token) in &replacements {
             let Some(line) = lines.get_mut(note.row) else {
-                self.status_message = "Selected note no longer exists".into();
+                self.status_message = "Selected token no longer exists".into();
                 return Ok(());
             };
             replace_char_range(line, note.start_col, note.end_col, new_token);
@@ -649,6 +669,151 @@ impl StudioApp {
             replacements.len(),
             if replacements.len() == 1 { "" } else { "s" },
             semitones
+        );
+        Ok(())
+    }
+
+    fn replace_selected_tokens(&mut self, replacement: &str) -> Result<()> {
+        let selected_indices = self.selected_note_indices();
+        let mut selected_notes = self.selected_note_spans();
+        if selected_notes.is_empty() {
+            self.status_message = "Replacement applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let replacement_name = match replacement {
+            "." => "Rested",
+            "-" => "Sustained",
+            _ => "Replaced",
+        };
+        selected_notes.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for note in &selected_notes {
+            let Some(line) = lines.get_mut(note.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(line, note.start_col, note.end_col, replacement);
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_note_selection_from_indices(&selected_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "{} {} token{}",
+            replacement_name,
+            selected_notes.len(),
+            if selected_notes.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    fn delete_selected_notes(&mut self) -> Result<()> {
+        let mut selected_notes = self.selected_note_spans();
+        if selected_notes.is_empty() {
+            self.status_message = "x applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let first = selected_notes.first().cloned();
+        selected_notes.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for note in &selected_notes {
+            let Some(line) = lines.get_mut(note.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            delete_note_token(line, note);
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        if let Some(note) = first {
+            self.textarea
+                .move_cursor(CursorMove::Jump(note.row as u16, note.start_col as u16));
+        }
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Deleted {} token{}",
+            selected_notes.len(),
+            if selected_notes.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    fn duplicate_selected_notes(&mut self) -> Result<()> {
+        let selected_indices = self.selected_note_indices();
+        let selected_notes = self.selected_note_spans();
+        if selected_notes.is_empty() {
+            self.status_message = "d applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let row = selected_notes[0].row;
+        if selected_notes.iter().any(|note| note.row != row) {
+            self.status_message = "Duplicate currently supports one seq line at a time".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected token no longer exists".into();
+            return Ok(());
+        };
+        if !is_seq_line(line) {
+            self.status_message = "Duplicate currently supports seq body tokens only".into();
+            return Ok(());
+        }
+
+        let Some(last_note) = selected_notes.last() else {
+            return Ok(());
+        };
+        let insertion = format!(
+            " {}",
+            selected_notes
+                .iter()
+                .map(|note| note.token.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        insert_at_col(line, last_note.end_col, &insertion);
+
+        let Some(last_selected_index) = selected_indices.iter().max().copied() else {
+            self.status_message = "Selected token no longer exists".into();
+            return Ok(());
+        };
+        let inserted_indices: Vec<usize> =
+            (last_selected_index + 1..=last_selected_index + selected_notes.len()).collect();
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_note_selection_from_indices(&inserted_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Duplicated {} token{}",
+            selected_notes.len(),
+            if selected_notes.len() == 1 { "" } else { "s" }
         );
         Ok(())
     }
@@ -729,11 +894,13 @@ impl StudioApp {
                 start_col,
                 end_col,
                 token,
+                kind,
             }) => Some(NoteTokenSpan {
                 row: *row,
                 start_col: *start_col,
                 end_col: *end_col,
                 token: token.clone(),
+                kind: *kind,
             }),
             Some(StudioSelection::NoteRange { focus, .. }) => Some(focus.clone()),
             _ => None,
@@ -748,12 +915,14 @@ impl StudioApp {
                 start_col,
                 end_col,
                 token,
+                kind,
             }) => {
                 let selected = NoteTokenSpan {
                     row: *row,
                     start_col: *start_col,
                     end_col: *end_col,
                     token: token.clone(),
+                    kind: *kind,
                 };
                 notes
                     .iter()
@@ -797,6 +966,7 @@ impl StudioApp {
                         start_col: note.start_col,
                         end_col: note.end_col,
                         token: note.token.clone(),
+                        kind: note.kind,
                     });
                 }
             }
@@ -988,7 +1158,7 @@ impl StudioApp {
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {
-                "h/l move note | H/L extend notes | j/k vertical | +/- transpose | Esc cancel"
+                "h/l move | H/L extend | x delete | r rest | s sustain | d duplicate | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));
