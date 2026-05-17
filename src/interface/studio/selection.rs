@@ -2,16 +2,16 @@ use crate::dsl::note::Note;
 
 #[derive(Clone, Debug)]
 pub(super) enum StudioSelection {
-    Note {
+    EditableToken {
         row: usize,
         start_col: usize,
         end_col: usize,
         token: String,
-        kind: SelectableTokenKind,
+        kind: EditableTokenKind,
     },
-    NoteRange {
-        anchor: NoteTokenSpan,
-        focus: NoteTokenSpan,
+    EditableTokenRange {
+        anchor: EditableTokenSpan,
+        focus: EditableTokenSpan,
     },
     Bar {
         span: BarSpan,
@@ -34,43 +34,63 @@ pub(super) struct BarSpan {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct NoteTokenSpan {
+pub(super) struct EditableTokenSpan {
     pub(super) row: usize,
     pub(super) start_col: usize,
     pub(super) end_col: usize,
     pub(super) token: String,
-    pub(super) kind: SelectableTokenKind,
+    pub(super) kind: EditableTokenKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SelectableTokenKind {
+pub(super) enum EditableTokenKind {
     Note,
+    NoteOn,
     Rest,
     Sustain,
 }
 
-pub(super) fn note_spans_in_line(row: usize, line: &str) -> Vec<NoteTokenSpan> {
+pub(super) fn editable_token_spans_in_line(row: usize, line: &str) -> Vec<EditableTokenSpan> {
     let Some(pipe_col) = line.chars().position(|ch| ch == '|') else {
         return Vec::new();
     };
 
     let head: String = line.chars().take(pipe_col).collect();
     let is_seq = head.trim() == "seq";
-    let scan_start_col = if is_seq { pipe_col + 1 } else { 0 };
-    let scan_end_col = if is_seq {
-        line.chars().count()
-    } else {
-        pipe_col
-    };
-
     let mut spans = Vec::new();
+
+    if is_seq {
+        scan_note_like_tokens(
+            &mut spans,
+            row,
+            line,
+            pipe_col + 1,
+            line.chars().count(),
+            true,
+        );
+    } else {
+        scan_note_like_tokens(&mut spans, row, line, 0, pipe_col, false);
+        spans.extend(lane_body_token_spans_in_line(row, line));
+    }
+
+    spans
+}
+
+fn scan_note_like_tokens(
+    spans: &mut Vec<EditableTokenSpan>,
+    row: usize,
+    line: &str,
+    scan_start_col: usize,
+    scan_end_col: usize,
+    is_seq: bool,
+) {
     let mut token = String::new();
     let mut token_start = 0usize;
 
     for (col, ch) in line.chars().enumerate() {
         if col < scan_start_col || col >= scan_end_col {
             if !token.is_empty() {
-                push_selectable_span(&mut spans, row, token_start, col, &token, is_seq);
+                push_selectable_span(spans, row, token_start, col, &token, is_seq);
                 token.clear();
             }
             continue;
@@ -82,14 +102,14 @@ pub(super) fn note_spans_in_line(row: usize, line: &str) -> Vec<NoteTokenSpan> {
             }
             token.push(ch);
         } else if !token.is_empty() {
-            push_selectable_span(&mut spans, row, token_start, col, &token, is_seq);
+            push_selectable_span(spans, row, token_start, col, &token, is_seq);
             token.clear();
         }
     }
 
     if !token.is_empty() {
         push_selectable_span(
-            &mut spans,
+            spans,
             row,
             token_start,
             line.chars().count(),
@@ -97,11 +117,58 @@ pub(super) fn note_spans_in_line(row: usize, line: &str) -> Vec<NoteTokenSpan> {
             is_seq,
         );
     }
+}
 
+pub(super) fn lane_body_token_spans_in_line(row: usize, line: &str) -> Vec<EditableTokenSpan> {
+    let mut spans = Vec::new();
+    if is_seq_line(line) || lane_head_token(line).is_none() {
+        return spans;
+    }
+
+    let chars: Vec<char> = line.chars().collect();
+    for bar in bar_spans_in_line(row, line) {
+        for col in bar.start_col + 1..bar.end_col.saturating_sub(1) {
+            let Some(ch) = chars.get(col).copied() else {
+                continue;
+            };
+            let kind = match ch {
+                '^' => EditableTokenKind::NoteOn,
+                '.' => EditableTokenKind::Rest,
+                '-' => EditableTokenKind::Sustain,
+                _ => continue,
+            };
+            spans.push(EditableTokenSpan {
+                row,
+                start_col: col,
+                end_col: col + 1,
+                token: ch.to_string(),
+                kind,
+            });
+        }
+    }
     spans
 }
 
-pub(super) fn note_at_or_near_col(notes: Vec<NoteTokenSpan>, col: usize) -> Option<NoteTokenSpan> {
+pub(super) fn lane_head_token(line: &str) -> Option<String> {
+    let pipe_col = line.chars().position(|ch| ch == '|')?;
+    let head: String = line.chars().take(pipe_col).collect();
+    let head = head.trim();
+    (!head.is_empty() && head != "seq").then(|| head.to_string())
+}
+
+pub(super) fn is_lane_body_token(line: &str, token: &EditableTokenSpan) -> bool {
+    if is_seq_line(line) {
+        return false;
+    }
+    line.chars()
+        .position(|ch| ch == '|')
+        .is_some_and(|pipe_col| token.start_col > pipe_col)
+}
+
+pub(super) fn editable_token_at_or_near_col(
+    notes: Vec<EditableTokenSpan>,
+    col: usize,
+) -> Option<EditableTokenSpan> {
     notes
         .iter()
         .find(|note| col >= note.start_col && col < note.end_col)
@@ -148,10 +215,10 @@ pub(super) fn ordered_bar_span_bounds<'a>(
     }
 }
 
-pub(super) fn ordered_note_span_bounds<'a>(
-    left: &'a NoteTokenSpan,
-    right: &'a NoteTokenSpan,
-) -> (&'a NoteTokenSpan, &'a NoteTokenSpan) {
+pub(super) fn ordered_editable_token_span_bounds<'a>(
+    left: &'a EditableTokenSpan,
+    right: &'a EditableTokenSpan,
+) -> (&'a EditableTokenSpan, &'a EditableTokenSpan) {
     if (left.row, left.start_col) <= (right.row, right.start_col) {
         (left, right)
     } else {
@@ -176,7 +243,7 @@ pub(super) fn char_range(line: &str, start_col: usize, end_col: usize) -> String
     line[start..end].to_string()
 }
 
-pub(super) fn delete_note_token(line: &mut String, note: &NoteTokenSpan) {
+pub(super) fn delete_editable_token(line: &mut String, note: &EditableTokenSpan) {
     let chars: Vec<char> = line.chars().collect();
     let mut start_col = note.start_col;
     let mut end_col = note.end_col;
@@ -218,7 +285,7 @@ pub(super) fn is_seq_line(line: &str) -> bool {
 }
 
 fn push_selectable_span(
-    spans: &mut Vec<NoteTokenSpan>,
+    spans: &mut Vec<EditableTokenSpan>,
     row: usize,
     start_col: usize,
     end_col: usize,
@@ -226,8 +293,8 @@ fn push_selectable_span(
     is_seq: bool,
 ) {
     let kind = match token {
-        "." if is_seq => SelectableTokenKind::Rest,
-        "-" if is_seq => SelectableTokenKind::Sustain,
+        "." if is_seq => EditableTokenKind::Rest,
+        "-" if is_seq => EditableTokenKind::Sustain,
         _ => {
             let Ok(note) = token.parse::<Note>() else {
                 return;
@@ -235,11 +302,11 @@ fn push_selectable_span(
             if matches!(note, Note::Drum(_)) {
                 return;
             }
-            SelectableTokenKind::Note
+            EditableTokenKind::Note
         }
     };
 
-    spans.push(NoteTokenSpan {
+    spans.push(EditableTokenSpan {
         row,
         start_col,
         end_col,
@@ -267,40 +334,67 @@ fn char_to_byte_index(input: &str, char_index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        bar_at_or_near_col, bar_spans_in_line, delete_note_token, insert_at_col,
-        note_at_or_near_col, note_spans_in_line, ordered_bar_span_bounds, ordered_note_span_bounds,
-        replace_char_range, SelectableTokenKind,
+        bar_at_or_near_col, bar_spans_in_line, delete_editable_token,
+        editable_token_at_or_near_col, editable_token_spans_in_line, insert_at_col,
+        ordered_bar_span_bounds, ordered_editable_token_span_bounds, replace_char_range,
+        EditableTokenKind,
     };
 
     #[test]
     fn token_spans_seq_body_includes_rest_and_sustain() {
-        let spans = note_spans_in_line(0, "seq | D4 . Eb4 - A#3 |");
+        let spans = editable_token_spans_in_line(0, "seq | D4 . Eb4 - A#3 |");
         let tokens: Vec<_> = spans.iter().map(|span| span.token.as_str()).collect();
         let kinds: Vec<_> = spans.iter().map(|span| span.kind).collect();
         assert_eq!(tokens, vec!["D4", ".", "Eb4", "-", "A#3"]);
         assert_eq!(
             kinds,
             vec![
-                SelectableTokenKind::Note,
-                SelectableTokenKind::Rest,
-                SelectableTokenKind::Note,
-                SelectableTokenKind::Sustain,
-                SelectableTokenKind::Note
+                EditableTokenKind::Note,
+                EditableTokenKind::Rest,
+                EditableTokenKind::Note,
+                EditableTokenKind::Sustain,
+                EditableTokenKind::Note
             ]
         );
     }
 
     #[test]
-    fn note_spans_note_head_only() {
-        let spans = note_spans_in_line(0, "F4,C5 | ^ . |");
+    fn note_spans_note_head_and_lane_body() {
+        let spans = editable_token_spans_in_line(0, "F4,C5 | ^ . |");
         let tokens: Vec<_> = spans.iter().map(|span| span.token.as_str()).collect();
-        assert_eq!(tokens, vec!["F4", "C5"]);
+        let kinds: Vec<_> = spans.iter().map(|span| span.kind).collect();
+        assert_eq!(tokens, vec!["F4", "C5", "^", "."]);
+        assert_eq!(
+            kinds,
+            vec![
+                EditableTokenKind::Note,
+                EditableTokenKind::Note,
+                EditableTokenKind::NoteOn,
+                EditableTokenKind::Rest,
+            ]
+        );
+    }
+
+    #[test]
+    fn note_spans_drum_lane_body_excludes_drum_head() {
+        let spans = editable_token_spans_in_line(0, "kick | ^ . - |");
+        let tokens: Vec<_> = spans.iter().map(|span| span.token.as_str()).collect();
+        let kinds: Vec<_> = spans.iter().map(|span| span.kind).collect();
+        assert_eq!(tokens, vec!["^", ".", "-"]);
+        assert_eq!(
+            kinds,
+            vec![
+                EditableTokenKind::NoteOn,
+                EditableTokenKind::Rest,
+                EditableTokenKind::Sustain,
+            ]
+        );
     }
 
     #[test]
     fn replace_selected_note_token() {
         let mut line = "seq | D4 . Eb4 |".to_string();
-        let span = note_spans_in_line(0, &line)
+        let span = editable_token_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "Eb4")
             .unwrap();
@@ -309,42 +403,42 @@ mod tests {
     }
 
     #[test]
-    fn delete_note_token_removes_following_space() {
+    fn delete_editable_token_removes_following_space() {
         let mut line = "seq | C4 D4 E4 |".to_string();
-        let span = note_spans_in_line(0, &line)
+        let span = editable_token_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "D4")
             .unwrap();
-        delete_note_token(&mut line, &span);
+        delete_editable_token(&mut line, &span);
         assert_eq!(line, "seq | C4 E4 |");
     }
 
     #[test]
-    fn delete_note_token_removes_adjacent_comma() {
+    fn delete_editable_token_removes_adjacent_comma() {
         let mut line = "F4,C5,D5 | ^ |".to_string();
-        let span = note_spans_in_line(0, &line)
+        let span = editable_token_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "C5")
             .unwrap();
-        delete_note_token(&mut line, &span);
+        delete_editable_token(&mut line, &span);
         assert_eq!(line, "F4,D5 | ^ |");
     }
 
     #[test]
     fn delete_rest_token_removes_following_space() {
         let mut line = "seq | C4 . E4 |".to_string();
-        let span = note_spans_in_line(0, &line)
+        let span = editable_token_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == ".")
             .unwrap();
-        delete_note_token(&mut line, &span);
+        delete_editable_token(&mut line, &span);
         assert_eq!(line, "seq | C4 E4 |");
     }
 
     #[test]
     fn insert_at_col_inserts_text() {
         let mut line = "seq | C4 D4 E4 |".to_string();
-        let span = note_spans_in_line(0, &line)
+        let span = editable_token_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "D4")
             .unwrap();
@@ -354,29 +448,29 @@ mod tests {
 
     #[test]
     fn note_select_uses_note_under_cursor() {
-        let notes = note_spans_in_line(0, "seq | D4 . Eb4 |");
-        let selected = note_at_or_near_col(notes, 6).unwrap();
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let selected = editable_token_at_or_near_col(notes, 6).unwrap();
         assert_eq!(selected.token, "D4");
     }
 
     #[test]
     fn note_select_falls_forward() {
-        let notes = note_spans_in_line(0, "seq | D4 . Eb4 |");
-        let selected = note_at_or_near_col(notes, 9).unwrap();
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let selected = editable_token_at_or_near_col(notes, 9).unwrap();
         assert_eq!(selected.token, ".");
     }
 
     #[test]
     fn note_select_falls_back_to_last_note() {
-        let notes = note_spans_in_line(0, "seq | D4 . Eb4 |");
-        let selected = note_at_or_near_col(notes, 99).unwrap();
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let selected = editable_token_at_or_near_col(notes, 99).unwrap();
         assert_eq!(selected.token, "Eb4");
     }
 
     #[test]
-    fn ordered_note_span_bounds_sorts_by_position() {
-        let notes = note_spans_in_line(0, "seq | D4 . Eb4 |");
-        let (start, end) = ordered_note_span_bounds(&notes[2], &notes[0]);
+    fn ordered_editable_token_span_bounds_sorts_by_position() {
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let (start, end) = ordered_editable_token_span_bounds(&notes[2], &notes[0]);
         assert_eq!(start.token, "D4");
         assert_eq!(end.token, "Eb4");
     }

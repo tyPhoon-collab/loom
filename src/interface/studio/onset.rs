@@ -1,18 +1,12 @@
 use super::input::ONSET_HELP;
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
+    bar_at_or_near_col, bar_spans_in_line, insert_at_col, lane_body_token_spans_in_line,
+    lane_head_token, replace_char_range, EditableTokenSpan,
 };
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use ratatui_textarea::CursorMove;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct OnsetTokenSpan {
-    start_col: usize,
-    end_col: usize,
-    token: char,
-}
 
 struct PlacedOnset {
     index_on_line: usize,
@@ -64,7 +58,8 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        if let Some(onset) = onset_spans_in_line(
+        if let Some(onset) = lane_body_token_spans_in_line(
+            cursor.0,
             self.textarea
                 .lines()
                 .get(cursor.0)
@@ -92,7 +87,7 @@ impl StudioApp {
         };
 
         let token = current_onset_token(line, cursor.1)
-            .map(|span| if span.token == '^' { '.' } else { '^' })
+            .map(|span| if span.token == "^" { '.' } else { '^' })
             .unwrap_or('^');
         let Ok(placed) = place_lane_onset_at_slot(cursor.0, line, cursor.1, token) else {
             self.status_message = "Onset toggle needs a note-head or drum lane line".into();
@@ -106,7 +101,8 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        if let Some(onset) = onset_spans_in_line(
+        if let Some(onset) = lane_body_token_spans_in_line(
+            cursor.0,
             self.textarea
                 .lines()
                 .get(cursor.0)
@@ -127,16 +123,16 @@ impl StudioApp {
 }
 
 fn place_lane_onset_at_slot(
-    _row: usize,
+    row: usize,
     line: &mut String,
     col: usize,
     token: char,
 ) -> std::result::Result<PlacedOnset, ()> {
-    if is_seq_line(line) || lane_head_token(line).is_none() {
+    if lane_head_token(line).is_none() {
         return Err(());
     }
 
-    let onsets = onset_spans_in_line(line);
+    let onsets = lane_body_token_spans_in_line(row, line);
     if let Some((index, onset)) = onset_at_or_near_col_with_index(&onsets, col) {
         replace_char_range(line, onset.start_col, onset.end_col, &token.to_string());
         return Ok(PlacedOnset {
@@ -165,35 +161,15 @@ fn place_lane_onset_at_slot(
     })
 }
 
-fn current_onset_token(line: &str, col: usize) -> Option<OnsetTokenSpan> {
-    let onsets = onset_spans_in_line(line);
+fn current_onset_token(line: &str, col: usize) -> Option<EditableTokenSpan> {
+    let onsets = lane_body_token_spans_in_line(0, line);
     onset_at_or_near_col_with_index(&onsets, col).map(|(_, onset)| onset)
 }
 
-fn onset_spans_in_line(line: &str) -> Vec<OnsetTokenSpan> {
-    let mut spans = Vec::new();
-    for bar in bar_spans_in_line(0, line) {
-        let chars: Vec<char> = line.chars().collect();
-        for col in bar.start_col + 1..bar.end_col.saturating_sub(1) {
-            let Some(ch) = chars.get(col).copied() else {
-                continue;
-            };
-            if matches!(ch, '^' | '.' | '-') {
-                spans.push(OnsetTokenSpan {
-                    start_col: col,
-                    end_col: col + 1,
-                    token: ch,
-                });
-            }
-        }
-    }
-    spans
-}
-
 fn onset_at_or_near_col_with_index(
-    onsets: &[OnsetTokenSpan],
+    onsets: &[EditableTokenSpan],
     col: usize,
-) -> Option<(usize, OnsetTokenSpan)> {
+) -> Option<(usize, EditableTokenSpan)> {
     onsets
         .iter()
         .enumerate()
@@ -213,13 +189,6 @@ fn onset_at_or_near_col_with_index(
                 .next_back()
                 .map(|(index, onset)| (index, onset.clone()))
         })
-}
-
-fn lane_head_token(line: &str) -> Option<String> {
-    let pipe_col = line.chars().position(|ch| ch == '|')?;
-    let head: String = line.chars().take(pipe_col).collect();
-    let head = head.trim();
-    (!head.is_empty() && head != "seq").then(|| head.to_string())
 }
 
 #[cfg(test)]

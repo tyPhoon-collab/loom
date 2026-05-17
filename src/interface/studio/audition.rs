@@ -1,5 +1,6 @@
 use super::selection::{
-    note_at_or_near_col, note_spans_in_line, NoteTokenSpan, SelectableTokenKind,
+    editable_token_at_or_near_col, editable_token_spans_in_line, EditableTokenKind,
+    EditableTokenSpan,
 };
 use super::settings::parse_track_header_channel;
 use super::StudioApp;
@@ -27,7 +28,7 @@ impl StudioApp {
             start_row
         };
 
-        note_at_or_near_col(
+        editable_token_at_or_near_col(
             self.auditionable_spans_in_line(lines, preferred_row),
             cursor.1,
         )
@@ -45,13 +46,13 @@ impl StudioApp {
         &self,
         lines: &[String],
         row: usize,
-    ) -> Vec<NoteTokenSpan> {
+    ) -> Vec<EditableTokenSpan> {
         lines
             .get(row)
             .map(|line| {
-                note_spans_in_line(row, line)
+                editable_token_spans_in_line(row, line)
                     .into_iter()
-                    .filter(|note| note.kind == SelectableTokenKind::Note)
+                    .filter(|note| note.kind == EditableTokenKind::Note)
                     .collect()
             })
             .unwrap_or_default()
@@ -61,11 +62,11 @@ impl StudioApp {
         &self,
         indices: &[usize],
     ) -> Option<(usize, String)> {
-        let notes = self.note_token_spans();
+        let notes = self.editable_token_spans();
         indices.iter().find_map(|index| {
             notes
                 .get(*index)
-                .filter(|note| note.kind == SelectableTokenKind::Note)
+                .filter(|note| note.kind == EditableTokenKind::Note)
                 .map(|note| (note.row, note.token.clone()))
         })
     }

@@ -1,7 +1,8 @@
 use super::input::ADD_HELP;
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, note_at_or_near_col,
-    note_spans_in_line, replace_char_range, NoteTokenSpan,
+    bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
+    editable_token_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
+    EditableTokenSpan,
 };
 use super::settings::parse_track_header_channel;
 use super::StudioApp;
@@ -169,7 +170,10 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        if let Some(note) = self.note_spans_on_line(cursor.0).get(slot.index_on_line) {
+        if let Some(note) = self
+            .editable_token_spans_on_line(cursor.0)
+            .get(slot.index_on_line)
+        {
             self.textarea
                 .move_cursor(CursorMove::Jump(cursor.0 as u16, note.start_col as u16));
         }
@@ -184,7 +188,7 @@ impl StudioApp {
 
     pub(super) fn note_token_for_add(&self) -> String {
         let cursor = self.textarea.cursor();
-        if let Some(note) = note_at_or_near_col(
+        if let Some(note) = editable_token_at_or_near_col(
             self.auditionable_spans_in_line(self.textarea.lines(), cursor.0),
             cursor.1,
         ) {
@@ -254,8 +258,8 @@ fn place_seq_token_at_slot(
         return Err(());
     }
 
-    let notes = note_spans_in_line(row, line);
-    if let Some((index, note)) = note_at_or_near_col_with_index(&notes, col) {
+    let notes = editable_token_spans_in_line(row, line);
+    if let Some((index, note)) = editable_token_at_or_near_col_with_index(&notes, col) {
         replace_char_range(line, note.start_col, note.end_col, token);
         return Ok(PlacedSlot {
             index_on_line: index,
@@ -279,10 +283,10 @@ fn place_seq_token_at_slot(
     Ok(PlacedSlot { index_on_line: 0 })
 }
 
-fn note_at_or_near_col_with_index(
-    notes: &[NoteTokenSpan],
+fn editable_token_at_or_near_col_with_index(
+    notes: &[EditableTokenSpan],
     col: usize,
-) -> Option<(usize, NoteTokenSpan)> {
+) -> Option<(usize, EditableTokenSpan)> {
     notes
         .iter()
         .enumerate()

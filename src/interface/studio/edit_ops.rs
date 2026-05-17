@@ -1,6 +1,7 @@
 use super::selection::{
-    bar_spans_in_line, char_range, delete_note_token, insert_at_col, is_seq_line,
-    note_spans_in_line, replace_char_range, SelectableTokenKind, StudioSelection,
+    bar_spans_in_line, char_range, delete_editable_token, editable_token_spans_in_line,
+    insert_at_col, is_lane_body_token, is_seq_line, replace_char_range, EditableTokenKind,
+    StudioSelection,
 };
 use super::transform::{transpose_bar_text, transpose_line, transpose_note_token};
 use super::{StudioApp, StudioMode};
@@ -11,9 +12,11 @@ impl StudioApp {
     pub(super) fn transpose_selection(&mut self, semitones: i32) -> Result<()> {
         if matches!(
             self.selection,
-            Some(StudioSelection::Note { .. } | StudioSelection::NoteRange { .. })
+            Some(
+                StudioSelection::EditableToken { .. } | StudioSelection::EditableTokenRange { .. }
+            )
         ) {
-            return self.transpose_selected_notes(semitones);
+            return self.transpose_selected_editable_tokens(semitones);
         }
         if matches!(
             self.selection,
@@ -113,10 +116,10 @@ impl StudioApp {
             let new_bar = bar_spans_in_line(old_bar.row, line)
                 .into_iter()
                 .find(|bar| bar.index == old_bar.index)?;
-            note_spans_in_line(old_bar.row, line)
+            editable_token_spans_in_line(old_bar.row, line)
                 .into_iter()
                 .find(|note| {
-                    note.kind == SelectableTokenKind::Note
+                    note.kind == EditableTokenKind::Note
                         && note.start_col >= new_bar.start_col
                         && note.end_col <= new_bar.end_col
                 })
@@ -139,17 +142,17 @@ impl StudioApp {
         Ok(())
     }
 
-    pub(super) fn transpose_selected_notes(&mut self, semitones: i32) -> Result<()> {
-        let selected_indices = self.selected_note_indices();
-        let selected_notes = self.selected_note_spans();
-        if selected_notes.is_empty() {
+    pub(super) fn transpose_selected_editable_tokens(&mut self, semitones: i32) -> Result<()> {
+        let selected_indices = self.selected_editable_token_indices();
+        let selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
             self.status_message = "No editable token selected".into();
             return Ok(());
         }
 
         let mut replacements = Vec::new();
-        for note in selected_notes {
-            if note.kind != SelectableTokenKind::Note {
+        for note in selected_tokens {
+            if note.kind != EditableTokenKind::Note {
                 continue;
             }
             let mut changed = false;
@@ -185,7 +188,7 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_note_selection_from_indices(&selected_indices);
+        self.restore_editable_token_selection_from_indices(&selected_indices);
         self.sync_selection_visual();
         self.dirty = true;
         self.compile_and_update_current_source()?;
@@ -200,10 +203,22 @@ impl StudioApp {
     }
 
     pub(super) fn replace_selected_tokens(&mut self, replacement: &str) -> Result<()> {
-        let selected_indices = self.selected_note_indices();
-        let mut selected_notes = self.selected_note_spans();
-        if selected_notes.is_empty() {
+        let selected_indices = self.selected_editable_token_indices();
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
             self.status_message = "Replacement applies to editable token selection only".into();
+            return Ok(());
+        }
+        let lines = self.textarea.lines();
+        if replacement != "."
+            && replacement != "-"
+            && selected_tokens.iter().any(|note| {
+                lines
+                    .get(note.row)
+                    .is_some_and(|line| is_lane_body_token(line, note))
+            })
+        {
+            self.status_message = "Note entry does not apply to lane body tokens".into();
             return Ok(());
         }
 
@@ -212,7 +227,7 @@ impl StudioApp {
             "-" => "Sustained",
             _ => "Replaced",
         };
-        selected_notes.sort_by(|left, right| {
+        selected_tokens.sort_by(|left, right| {
             right
                 .row
                 .cmp(&left.row)
@@ -220,7 +235,7 @@ impl StudioApp {
         });
 
         let mut lines = self.textarea.lines().to_vec();
-        for note in &selected_notes {
+        for note in &selected_tokens {
             let Some(line) = lines.get_mut(note.row) else {
                 self.status_message = "Selected token no longer exists".into();
                 return Ok(());
@@ -230,28 +245,28 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_note_selection_from_indices(&selected_indices);
+        self.restore_editable_token_selection_from_indices(&selected_indices);
         self.sync_selection_visual();
         self.dirty = true;
         self.compile_and_update_current_source()?;
         self.status_message = format!(
             "{} {} token{}",
             replacement_name,
-            selected_notes.len(),
-            if selected_notes.len() == 1 { "" } else { "s" }
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
         );
         Ok(())
     }
 
-    pub(super) fn delete_selected_notes(&mut self) -> Result<()> {
-        let mut selected_notes = self.selected_note_spans();
-        if selected_notes.is_empty() {
+    pub(super) fn delete_selected_editable_tokens(&mut self) -> Result<()> {
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
             self.status_message = "x applies to editable token selection only".into();
             return Ok(());
         }
 
-        let first = selected_notes.first().cloned();
-        selected_notes.sort_by(|left, right| {
+        let first = selected_tokens.first().cloned();
+        selected_tokens.sort_by(|left, right| {
             right
                 .row
                 .cmp(&left.row)
@@ -259,12 +274,12 @@ impl StudioApp {
         });
 
         let mut lines = self.textarea.lines().to_vec();
-        for note in &selected_notes {
+        for note in &selected_tokens {
             let Some(line) = lines.get_mut(note.row) else {
                 self.status_message = "Selected token no longer exists".into();
                 return Ok(());
             };
-            delete_note_token(line, note);
+            delete_editable_token(line, note);
         }
 
         self.push_source_undo();
@@ -280,8 +295,8 @@ impl StudioApp {
         self.compile_and_update_current_source()?;
         self.status_message = format!(
             "Deleted {} token{}",
-            selected_notes.len(),
-            if selected_notes.len() == 1 { "" } else { "s" }
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
         );
         Ok(())
     }
@@ -293,7 +308,7 @@ impl StudioApp {
         ) {
             self.delete_selected_bars()
         } else {
-            self.delete_selected_notes()
+            self.delete_selected_editable_tokens()
         }
     }
 
@@ -351,20 +366,20 @@ impl StudioApp {
         ) {
             self.duplicate_selected_bars()
         } else {
-            self.duplicate_selected_notes()
+            self.duplicate_selected_editable_tokens()
         }
     }
 
-    pub(super) fn duplicate_selected_notes(&mut self) -> Result<()> {
-        let selected_indices = self.selected_note_indices();
-        let selected_notes = self.selected_note_spans();
-        if selected_notes.is_empty() {
+    pub(super) fn duplicate_selected_editable_tokens(&mut self) -> Result<()> {
+        let selected_indices = self.selected_editable_token_indices();
+        let selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
             self.status_message = "d applies to editable token selection only".into();
             return Ok(());
         }
 
-        let row = selected_notes[0].row;
-        if selected_notes.iter().any(|note| note.row != row) {
+        let row = selected_tokens[0].row;
+        if selected_tokens.iter().any(|note| note.row != row) {
             self.status_message = "Duplicate currently supports one seq line at a time".into();
             return Ok(());
         }
@@ -374,42 +389,47 @@ impl StudioApp {
             self.status_message = "Selected token no longer exists".into();
             return Ok(());
         };
-        if !is_seq_line(line) {
-            self.status_message = "Duplicate currently supports seq body tokens only".into();
+        let Some(last_token) = selected_tokens.last() else {
+            return Ok(());
+        };
+        if !is_seq_line(line)
+            && !selected_tokens
+                .iter()
+                .all(|note| is_lane_body_token(line, note))
+        {
+            self.status_message =
+                "Duplicate currently supports seq body or lane body tokens only".into();
             return Ok(());
         }
 
-        let Some(last_note) = selected_notes.last() else {
-            return Ok(());
-        };
         let insertion = format!(
             " {}",
-            selected_notes
+            selected_tokens
                 .iter()
                 .map(|note| note.token.as_str())
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        insert_at_col(line, last_note.end_col, &insertion);
+        insert_at_col(line, last_token.end_col, &insertion);
 
         let Some(last_selected_index) = selected_indices.iter().max().copied() else {
             self.status_message = "Selected token no longer exists".into();
             return Ok(());
         };
         let inserted_indices: Vec<usize> =
-            (last_selected_index + 1..=last_selected_index + selected_notes.len()).collect();
+            (last_selected_index + 1..=last_selected_index + selected_tokens.len()).collect();
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_note_selection_from_indices(&inserted_indices);
+        self.restore_editable_token_selection_from_indices(&inserted_indices);
         self.sync_selection_visual();
         let audition = self.audition_candidate_from_indices(&inserted_indices);
         self.dirty = true;
         self.compile_and_update_current_source()?;
         self.status_message = format!(
             "Duplicated {} token{}",
-            selected_notes.len(),
-            if selected_notes.len() == 1 { "" } else { "s" }
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
         );
         self.audition_candidate(audition);
         Ok(())

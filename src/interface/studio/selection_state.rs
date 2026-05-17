@@ -1,6 +1,7 @@
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, note_at_or_near_col, note_spans_in_line,
-    ordered_bar_span_bounds, BarSpan, NoteTokenSpan, StudioSelection,
+    bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
+    editable_token_spans_in_line, ordered_bar_span_bounds, BarSpan, EditableTokenSpan,
+    StudioSelection,
 };
 use super::StudioApp;
 
@@ -11,8 +12,8 @@ impl StudioApp {
                 let row = self.textarea.cursor().0;
                 ((*anchor_row).min(row), (*anchor_row).max(row))
             }
-            Some(StudioSelection::Note { row, .. }) => (*row, *row),
-            Some(StudioSelection::NoteRange { anchor, focus }) => {
+            Some(StudioSelection::EditableToken { row, .. }) => (*row, *row),
+            Some(StudioSelection::EditableTokenRange { anchor, focus }) => {
                 (anchor.row.min(focus.row), anchor.row.max(focus.row))
             }
             Some(StudioSelection::Bar { span }) => (span.row, span.row),
@@ -33,30 +34,30 @@ impl StudioApp {
 
     pub(super) fn selection_label(&self) -> String {
         match &self.selection {
-            Some(StudioSelection::Note {
+            Some(StudioSelection::EditableToken {
                 row,
                 start_col,
                 token,
                 ..
-            }) => format!("note {} at line {}, col {}", token, row + 1, start_col + 1),
-            Some(StudioSelection::NoteRange { .. }) => {
-                let selected = self.selected_note_spans();
+            }) => format!("token {} at line {}, col {}", token, row + 1, start_col + 1),
+            Some(StudioSelection::EditableTokenRange { .. }) => {
+                let selected = self.selected_editable_token_spans();
                 match (selected.first(), selected.last()) {
                     (Some(first), Some(last)) if selected.len() == 1 => {
                         format!(
-                            "note {} at line {}, col {}",
+                            "token {} at line {}, col {}",
                             first.token,
                             first.row + 1,
                             first.start_col + 1
                         )
                     }
                     (Some(first), Some(last)) => format!(
-                        "{} notes from {} to {}",
+                        "{} tokens from {} to {}",
                         selected.len(),
                         first.token,
                         last.token
                     ),
-                    _ => "no notes".to_string(),
+                    _ => "no tokens".to_string(),
                 }
             }
             Some(StudioSelection::Bar { span }) => {
@@ -94,22 +95,22 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn focus_note(&self) -> Option<NoteTokenSpan> {
+    pub(super) fn focus_editable_token(&self) -> Option<EditableTokenSpan> {
         match &self.selection {
-            Some(StudioSelection::Note {
+            Some(StudioSelection::EditableToken {
                 row,
                 start_col,
                 end_col,
                 token,
                 kind,
-            }) => Some(NoteTokenSpan {
+            }) => Some(EditableTokenSpan {
                 row: *row,
                 start_col: *start_col,
                 end_col: *end_col,
                 token: token.clone(),
                 kind: *kind,
             }),
-            Some(StudioSelection::NoteRange { focus, .. }) => Some(focus.clone()),
+            Some(StudioSelection::EditableTokenRange { focus, .. }) => Some(focus.clone()),
             _ => None,
         }
     }
@@ -122,17 +123,17 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn selected_note_indices(&self) -> Vec<usize> {
-        let notes = self.note_token_spans();
+    pub(super) fn selected_editable_token_indices(&self) -> Vec<usize> {
+        let notes = self.editable_token_spans();
         match &self.selection {
-            Some(StudioSelection::Note {
+            Some(StudioSelection::EditableToken {
                 row,
                 start_col,
                 end_col,
                 token,
                 kind,
             }) => {
-                let selected = NoteTokenSpan {
+                let selected = EditableTokenSpan {
                     row: *row,
                     start_col: *start_col,
                     end_col: *end_col,
@@ -145,7 +146,7 @@ impl StudioApp {
                     .map(|index| vec![index])
                     .unwrap_or_default()
             }
-            Some(StudioSelection::NoteRange { anchor, focus }) => {
+            Some(StudioSelection::EditableTokenRange { anchor, focus }) => {
                 let Some(anchor_index) = notes.iter().position(|note| note == anchor) else {
                     return Vec::new();
                 };
@@ -160,9 +161,9 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn selected_note_spans(&self) -> Vec<NoteTokenSpan> {
-        let notes = self.note_token_spans();
-        self.selected_note_indices()
+    pub(super) fn selected_editable_token_spans(&self) -> Vec<EditableTokenSpan> {
+        let notes = self.editable_token_spans();
+        self.selected_editable_token_indices()
             .into_iter()
             .filter_map(|index| notes.get(index).cloned())
             .collect()
@@ -194,15 +195,18 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn restore_note_selection_from_indices(&mut self, selected_indices: &[usize]) {
-        let notes = self.note_token_spans();
+    pub(super) fn restore_editable_token_selection_from_indices(
+        &mut self,
+        selected_indices: &[usize],
+    ) {
+        let notes = self.editable_token_spans();
         match selected_indices {
             [] => {
                 self.selection = None;
             }
             [index] => {
                 if let Some(note) = notes.get(*index) {
-                    self.selection = Some(StudioSelection::Note {
+                    self.selection = Some(StudioSelection::EditableToken {
                         row: note.row,
                         start_col: note.start_col,
                         end_col: note.end_col,
@@ -220,7 +224,7 @@ impl StudioApp {
                     self.selection = None;
                     return;
                 };
-                self.selection = Some(StudioSelection::NoteRange {
+                self.selection = Some(StudioSelection::EditableTokenRange {
                     anchor: first.clone(),
                     focus: last.clone(),
                 });
@@ -306,16 +310,24 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn note_at_or_after_cursor(&self, row: usize, col: usize) -> Option<NoteTokenSpan> {
-        note_at_or_near_col(self.note_spans_on_line(row), col)
+    pub(super) fn editable_token_at_or_after_cursor(
+        &self,
+        row: usize,
+        col: usize,
+    ) -> Option<EditableTokenSpan> {
+        editable_token_at_or_near_col(self.editable_token_spans_on_line(row), col)
     }
 
     pub(super) fn bar_at_or_after_cursor(&self, row: usize, col: usize) -> Option<BarSpan> {
         bar_at_or_near_col(self.bar_spans_on_line(row), col)
     }
 
-    pub(super) fn nearest_note_on_line(&self, row: usize, col: usize) -> Option<NoteTokenSpan> {
-        self.note_spans_on_line(row)
+    pub(super) fn nearest_editable_token_on_line(
+        &self,
+        row: usize,
+        col: usize,
+    ) -> Option<EditableTokenSpan> {
+        self.editable_token_spans_on_line(row)
             .into_iter()
             .min_by_key(|note| note.start_col.abs_diff(col))
     }
@@ -326,12 +338,12 @@ impl StudioApp {
             .min_by_key(|bar| bar.start_col.abs_diff(col))
     }
 
-    pub(super) fn note_token_spans(&self) -> Vec<NoteTokenSpan> {
+    pub(super) fn editable_token_spans(&self) -> Vec<EditableTokenSpan> {
         self.textarea
             .lines()
             .iter()
             .enumerate()
-            .flat_map(|(row, _)| self.note_spans_on_line(row))
+            .flat_map(|(row, _)| self.editable_token_spans_on_line(row))
             .collect()
     }
 
@@ -344,11 +356,11 @@ impl StudioApp {
             .collect()
     }
 
-    pub(super) fn note_spans_on_line(&self, row: usize) -> Vec<NoteTokenSpan> {
+    pub(super) fn editable_token_spans_on_line(&self, row: usize) -> Vec<EditableTokenSpan> {
         self.textarea
             .lines()
             .get(row)
-            .map(|line| note_spans_in_line(row, line))
+            .map(|line| editable_token_spans_in_line(row, line))
             .unwrap_or_default()
     }
 

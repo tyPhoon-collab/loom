@@ -1,5 +1,6 @@
 use super::selection::{
-    ordered_bar_span_bounds, ordered_note_span_bounds, BarSpan, NoteTokenSpan, StudioSelection,
+    ordered_bar_span_bounds, ordered_editable_token_span_bounds, BarSpan, EditableTokenSpan,
+    StudioSelection,
 };
 use super::{StudioApp, StudioMode};
 use ratatui_textarea::CursorMove;
@@ -16,13 +17,13 @@ impl StudioApp {
 
     pub(super) fn enter_note_select_mode(&mut self) {
         let cursor = self.textarea.cursor();
-        let Some(note) = self.note_at_or_after_cursor(cursor.0, cursor.1) else {
+        let Some(note) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
             self.status_message = "No editable token on this line".into();
             return;
         };
 
         self.mode = StudioMode::Select;
-        self.selection = Some(StudioSelection::Note {
+        self.selection = Some(StudioSelection::EditableToken {
             row: note.row,
             start_col: note.start_col,
             end_col: note.end_col,
@@ -84,7 +85,7 @@ impl StudioApp {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
                 self.move_bar_selection(direction);
             }
-            _ => self.move_note_selection(direction),
+            _ => self.move_editable_token_selection(direction),
         }
     }
 
@@ -93,7 +94,7 @@ impl StudioApp {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
                 self.expand_bar_selection(direction);
             }
-            _ => self.expand_note_selection(direction),
+            _ => self.expand_editable_token_selection(direction),
         }
     }
 
@@ -102,16 +103,16 @@ impl StudioApp {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
                 self.expand_bar_selection_vertical(direction);
             }
-            _ => self.expand_note_selection_vertical(direction),
+            _ => self.expand_editable_token_selection_vertical(direction),
         }
     }
 
-    pub(super) fn move_note_selection(&mut self, direction: i32) {
-        let Some(current) = self.focus_note() else {
+    pub(super) fn move_editable_token_selection(&mut self, direction: i32) {
+        let Some(current) = self.focus_editable_token() else {
             self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
-        let notes = self.note_token_spans();
+        let notes = self.editable_token_spans();
         let Some(index) = notes.iter().position(|note| note == &current) else {
             self.status_message = "Selected token no longer exists".into();
             return;
@@ -128,15 +129,15 @@ impl StudioApp {
             return;
         };
 
-        self.set_note_selection(notes[next_index].clone());
+        self.set_editable_token_selection(notes[next_index].clone());
     }
 
-    pub(super) fn expand_note_selection(&mut self, direction: i32) {
-        let Some(focus) = self.focus_note() else {
+    pub(super) fn expand_editable_token_selection(&mut self, direction: i32) {
+        let Some(focus) = self.focus_editable_token() else {
             self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
-        let notes = self.note_token_spans();
+        let notes = self.editable_token_spans();
         let Some(focus_index) = notes.iter().position(|note| note == &focus) else {
             self.status_message = "Selected token no longer exists".into();
             return;
@@ -153,11 +154,11 @@ impl StudioApp {
             return;
         };
 
-        self.expand_note_selection_to(notes[next_index].clone());
+        self.expand_editable_token_selection_to(notes[next_index].clone());
     }
 
-    pub(super) fn expand_note_selection_vertical(&mut self, direction: i32) {
-        let Some(focus) = self.focus_note() else {
+    pub(super) fn expand_editable_token_selection_vertical(&mut self, direction: i32) {
+        let Some(focus) = self.focus_editable_token() else {
             self.status_message = "No editable token selected. Press v first.".into();
             return;
         };
@@ -170,11 +171,11 @@ impl StudioApp {
             self.status_message = "No more lines".into();
             return;
         };
-        let Some(note) = self.nearest_note_on_line(next_row, focus.start_col) else {
+        let Some(note) = self.nearest_editable_token_on_line(next_row, focus.start_col) else {
             self.status_message = "No editable token on target line".into();
             return;
         };
-        self.expand_note_selection_to(note);
+        self.expand_editable_token_selection_to(note);
     }
 
     pub(super) fn move_bar_selection(&mut self, direction: i32) {
@@ -282,9 +283,9 @@ impl StudioApp {
                 };
                 self.set_bar_selection(bar);
             }
-            Some(StudioSelection::Note { row, start_col, .. })
-            | Some(StudioSelection::NoteRange {
-                focus: NoteTokenSpan { row, start_col, .. },
+            Some(StudioSelection::EditableToken { row, start_col, .. })
+            | Some(StudioSelection::EditableTokenRange {
+                focus: EditableTokenSpan { row, start_col, .. },
                 ..
             }) => {
                 let next_row = if direction < 0 {
@@ -296,11 +297,11 @@ impl StudioApp {
                     self.status_message = "No more lines".into();
                     return;
                 };
-                let Some(note) = self.nearest_note_on_line(next_row, start_col) else {
+                let Some(note) = self.nearest_editable_token_on_line(next_row, start_col) else {
                     self.status_message = "No editable token on target line".into();
                     return;
                 };
-                self.set_note_selection(note);
+                self.set_editable_token_selection(note);
             }
             None => {
                 self.status_message = "No selection".into();
@@ -308,8 +309,8 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn set_note_selection(&mut self, note: NoteTokenSpan) {
-        self.selection = Some(StudioSelection::Note {
+    pub(super) fn set_editable_token_selection(&mut self, note: EditableTokenSpan) {
+        self.selection = Some(StudioSelection::EditableToken {
             row: note.row,
             start_col: note.start_col,
             end_col: note.end_col,
@@ -326,29 +327,29 @@ impl StudioApp {
         self.status_message = format!("Select mode: {}", self.selection_label());
     }
 
-    pub(super) fn expand_note_selection_to(&mut self, focus: NoteTokenSpan) {
+    pub(super) fn expand_editable_token_selection_to(&mut self, focus: EditableTokenSpan) {
         let anchor = match &self.selection {
-            Some(StudioSelection::Note {
+            Some(StudioSelection::EditableToken {
                 row,
                 start_col,
                 end_col,
                 token,
                 kind,
-            }) => NoteTokenSpan {
+            }) => EditableTokenSpan {
                 row: *row,
                 start_col: *start_col,
                 end_col: *end_col,
                 token: token.clone(),
                 kind: *kind,
             },
-            Some(StudioSelection::NoteRange { anchor, .. }) => anchor.clone(),
+            Some(StudioSelection::EditableTokenRange { anchor, .. }) => anchor.clone(),
             _ => {
-                self.status_message = "Current selection is not a note selection".into();
+                self.status_message = "Current selection is not an editable token selection".into();
                 return;
             }
         };
 
-        self.selection = Some(StudioSelection::NoteRange { anchor, focus });
+        self.selection = Some(StudioSelection::EditableTokenRange { anchor, focus });
         self.sync_selection_visual();
         self.status_message = format!("Select mode: {}", self.selection_label());
     }
@@ -375,7 +376,7 @@ impl StudioApp {
 
         self.textarea.cancel_selection();
         match selection {
-            StudioSelection::Note {
+            StudioSelection::EditableToken {
                 row,
                 start_col,
                 end_col,
@@ -387,8 +388,8 @@ impl StudioApp {
                 self.textarea
                     .move_cursor(CursorMove::Jump(row as u16, end_col as u16));
             }
-            StudioSelection::NoteRange { anchor, focus } => {
-                let (start, end) = ordered_note_span_bounds(&anchor, &focus);
+            StudioSelection::EditableTokenRange { anchor, focus } => {
+                let (start, end) = ordered_editable_token_span_bounds(&anchor, &focus);
                 self.textarea
                     .move_cursor(CursorMove::Jump(start.row as u16, start.start_col as u16));
                 self.textarea.start_selection();
