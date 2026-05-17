@@ -169,8 +169,15 @@ impl StudioApp {
             KeyCode::Char('B') => {
                 self.enter_line_bar_select_mode();
             }
+            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.clear_loop_settings()?;
+            }
             KeyCode::Char('L') => {
-                self.toggle_loop()?;
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.clear_loop_settings()?;
+                } else {
+                    self.toggle_loop()?;
+                }
             }
             KeyCode::Char('w') => {
                 self.save()?;
@@ -1110,11 +1117,15 @@ impl StudioApp {
         self.mode = StudioMode::Normal;
         self.dirty = true;
         self.compile_and_update_current_source()?;
-        self.status_message = format!(
+        let mut status_message = format!(
             "Deleted {} bar{}",
             selected_bars.len(),
             if selected_bars.len() == 1 { "" } else { "s" }
         );
+        if self.current_loop_range().is_some() {
+            status_message.push_str(" | loop_range unchanged");
+        }
+        self.status_message = status_message;
         Ok(())
     }
 
@@ -1290,6 +1301,34 @@ impl StudioApp {
             }
         }
         Ok(())
+    }
+
+    fn clear_loop_settings(&mut self) -> Result<()> {
+        match clear_loop_settings_frontmatter(&self.source()) {
+            Ok(Some(source)) => {
+                let cursor = self.textarea.cursor();
+                self.push_source_undo();
+                self.replace_source(source);
+                self.textarea
+                    .move_cursor(CursorMove::Jump(cursor.0 as u16, cursor.1 as u16));
+                self.dirty = true;
+                self.compile_and_update_current_source()?;
+                self.status_message = "Loop cleared".into();
+            }
+            Ok(None) => {
+                self.status_message = "No loop settings to clear".into();
+            }
+            Err(message) => {
+                self.status_message = message;
+            }
+        }
+        Ok(())
+    }
+
+    fn current_loop_range(&self) -> Option<String> {
+        parser::parse_song(self.source())
+            .ok()
+            .and_then(|song| song.metadata.loop_range)
     }
 
     fn audition_candidate_from_lines(
@@ -2125,6 +2164,81 @@ fn set_loop_range_frontmatter(
     Ok(finish_source(lines))
 }
 
+fn clear_loop_settings_frontmatter(source: &str) -> std::result::Result<Option<String>, String> {
+    if !matches!(source.lines().next(), Some("---")) {
+        return Ok(None);
+    }
+
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line == "---").then_some(index))
+    else {
+        return Err("Loop clear failed: frontmatter block is not closed".to_string());
+    };
+
+    let mut changed = false;
+    let mut remove_indices = Vec::new();
+    for (index, line) in lines.iter().enumerate().take(end_index).skip(1) {
+        let trimmed = line.trim();
+        if trimmed.starts_with("loop:") {
+            match trimmed {
+                "loop: true" => {
+                    changed = true;
+                    remove_indices.push(index);
+                }
+                "loop: false" => {
+                    remove_indices.push(index);
+                }
+                _ => {
+                    return Err(
+                        "Loop clear supports only simple `loop: true` or `loop: false`".to_string(),
+                    );
+                }
+            }
+        } else if trimmed.starts_with("loop_range:") {
+            if trimmed == "loop_range:" {
+                return Err("Loop clear supports only simple `loop_range: start..end`".to_string());
+            }
+            changed = true;
+            remove_indices.push(index);
+        }
+    }
+
+    if remove_indices.is_empty() {
+        return Ok(None);
+    }
+
+    remove_indices.sort_unstable_by(|left, right| right.cmp(left));
+    for index in remove_indices {
+        lines.remove(index);
+    }
+
+    if !changed {
+        return Ok(None);
+    }
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line == "---").then_some(index))
+    else {
+        return Err("Loop clear failed: frontmatter block is not closed".to_string());
+    };
+    if lines[1..end_index]
+        .iter()
+        .all(|line| line.trim().is_empty())
+    {
+        lines.drain(0..=end_index);
+        if matches!(lines.first(), Some(line) if line.trim().is_empty()) {
+            lines.remove(0);
+        }
+    }
+    Ok(Some(finish_source(lines)))
+}
+
 fn parse_track_header_channel(line: &str) -> Option<u8> {
     let trimmed = line.trim();
     if trimmed.starts_with("##") || !trimmed.starts_with('#') {
@@ -2151,8 +2265,8 @@ fn finish_source(lines: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        loop_range_for_bar_indices, parse_track_header_channel, set_loop_range_frontmatter,
-        toggle_loop_frontmatter, transpose_bar_text, transpose_line,
+        clear_loop_settings_frontmatter, loop_range_for_bar_indices, parse_track_header_channel,
+        set_loop_range_frontmatter, toggle_loop_frontmatter, transpose_bar_text, transpose_line,
     };
 
     #[test]
@@ -2253,6 +2367,40 @@ mod tests {
         assert_eq!(
             source,
             "---\nloop: true\nloop_range: 0..4\n---\n# Piano: 1\n"
+        );
+    }
+
+    #[test]
+    fn clear_loop_settings_removes_loop_and_loop_range() {
+        let source = clear_loop_settings_frontmatter(
+            "---\nbpm: 100\nloop: true\nloop_range: 1..2\n---\n# Piano: 1\n",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(source, "---\nbpm: 100\n---\n# Piano: 1\n");
+    }
+
+    #[test]
+    fn clear_loop_settings_removes_empty_frontmatter_block() {
+        let source = clear_loop_settings_frontmatter(
+            "---\nloop: true\nloop_range: 1..2\n---\n\n# Piano: 1\n",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(source, "# Piano: 1\n");
+    }
+
+    #[test]
+    fn clear_loop_settings_is_noop_without_enabled_loop_settings() {
+        assert_eq!(
+            clear_loop_settings_frontmatter("---\nbpm: 100\nloop: false\n---\n").unwrap(),
+            None
+        );
+        assert_eq!(
+            clear_loop_settings_frontmatter("# Piano: 1\n").unwrap(),
+            None
         );
     }
 
