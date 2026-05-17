@@ -125,9 +125,9 @@ C4 | ^ ^ |
             MidiEvent::ControlChange {
                 time,
                 channel,
-                cc,
+                cc: 10,
                 value,
-            } if cc == 10 => Some((time, channel, value)),
+            } => Some((time, channel, value)),
             _ => None,
         })
         .collect();

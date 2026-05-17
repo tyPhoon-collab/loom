@@ -26,10 +26,7 @@ c3,e3 | ^ |
     let events = compiler.compile(&song).unwrap();
     let note_events: Vec<_> = events
         .iter()
-        .filter_map(|e| match e {
-            MidiEvent::Note { .. } => Some(e),
-            _ => None,
-        })
+        .filter(|e| matches!(e, MidiEvent::Note { .. }))
         .collect();
 
     // C3=60, E3=64
@@ -58,10 +55,7 @@ c3,e3 | ^ - |
     let events = compiler.compile(&song).unwrap();
     let note_events: Vec<_> = events
         .iter()
-        .filter_map(|e| match e {
-            MidiEvent::Note { .. } => Some(e),
-            _ => None,
-        })
+        .filter(|e| matches!(e, MidiEvent::Note { .. }))
         .collect();
 
     assert_eq!(note_events.len(), 2);
@@ -90,10 +84,7 @@ v     | !60          |                          |
     let events = compiler.compile(&song).unwrap();
     let note_events: Vec<_> = events
         .iter()
-        .filter_map(|e| match e {
-            MidiEvent::Note { .. } => Some(e),
-            _ => None,
-        })
+        .filter(|e| matches!(e, MidiEvent::Note { .. }))
         .collect();
 
     // Regression: modifier blocks must stay aligned even if pattern block has zero tokens.

@@ -11,7 +11,7 @@ check:
     cargo check
 
 clippy:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
 test:
     cargo test
