@@ -19,6 +19,8 @@ test:
 fmt-rust:
     cargo fmt
 
+ci: fmt-rust check clippy test
+
 # Loom Commands
 
 fmt-loom file *args:

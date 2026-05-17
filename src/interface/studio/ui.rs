@@ -1,4 +1,4 @@
-use super::input::{PendingInput, ADD_HELP, NOTE_HELP};
+use super::input::{PendingInput, ADD_HELP, NOTE_HELP, ONSET_HELP};
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -82,8 +82,11 @@ impl StudioApp {
             StudioMode::Select if self.input_state.pending() == Some(PendingInput::Note) => {
                 NOTE_HELP
             }
+            StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Onset) => {
+                ONSET_HELP
+            }
             StudioMode::Normal => {
-                "i ins | a add | n note | z/x octave | v note | b bar | +/- transpose | space play | w save"
+                "i ins | a add | n note | o onset | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {

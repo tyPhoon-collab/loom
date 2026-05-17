@@ -28,6 +28,9 @@ impl StudioApp {
             KeyCode::Char('t') => {
                 self.add_track()?;
             }
+            KeyCode::Char('d') => {
+                self.add_default_drum_lanes()?;
+            }
             KeyCode::Char('b') => {
                 self.add_bar()?;
             }
@@ -45,6 +48,30 @@ impl StudioApp {
                 self.status_message = format!("Unknown add command. {}", ADD_HELP);
             }
         }
+        Ok(())
+    }
+
+    pub(super) fn add_default_drum_lanes(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let insert_row = insert_row_after_cursor(&lines, cursor.0);
+        let inserted = vec![
+            String::new(),
+            "# Drums: 10".to_string(),
+            "kick  | . . . . |".to_string(),
+            "snare | . . . . |".to_string(),
+            "hh    | . . . . |".to_string(),
+            "oh    | . . . . |".to_string(),
+        ];
+        lines.splice(insert_row..insert_row, inserted);
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump((insert_row + 2) as u16, 8));
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = "Added default drum lanes".into();
         Ok(())
     }
 

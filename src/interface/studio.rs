@@ -3,7 +3,7 @@ use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP};
+use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP, ONSET_HELP};
 use miette::{IntoDiagnostic, Result};
 use note_entry::NoteKeyboard;
 use ratatui::style::{Color, Style};
@@ -20,6 +20,7 @@ mod audition;
 mod edit_ops;
 mod input;
 mod note_entry;
+mod onset;
 mod selection;
 mod selection_ops;
 mod selection_state;
@@ -184,6 +185,10 @@ impl StudioApp {
                 self.status_message =
                     format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
             }
+            KeyCode::Char('o') => {
+                self.input_state.begin_onset();
+                self.status_message = ONSET_HELP.into();
+            }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
             }
@@ -288,6 +293,7 @@ impl StudioApp {
         match pending {
             PendingInput::Add => self.handle_add_key(key),
             PendingInput::Note => self.handle_note_key(key),
+            PendingInput::Onset => self.handle_onset_key(key),
         }
     }
 
@@ -295,6 +301,7 @@ impl StudioApp {
         if let Some(pending) = self.input_state.take_pending() {
             return match pending {
                 PendingInput::Note => self.handle_select_note_key(key),
+                PendingInput::Onset => self.handle_pending_input(pending, key),
                 PendingInput::Add => self.handle_pending_input(pending, key),
             };
         }
