@@ -292,9 +292,21 @@ impl StudioApp {
     }
 
     fn handle_select_key(&mut self, key: KeyEvent) -> Result<()> {
+        if let Some(pending) = self.input_state.take_pending() {
+            return match pending {
+                PendingInput::Note => self.handle_select_note_key(key),
+                PendingInput::Add => self.handle_pending_input(pending, key),
+            };
+        }
+
         match key.code {
             KeyCode::Esc => {
                 self.exit_select_mode();
+            }
+            KeyCode::Char('n') => {
+                self.input_state.begin_note();
+                self.status_message =
+                    format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);

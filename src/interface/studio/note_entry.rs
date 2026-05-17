@@ -23,6 +23,12 @@ enum NoteKeyBinding {
     Sustain,
 }
 
+enum NoteKeyInput {
+    Cancel,
+    Token(String),
+    Unknown,
+}
+
 impl NoteKeyboard {
     pub(super) fn from_config(config: &NoteKeyboardConfig) -> (Self, i32) {
         let mut keyboard = Self::default();
@@ -113,18 +119,29 @@ impl Default for NoteKeyboard {
 
 impl StudioApp {
     pub(super) fn handle_note_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        match self.note_key_input(key) {
+            NoteKeyInput::Cancel => {
                 self.status_message = "Note entry cancelled".into();
             }
-            KeyCode::Char(ch) => {
-                let Some(token) = self.note_keyboard.token(ch, self.note_keyboard_octave) else {
-                    self.status_message = format!("Unknown note key. {}", NOTE_HELP);
-                    return Ok(());
-                };
+            NoteKeyInput::Token(token) => {
                 self.place_token_at_current_slot(&token)?;
             }
-            _ => {
+            NoteKeyInput::Unknown => {
+                self.status_message = format!("Unknown note key. {}", NOTE_HELP);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn handle_select_note_key(&mut self, key: KeyEvent) -> Result<()> {
+        match self.note_key_input(key) {
+            NoteKeyInput::Cancel => {
+                self.status_message = "Note entry cancelled".into();
+            }
+            NoteKeyInput::Token(token) => {
+                self.replace_selected_tokens(&token)?;
+            }
+            NoteKeyInput::Unknown => {
                 self.status_message = format!("Unknown note key. {}", NOTE_HELP);
             }
         }
@@ -135,6 +152,17 @@ impl StudioApp {
         self.note_keyboard_octave =
             (self.note_keyboard_octave + delta).clamp(MIN_KEYBOARD_OCTAVE, MAX_KEYBOARD_OCTAVE);
         self.status_message = format!("Keyboard octave: {}", self.note_keyboard_octave);
+    }
+
+    fn note_key_input(&self, key: KeyEvent) -> NoteKeyInput {
+        match key.code {
+            KeyCode::Esc => NoteKeyInput::Cancel,
+            KeyCode::Char(ch) => self
+                .note_keyboard
+                .token(ch, self.note_keyboard_octave)
+                .map_or(NoteKeyInput::Unknown, NoteKeyInput::Token),
+            _ => NoteKeyInput::Unknown,
+        }
     }
 }
 

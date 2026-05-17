@@ -79,12 +79,15 @@ impl StudioApp {
             StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Note) => {
                 NOTE_HELP
             }
+            StudioMode::Select if self.input_state.pending() == Some(PendingInput::Note) => {
+                NOTE_HELP
+            }
             StudioMode::Normal => {
                 "i ins | a add | n note | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {
-                "h/l move | H/L extend | Enter loop | d duplicate | x delete | r rest | s sustain | Esc"
+                "h/l move | H/L extend | n note | d duplicate | x delete | r rest | s sustain | Enter loop | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));
