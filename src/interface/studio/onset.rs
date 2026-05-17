@@ -6,7 +6,6 @@ use super::selection::{
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
-use ratatui_textarea::CursorMove;
 
 struct PlacedOnset {
     index_on_line: usize,
@@ -79,27 +78,16 @@ impl StudioApp {
         } else {
             None
         };
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        if let Some(onset) = lane_body_token_spans_in_line(
-            cursor.0,
-            self.textarea
-                .lines()
-                .get(cursor.0)
-                .map(String::as_str)
-                .unwrap_or_default(),
+        let cursor_col = lane_body_token_spans_in_line(cursor.0, line)
+            .get(placed.index_on_line)
+            .map(|onset| onset.start_col)
+            .unwrap_or(cursor.1);
+        self.apply_cursor_source_update(
+            lines,
+            (cursor.0, cursor_col),
+            format!("Placed onset {}", placed.token),
+            audition,
         )
-        .get(placed.index_on_line)
-        {
-            self.textarea
-                .move_cursor(CursorMove::Jump(cursor.0 as u16, onset.start_col as u16));
-        }
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!("Placed onset {}", placed.token);
-        self.audition_candidate(audition);
-        Ok(())
     }
 
     pub(super) fn toggle_onset_token_at_current_slot(&mut self) -> Result<()> {
@@ -122,27 +110,16 @@ impl StudioApp {
         } else {
             None
         };
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        if let Some(onset) = lane_body_token_spans_in_line(
-            cursor.0,
-            self.textarea
-                .lines()
-                .get(cursor.0)
-                .map(String::as_str)
-                .unwrap_or_default(),
+        let cursor_col = lane_body_token_spans_in_line(cursor.0, line)
+            .get(placed.index_on_line)
+            .map(|onset| onset.start_col)
+            .unwrap_or(cursor.1);
+        self.apply_cursor_source_update(
+            lines,
+            (cursor.0, cursor_col),
+            format!("Toggled onset to {}", placed.token),
+            audition,
         )
-        .get(placed.index_on_line)
-        {
-            self.textarea
-                .move_cursor(CursorMove::Jump(cursor.0 as u16, onset.start_col as u16));
-        }
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!("Toggled onset to {}", placed.token);
-        self.audition_candidate(audition);
-        Ok(())
     }
 
     pub(super) fn replace_selected_onset_tokens(&mut self, token: char) -> Result<()> {
@@ -194,20 +171,17 @@ impl StudioApp {
             );
         }
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(&selected_indices);
-        self.sync_selection_visual();
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!(
-            "Set onset {} on {} token{}",
-            token,
-            selected_tokens.len(),
-            if selected_tokens.len() == 1 { "" } else { "s" }
-        );
-        self.audition_candidate(audition);
-        Ok(())
+        self.apply_editable_token_selection_update(
+            lines,
+            &selected_indices,
+            format!(
+                "Set onset {} on {} token{}",
+                token,
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
     }
 
     pub(super) fn toggle_selected_onset_tokens(&mut self) -> Result<()> {
@@ -254,19 +228,16 @@ impl StudioApp {
             );
         }
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(&selected_indices);
-        self.sync_selection_visual();
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!(
-            "Toggled onset on {} token{}",
-            selected_tokens.len(),
-            if selected_tokens.len() == 1 { "" } else { "s" }
-        );
-        self.audition_candidate(audition);
-        Ok(())
+        self.apply_editable_token_selection_update(
+            lines,
+            &selected_indices,
+            format!(
+                "Toggled onset on {} token{}",
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
     }
 }
 

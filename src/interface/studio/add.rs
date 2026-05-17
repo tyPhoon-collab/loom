@@ -8,7 +8,6 @@ use super::settings::parse_track_header_channel;
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
-use ratatui_textarea::CursorMove;
 
 struct PlacedSlot {
     index_on_line: usize,
@@ -65,15 +64,12 @@ impl StudioApp {
             "oh    | . . . . |".to_string(),
         ];
         lines.splice(insert_row..insert_row, inserted);
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.textarea
-            .move_cursor(CursorMove::Jump((insert_row + 2) as u16, 8));
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = "Added default drum lanes".into();
-        Ok(())
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row + 2, 8),
+            "Added default drum lanes".into(),
+            None,
+        )
     }
 
     pub(super) fn add_seq_line(&mut self) -> Result<()> {
@@ -81,15 +77,7 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         lines.insert(insert_row, "seq | . . . . |".to_string());
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.textarea
-            .move_cursor(CursorMove::Jump(insert_row as u16, 6));
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = "Added seq line".into();
-        Ok(())
+        self.apply_cursor_source_update(lines, (insert_row, 6), "Added seq line".into(), None)
     }
 
     pub(super) fn add_note_head_line(&mut self) -> Result<()> {
@@ -98,16 +86,12 @@ impl StudioApp {
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         let note = self.note_token_for_add();
         lines.insert(insert_row, format!("{} | ^ . . . |", note));
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.textarea
-            .move_cursor(CursorMove::Jump(insert_row as u16, 0));
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!("Added note-head line: {}", note);
-        self.audition_candidate(Some((insert_row, note)));
-        Ok(())
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row, 0),
+            format!("Added note-head line: {}", note),
+            Some((insert_row, note)),
+        )
     }
 
     pub(super) fn add_track(&mut self) -> Result<()> {
@@ -121,15 +105,12 @@ impl StudioApp {
             "seq | . . . . |".to_string(),
         ];
         lines.splice(insert_row..insert_row, inserted);
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.textarea
-            .move_cursor(CursorMove::Jump((insert_row + 2) as u16, 6));
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!("Added track: {} on channel {}", track_name, channel);
-        Ok(())
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row + 2, 6),
+            format!("Added track: {} on channel {}", track_name, channel),
+            None,
+        )
     }
 
     pub(super) fn add_bar(&mut self) -> Result<()> {
@@ -144,15 +125,7 @@ impl StudioApp {
             self.status_message = "Add bar needs a line with bars".into();
             return Ok(());
         };
-
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.textarea
-            .move_cursor(CursorMove::Jump(cursor.0 as u16, new_cursor_col as u16));
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = "Added bar".into();
-        Ok(())
+        self.apply_cursor_source_update(lines, (cursor.0, new_cursor_col), "Added bar".into(), None)
     }
 
     pub(super) fn place_token_at_current_slot(&mut self, token: &str) -> Result<()> {
@@ -168,22 +141,17 @@ impl StudioApp {
             return Ok(());
         };
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        if let Some(note) = self
-            .editable_token_spans_on_line(cursor.0)
+        let cursor_col = editable_token_spans_in_line(cursor.0, line)
             .get(slot.index_on_line)
-        {
-            self.textarea
-                .move_cursor(CursorMove::Jump(cursor.0 as u16, note.start_col as u16));
-        }
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!("Placed {}", token);
-        if token != "." && token != "-" {
-            self.audition_candidate(Some((cursor.0, token.to_string())));
-        }
-        Ok(())
+            .map(|note| note.start_col)
+            .unwrap_or(cursor.1);
+        let audition = (token != "." && token != "-").then(|| (cursor.0, token.to_string()));
+        self.apply_cursor_source_update(
+            lines,
+            (cursor.0, cursor_col),
+            format!("Placed {}", token),
+            audition,
+        )
     }
 
     pub(super) fn note_token_for_add(&self) -> String {

@@ -25,6 +25,42 @@ impl StudioApp {
         }
     }
 
+    pub(super) fn apply_editable_token_selection_update(
+        &mut self,
+        lines: Vec<String>,
+        selected_indices: &[usize],
+        status_message: String,
+        audition: Option<(usize, String)>,
+    ) -> Result<()> {
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_editable_token_selection_from_indices(selected_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = status_message;
+        self.audition_candidate(audition);
+        Ok(())
+    }
+
+    pub(super) fn apply_cursor_source_update(
+        &mut self,
+        lines: Vec<String>,
+        cursor: (usize, usize),
+        status_message: String,
+        audition: Option<(usize, String)>,
+    ) -> Result<()> {
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump(cursor.0 as u16, cursor.1 as u16));
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = status_message;
+        self.audition_candidate(audition);
+        Ok(())
+    }
+
     pub(super) fn save(&mut self) -> Result<()> {
         fs::write(&self.path, self.source()).into_diagnostic()?;
         self.dirty = false;

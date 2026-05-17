@@ -186,20 +186,17 @@ impl StudioApp {
             replace_char_range(line, note.start_col, note.end_col, new_token);
         }
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(&selected_indices);
-        self.sync_selection_visual();
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!(
-            "Transposed {} note{} by {:+}",
-            replacements.len(),
-            if replacements.len() == 1 { "" } else { "s" },
-            semitones
-        );
-        self.audition_candidate(audition);
-        Ok(())
+        self.apply_editable_token_selection_update(
+            lines,
+            &selected_indices,
+            format!(
+                "Transposed {} note{} by {:+}",
+                replacements.len(),
+                if replacements.len() == 1 { "" } else { "s" },
+                semitones
+            ),
+            audition,
+        )
     }
 
     pub(super) fn replace_selected_tokens(&mut self, replacement: &str) -> Result<()> {
@@ -222,6 +219,14 @@ impl StudioApp {
             return Ok(());
         }
 
+        let audition = (replacement != "." && replacement != "-")
+            .then(|| {
+                selected_tokens
+                    .first()
+                    .map(|note| (note.row, replacement.to_string()))
+            })
+            .flatten();
+
         let replacement_name = match replacement {
             "." => "Rested",
             "-" => "Sustained",
@@ -243,19 +248,17 @@ impl StudioApp {
             replace_char_range(line, note.start_col, note.end_col, replacement);
         }
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(&selected_indices);
-        self.sync_selection_visual();
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!(
-            "{} {} token{}",
-            replacement_name,
-            selected_tokens.len(),
-            if selected_tokens.len() == 1 { "" } else { "s" }
-        );
-        Ok(())
+        self.apply_editable_token_selection_update(
+            lines,
+            &selected_indices,
+            format!(
+                "{} {} token{}",
+                replacement_name,
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
     }
 
     pub(super) fn delete_selected_editable_tokens(&mut self) -> Result<()> {
@@ -419,20 +422,17 @@ impl StudioApp {
         let inserted_indices: Vec<usize> =
             (last_selected_index + 1..=last_selected_index + selected_tokens.len()).collect();
 
-        self.push_source_undo();
-        self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(&inserted_indices);
-        self.sync_selection_visual();
         let audition = self.audition_candidate_from_indices(&inserted_indices);
-        self.dirty = true;
-        self.compile_and_update_current_source()?;
-        self.status_message = format!(
-            "Duplicated {} token{}",
-            selected_tokens.len(),
-            if selected_tokens.len() == 1 { "" } else { "s" }
-        );
-        self.audition_candidate(audition);
-        Ok(())
+        self.apply_editable_token_selection_update(
+            lines,
+            &inserted_indices,
+            format!(
+                "Duplicated {} token{}",
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
     }
 
     pub(super) fn duplicate_selected_bars(&mut self) -> Result<()> {
