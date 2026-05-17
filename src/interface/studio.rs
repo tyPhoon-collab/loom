@@ -24,6 +24,7 @@ mod onset;
 mod selection;
 mod selection_ops;
 mod selection_state;
+mod selection_view;
 mod settings;
 mod settings_ops;
 mod source;
@@ -63,6 +64,7 @@ pub struct StudioApp {
     config_status: String,
     current_beat: Arc<Mutex<f64>>,
     textarea: TextArea<'static>,
+    textarea_viewport: selection_view::TextAreaViewport,
     selection: Option<StudioSelection>,
     source_undo_stack: Vec<String>,
     player: LivePlayer,
@@ -110,6 +112,7 @@ impl StudioApp {
             config_status,
             current_beat,
             textarea,
+            textarea_viewport: selection_view::TextAreaViewport::default(),
             selection: None,
             source_undo_stack: Vec::new(),
             player,

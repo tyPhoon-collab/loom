@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 impl StudioApp {
-    pub(super) fn ui(&self, f: &mut ratatui::Frame) {
+    pub(super) fn ui(&mut self, f: &mut ratatui::Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -37,6 +37,8 @@ impl StudioApp {
         let inner = block.inner(chunks[0]);
         f.render_widget(block, chunks[0]);
         f.render_widget(&self.textarea, inner);
+        self.update_textarea_scroll_top(inner);
+        self.render_selection_overlay(inner, f.buffer_mut());
 
         let beat_val = *self.current_beat.lock().unwrap();
         let compile_line = match &self.compile_status {
