@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -6,11 +7,28 @@ use std::path::PathBuf;
 pub struct GlobalConfig {
     #[serde(default)]
     pub midi: MidiConfig,
+    #[serde(default)]
+    pub studio: StudioConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct MidiConfig {
     pub output_port: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct StudioConfig {
+    #[serde(default)]
+    pub note_keyboard: NoteKeyboardConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct NoteKeyboardConfig {
+    pub base_octave: Option<i32>,
+    pub octave_down: Option<String>,
+    pub octave_up: Option<String>,
+    #[serde(default)]
+    pub keys: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]

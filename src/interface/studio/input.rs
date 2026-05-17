@@ -1,7 +1,6 @@
 pub(super) const ADD_HELP: &str =
     "Add: s seq | l note-head | t track | b bar | n note | . rest | - sustain";
-pub(super) const NOTE_HELP: &str =
-    "Note: A C | W C# | S D | E D# | D E | F F | T F# | G G | Y G# | H A | U A# | J B | K C";
+pub(super) const NOTE_HELP: &str = "Note: keyboard piano key | . rest | - sustain | Esc cancel";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PendingInput {

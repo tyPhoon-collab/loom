@@ -1,9 +1,11 @@
+use crate::config::StudioConfig;
 use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP};
 use miette::{IntoDiagnostic, Result};
+use note_entry::NoteKeyboard;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -54,6 +56,7 @@ pub struct StudioApp {
     dirty: bool,
     is_playing: bool,
     bpm: u32,
+    note_keyboard: NoteKeyboard,
     note_keyboard_octave: i32,
     midi_device_name: String,
     config_status: String,
@@ -65,7 +68,12 @@ pub struct StudioApp {
 }
 
 impl StudioApp {
-    pub fn new(path: PathBuf, port_index: usize, config_status: String) -> Result<Self> {
+    pub fn new(
+        path: PathBuf,
+        port_index: usize,
+        config_status: String,
+        studio_config: StudioConfig,
+    ) -> Result<Self> {
         let content = fs::read_to_string(&path)
             .map_err(|e| miette::miette!("Failed to read {}: {}", path.display(), e))?;
         let mut textarea = if content.is_empty() {
@@ -80,6 +88,8 @@ impl StudioApp {
         let current_beat = Arc::new(Mutex::new(0.0));
         let player = LivePlayer::new(port_index, Arc::clone(&current_beat))?;
         let midi_device_name = midi_device_name(port_index);
+        let (note_keyboard, note_keyboard_octave) =
+            NoteKeyboard::from_config(&studio_config.note_keyboard);
 
         let mut app = Self {
             should_quit: false,
@@ -95,7 +105,8 @@ impl StudioApp {
             dirty: false,
             is_playing: false,
             bpm: 120,
-            note_keyboard_octave: 4,
+            note_keyboard,
+            note_keyboard_octave,
             midi_device_name,
             config_status,
             current_beat,
@@ -175,10 +186,10 @@ impl StudioApp {
                 self.status_message =
                     format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
             }
-            KeyCode::Char('z') | KeyCode::Char('Z') => {
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
             }
-            KeyCode::Char('x') | KeyCode::Char('X') => {
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
                 self.adjust_note_keyboard_octave(1);
             }
             KeyCode::Char('v') => {

@@ -34,7 +34,12 @@ pub fn run(command: Commands) -> Result<()> {
         }
         Commands::Studio { input, port } => {
             let port = resolve_midi_port(port, config);
-            studio::handle_studio(input, port, loaded_config.status_message())
+            studio::handle_studio(
+                input,
+                port,
+                loaded_config.status_message(),
+                config.studio.clone(),
+            )
         }
         Commands::Save { input, output } => save::handle_save(input, output),
         Commands::Fmt { input, check } => fmt::handle_fmt(input, check),
