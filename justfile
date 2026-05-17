@@ -2,6 +2,8 @@
 default:
     @just --list
 
+# DevOps
+
 build:
     cargo build
 
@@ -18,6 +20,7 @@ fmt-rust:
     cargo fmt
 
 # Loom Commands
+
 fmt-loom file *args:
     cargo run -- fmt {{file}} {{args}}
 

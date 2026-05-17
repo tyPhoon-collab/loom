@@ -268,7 +268,7 @@ impl StudioApp {
                 self.apply_transpose(-12);
             }
             KeyCode::Char('x') => {
-                self.delete_selected_notes()?;
+                self.delete_selection()?;
             }
             KeyCode::Char('r') => {
                 self.replace_selected_tokens(".")?;
@@ -797,8 +797,7 @@ impl StudioApp {
             self.selection,
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
         ) {
-            self.status_message = "Bar transpose is not implemented yet".into();
-            return Ok(());
+            return self.transpose_selected_bars(semitones);
         }
 
         let (start, end) = self.selected_line_range();
@@ -838,6 +837,81 @@ impl StudioApp {
             if changed == 1 { "" } else { "s" },
             semitones,
             if semitones.abs() == 1 { "" } else { "s" }
+        );
+        self.audition_candidate(audition);
+        Ok(())
+    }
+
+    fn transpose_selected_bars(&mut self, semitones: i32) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "No bar selected".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let mut replacements = Vec::new();
+        for bar in &selected_bars {
+            let Some(line) = lines.get(bar.row) else {
+                self.status_message = "Selected bar no longer exists".into();
+                return Ok(());
+            };
+            let bar_text = char_range(line, bar.start_col, bar.end_col);
+            let (new_bar_text, changed) = transpose_bar_text(&bar_text, semitones)?;
+            if changed {
+                replacements.push((bar.clone(), new_bar_text));
+            }
+        }
+
+        if replacements.is_empty() {
+            self.status_message = "No transposable notes in selected bars".into();
+            return Ok(());
+        }
+
+        replacements.sort_by(|(left, _), (right, _)| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+        for (bar, new_bar_text) in &replacements {
+            let Some(line) = lines.get_mut(bar.row) else {
+                self.status_message = "Selected bar no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(line, bar.start_col, bar.end_col, new_bar_text);
+        }
+
+        let selected_rows_indices: Vec<(usize, usize)> = selected_bars
+            .iter()
+            .map(|bar| (bar.row, bar.index))
+            .collect();
+        let audition = replacements.iter().find_map(|(old_bar, _)| {
+            let line = lines.get(old_bar.row)?;
+            let new_bar = bar_spans_in_line(old_bar.row, line)
+                .into_iter()
+                .find(|bar| bar.index == old_bar.index)?;
+            note_spans_in_line(old_bar.row, line)
+                .into_iter()
+                .find(|note| {
+                    note.kind == SelectableTokenKind::Note
+                        && note.start_col >= new_bar.start_col
+                        && note.end_col <= new_bar.end_col
+                })
+                .map(|note| (note.row, note.token))
+        });
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_bar_selection_from_positions(&selected_rows_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Transposed {} bar{} by {:+}",
+            selected_bars.len(),
+            if selected_bars.len() == 1 { "" } else { "s" },
+            semitones
         );
         self.audition_candidate(audition);
         Ok(())
@@ -986,6 +1060,60 @@ impl StudioApp {
             "Deleted {} token{}",
             selected_notes.len(),
             if selected_notes.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    fn delete_selection(&mut self) -> Result<()> {
+        if matches!(
+            self.selection,
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
+        ) {
+            self.delete_selected_bars()
+        } else {
+            self.delete_selected_notes()
+        }
+    }
+
+    fn delete_selected_bars(&mut self) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "x applies to bar selection only".into();
+            return Ok(());
+        }
+
+        let row = selected_bars[0].row;
+        if selected_bars.iter().any(|bar| bar.row != row) {
+            self.status_message = "Bar delete currently supports one line at a time".into();
+            return Ok(());
+        }
+        if selected_bars.len() == self.bar_spans_on_line(row).len() {
+            self.status_message = "Cannot delete all bars on a line".into();
+            return Ok(());
+        }
+
+        let first = selected_bars.first().cloned().unwrap();
+        let last = selected_bars.last().cloned().unwrap();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return Ok(());
+        };
+        replace_char_range(line, first.start_col + 1, last.end_col, "");
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump(row as u16, first.start_col as u16));
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Deleted {} bar{}",
+            selected_bars.len(),
+            if selected_bars.len() == 1 { "" } else { "s" }
         );
         Ok(())
     }
@@ -1513,6 +1641,46 @@ impl StudioApp {
         }
     }
 
+    fn restore_bar_selection_from_positions(&mut self, positions: &[(usize, usize)]) {
+        match positions {
+            [] => {
+                self.selection = None;
+            }
+            [(row, index)] => {
+                let bars = self.bar_spans_on_line(*row);
+                if let Some(bar) = bars.iter().find(|bar| bar.index == *index) {
+                    self.selection = Some(StudioSelection::Bar { span: bar.clone() });
+                } else {
+                    self.selection = None;
+                }
+            }
+            positions => {
+                let Some((first_row, first_index)) = positions.first() else {
+                    self.selection = None;
+                    return;
+                };
+                let Some((last_row, last_index)) = positions.last() else {
+                    self.selection = None;
+                    return;
+                };
+                let first_bars = self.bar_spans_on_line(*first_row);
+                let last_bars = self.bar_spans_on_line(*last_row);
+                let Some(first) = first_bars.iter().find(|bar| bar.index == *first_index) else {
+                    self.selection = None;
+                    return;
+                };
+                let Some(last) = last_bars.iter().find(|bar| bar.index == *last_index) else {
+                    self.selection = None;
+                    return;
+                };
+                self.selection = Some(StudioSelection::BarRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+        }
+    }
+
     fn note_at_or_after_cursor(&self, row: usize, col: usize) -> Option<NoteTokenSpan> {
         note_at_or_near_col(self.note_spans_on_line(row), col)
     }
@@ -1737,6 +1905,10 @@ fn transpose_line(line: &str, semitones: i32) -> Result<(String, bool)> {
         return Ok((line.to_string(), false));
     }
     Ok((format!("{}{}", new_head, tail), true))
+}
+
+fn transpose_bar_text(input: &str, semitones: i32) -> Result<(String, bool)> {
+    transpose_note_tokens(input, semitones)
 }
 
 fn transpose_note_head(head: &str, semitones: i32) -> Result<(String, bool)> {
@@ -1980,7 +2152,7 @@ fn finish_source(lines: Vec<String>) -> String {
 mod tests {
     use super::{
         loop_range_for_bar_indices, parse_track_header_channel, set_loop_range_frontmatter,
-        toggle_loop_frontmatter, transpose_line,
+        toggle_loop_frontmatter, transpose_bar_text, transpose_line,
     };
 
     #[test]
@@ -2009,6 +2181,13 @@ mod tests {
         let (line, changed) = transpose_line("seq | D4 . Eb4 A#3 |", 1).unwrap();
         assert!(changed);
         assert_eq!(line, "seq | D#4 . E4 B3 |");
+    }
+
+    #[test]
+    fn transpose_bar_text_transposes_only_notes() {
+        let (bar, changed) = transpose_bar_text("| D4 . - Eb4 |", 1).unwrap();
+        assert!(changed);
+        assert_eq!(bar, "| D#4 . - E4 |");
     }
 
     #[test]
