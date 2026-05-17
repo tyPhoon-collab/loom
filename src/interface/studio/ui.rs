@@ -1,4 +1,4 @@
-use super::input::{PendingInput, ADD_HELP};
+use super::input::{PendingInput, ADD_HELP, NOTE_HELP};
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -56,11 +56,12 @@ impl StudioApp {
         };
         let playback_state = if self.is_playing { "PLAYING" } else { "PAUSED" };
         let status = Paragraph::new(format!(
-            "Device: {}\nPlayback: {}  Beat: {:.2}  BPM: {}\n{}\n{}\nMessage: {}\n{}",
+            "Device: {}\nPlayback: {}  Beat: {:.2}  BPM: {}  KeyOct: {}\n{}\n{}\nMessage: {}\n{}",
             self.midi_device_name,
             playback_state,
             beat_val,
             self.bpm,
+            self.note_keyboard_octave,
             compile_line,
             selection_line,
             self.status_message,
@@ -75,8 +76,11 @@ impl StudioApp {
 
         let help = match self.mode {
             StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Add) => ADD_HELP,
+            StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Note) => {
+                NOTE_HELP
+            }
             StudioMode::Normal => {
-                "i ins | a add | v note | V line | b bar | B line bars | +/- transpose | space play | w save"
+                "i ins | a add | n note | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {

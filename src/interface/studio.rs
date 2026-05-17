@@ -2,7 +2,7 @@ use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use input::{PendingInput, StudioInputState, ADD_HELP};
+use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP};
 use miette::{IntoDiagnostic, Result};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui_textarea::CursorMove;
@@ -17,6 +17,7 @@ mod add;
 mod audition;
 mod edit_ops;
 mod input;
+mod note_entry;
 mod selection;
 mod selection_ops;
 mod selection_state;
@@ -53,6 +54,7 @@ pub struct StudioApp {
     dirty: bool,
     is_playing: bool,
     bpm: u32,
+    note_keyboard_octave: i32,
     midi_device_name: String,
     config_status: String,
     current_beat: Arc<Mutex<f64>>,
@@ -93,6 +95,7 @@ impl StudioApp {
             dirty: false,
             is_playing: false,
             bpm: 120,
+            note_keyboard_octave: 4,
             midi_device_name,
             config_status,
             current_beat,
@@ -166,6 +169,17 @@ impl StudioApp {
             KeyCode::Char('a') => {
                 self.input_state.begin_add();
                 self.status_message = ADD_HELP.into();
+            }
+            KeyCode::Char('n') => {
+                self.input_state.begin_note();
+                self.status_message =
+                    format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
+            }
+            KeyCode::Char('z') | KeyCode::Char('Z') => {
+                self.adjust_note_keyboard_octave(-1);
+            }
+            KeyCode::Char('x') | KeyCode::Char('X') => {
+                self.adjust_note_keyboard_octave(1);
             }
             KeyCode::Char('v') => {
                 self.enter_note_select_mode();
@@ -264,6 +278,7 @@ impl StudioApp {
     fn handle_pending_input(&mut self, pending: PendingInput, key: KeyEvent) -> Result<()> {
         match pending {
             PendingInput::Add => self.handle_add_key(key),
+            PendingInput::Note => self.handle_note_key(key),
         }
     }
 
