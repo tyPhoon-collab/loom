@@ -1,8 +1,7 @@
-use super::{CompileStatus, StudioApp};
+use super::{configure_textarea_style, CompileStatus, StudioApp};
 use crate::compiler;
 use crate::dsl::{formatter, parser};
 use miette::{IntoDiagnostic, Result};
-use ratatui::style::{Color, Modifier, Style};
 use ratatui_textarea::{CursorMove, TextArea};
 use std::fs;
 
@@ -15,12 +14,7 @@ impl StudioApp {
 
     pub(super) fn replace_source(&mut self, source: String) {
         self.textarea = TextArea::from(source.lines());
-        self.textarea
-            .set_line_number_style(Style::default().fg(Color::DarkGray));
-        self.textarea
-            .set_cursor_line_style(Style::default().add_modifier(Modifier::REVERSED));
-        self.textarea
-            .set_selection_style(Style::default().bg(Color::Blue));
+        configure_textarea_style(&mut self.textarea);
     }
 
     pub(super) fn push_source_undo(&mut self) {

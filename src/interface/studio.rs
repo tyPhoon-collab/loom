@@ -6,7 +6,7 @@ use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP};
 use miette::{IntoDiagnostic, Result};
 use note_entry::NoteKeyboard;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::StudioSelection;
@@ -81,9 +81,7 @@ impl StudioApp {
         } else {
             TextArea::from(content.lines())
         };
-        textarea.set_line_number_style(Style::default().fg(Color::DarkGray));
-        textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::REVERSED));
-        textarea.set_selection_style(Style::default().bg(Color::Blue));
+        configure_textarea_style(&mut textarea);
 
         let current_beat = Arc::new(Mutex::new(0.0));
         let player = LivePlayer::new(port_index, Arc::clone(&current_beat))?;
@@ -383,6 +381,13 @@ impl StudioApp {
     fn sync_playback_state(&mut self) {
         self.is_playing = self.player.playback_state() == PlaybackState::Playing;
     }
+}
+
+fn configure_textarea_style(textarea: &mut TextArea<'static>) {
+    textarea.set_line_number_style(Style::default().fg(Color::DarkGray));
+    textarea.set_cursor_line_style(Style::default().bg(Color::DarkGray));
+    textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::Yellow));
+    textarea.set_selection_style(Style::default().bg(Color::Blue));
 }
 
 fn midi_device_name(port_index: usize) -> String {
