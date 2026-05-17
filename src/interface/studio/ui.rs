@@ -94,7 +94,7 @@ impl StudioApp {
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {
-                "h/l move | H/L extend | n note | o onset | d duplicate | x delete | r rest | s sustain | Enter loop | Esc"
+                "h/l move | H/L extend | n note | o onset | d duplicate | T template | x delete | r rest | s sustain | Enter loop | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));

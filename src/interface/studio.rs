@@ -28,6 +28,7 @@ mod selection_view;
 mod settings;
 mod settings_ops;
 mod source;
+mod template_ops;
 mod transform;
 mod ui;
 
@@ -351,6 +352,9 @@ impl StudioApp {
             }
             KeyCode::Char('d') => {
                 self.duplicate_selection()?;
+            }
+            KeyCode::Char('T') => {
+                self.extract_selected_bars_to_template()?;
             }
             KeyCode::Enter => {
                 self.apply_selected_loop_range()?;
