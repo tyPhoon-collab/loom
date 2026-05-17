@@ -1,7 +1,7 @@
 use super::input::ONSET_HELP;
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, insert_at_col, lane_body_token_spans_in_line,
-    lane_head_token, replace_char_range, EditableTokenSpan,
+    bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
+    lane_body_token_spans_in_line, lane_head_token, replace_char_range, EditableTokenSpan,
 };
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -30,6 +30,30 @@ impl StudioApp {
             }
             KeyCode::Char('t') => {
                 self.toggle_onset_token_at_current_slot()?;
+            }
+            _ => {
+                self.status_message = format!("Unknown onset command. {}", ONSET_HELP);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn handle_select_onset_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.status_message = "Onset edit cancelled".into();
+            }
+            KeyCode::Char('x') => {
+                self.replace_selected_onset_tokens('^')?;
+            }
+            KeyCode::Char('.') => {
+                self.replace_selected_onset_tokens('.')?;
+            }
+            KeyCode::Char('-') => {
+                self.replace_selected_onset_tokens('-')?;
+            }
+            KeyCode::Char('t') => {
+                self.toggle_selected_onset_tokens()?;
             }
             _ => {
                 self.status_message = format!("Unknown onset command. {}", ONSET_HELP);
@@ -120,6 +144,130 @@ impl StudioApp {
         self.audition_candidate(audition);
         Ok(())
     }
+
+    pub(super) fn replace_selected_onset_tokens(&mut self, token: char) -> Result<()> {
+        let selected_indices = self.selected_editable_token_indices();
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "Onset edit applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let lines = self.textarea.lines();
+        if selected_tokens.iter().any(|selected| {
+            lines
+                .get(selected.row)
+                .is_none_or(|line| !is_lane_body_token(line, selected))
+        }) {
+            self.status_message = "Onset edit applies to lane body token selection only".into();
+            return Ok(());
+        }
+
+        let audition = if token == '^' {
+            selected_tokens.first().and_then(|selected| {
+                lines
+                    .get(selected.row)
+                    .and_then(|line| lane_head_token(line).map(|head| (selected.row, head)))
+            })
+        } else {
+            None
+        };
+
+        selected_tokens.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = lines.to_vec();
+        for selected in &selected_tokens {
+            let Some(line) = lines.get_mut(selected.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(
+                line,
+                selected.start_col,
+                selected.end_col,
+                &token.to_string(),
+            );
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_editable_token_selection_from_indices(&selected_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Set onset {} on {} token{}",
+            token,
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
+        );
+        self.audition_candidate(audition);
+        Ok(())
+    }
+
+    pub(super) fn toggle_selected_onset_tokens(&mut self) -> Result<()> {
+        let selected_indices = self.selected_editable_token_indices();
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "Onset toggle applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let lines = self.textarea.lines();
+        if selected_tokens.iter().any(|selected| {
+            lines
+                .get(selected.row)
+                .is_none_or(|line| !is_lane_body_token(line, selected))
+        }) {
+            self.status_message = "Onset toggle applies to lane body token selection only".into();
+            return Ok(());
+        }
+
+        selected_tokens.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = lines.to_vec();
+        let mut audition = None;
+        for selected in &selected_tokens {
+            let Some(line) = lines.get_mut(selected.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            let token = toggled_onset_token(&selected.token);
+            if audition.is_none() && token == '^' {
+                audition = lane_head_token(line).map(|head| (selected.row, head));
+            }
+            replace_char_range(
+                line,
+                selected.start_col,
+                selected.end_col,
+                &token.to_string(),
+            );
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_editable_token_selection_from_indices(&selected_indices);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Toggled onset on {} token{}",
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
+        );
+        self.audition_candidate(audition);
+        Ok(())
+    }
 }
 
 fn place_lane_onset_at_slot(
@@ -166,6 +314,14 @@ fn current_onset_token(line: &str, col: usize) -> Option<EditableTokenSpan> {
     onset_at_or_near_col_with_index(&onsets, col).map(|(_, onset)| onset)
 }
 
+fn toggled_onset_token(token: &str) -> char {
+    if token == "^" {
+        '.'
+    } else {
+        '^'
+    }
+}
+
 fn onset_at_or_near_col_with_index(
     onsets: &[EditableTokenSpan],
     col: usize,
@@ -193,7 +349,7 @@ fn onset_at_or_near_col_with_index(
 
 #[cfg(test)]
 mod tests {
-    use super::place_lane_onset_at_slot;
+    use super::{place_lane_onset_at_slot, toggled_onset_token};
 
     #[test]
     fn place_onset_replaces_current_lane_slot() {
@@ -225,18 +381,10 @@ mod tests {
         assert!(place_lane_onset_at_slot(0, &mut line, 6, '^').is_err());
     }
 
-    fn toggle_token(input: char) -> char {
-        if input == '^' {
-            '.'
-        } else {
-            '^'
-        }
-    }
-
     #[test]
     fn toggle_onset_uses_note_on_for_rest_or_sustain() {
-        assert_eq!(toggle_token('^'), '.');
-        assert_eq!(toggle_token('.'), '^');
-        assert_eq!(toggle_token('-'), '^');
+        assert_eq!(toggled_onset_token("^"), '.');
+        assert_eq!(toggled_onset_token("."), '^');
+        assert_eq!(toggled_onset_token("-"), '^');
     }
 }

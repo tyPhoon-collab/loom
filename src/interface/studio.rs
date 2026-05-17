@@ -301,7 +301,7 @@ impl StudioApp {
         if let Some(pending) = self.input_state.take_pending() {
             return match pending {
                 PendingInput::Note => self.handle_select_note_key(key),
-                PendingInput::Onset => self.handle_pending_input(pending, key),
+                PendingInput::Onset => self.handle_select_onset_key(key),
                 PendingInput::Add => self.handle_pending_input(pending, key),
             };
         }
@@ -314,6 +314,10 @@ impl StudioApp {
                 self.input_state.begin_note();
                 self.status_message =
                     format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
+            }
+            KeyCode::Char('o') => {
+                self.input_state.begin_onset();
+                self.status_message = ONSET_HELP.into();
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);
