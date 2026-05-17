@@ -442,36 +442,45 @@ impl StudioApp {
             return Ok(());
         }
 
-        let row = selected_bars[0].row;
-        if selected_bars.iter().any(|bar| bar.row != row) {
-            self.status_message = "Bar duplicate currently supports one line at a time".into();
-            return Ok(());
+        let mut lines = self.textarea.lines().to_vec();
+        let mut inserted_positions = Vec::new();
+        let mut selected_by_row =
+            std::collections::BTreeMap::<usize, Vec<super::selection::BarSpan>>::new();
+        for bar in selected_bars {
+            selected_by_row.entry(bar.row).or_default().push(bar);
+        }
+        let duplicated_bar_count: usize = selected_by_row.values().map(Vec::len).sum();
+
+        for (row, mut row_bars) in selected_by_row.into_iter().rev() {
+            row_bars.sort_by_key(|bar| bar.index);
+            let Some(first) = row_bars.first().cloned() else {
+                continue;
+            };
+            let Some(last) = row_bars.last().cloned() else {
+                continue;
+            };
+            let Some(line) = lines.get_mut(row) else {
+                self.status_message = "Selected bar no longer exists".into();
+                return Ok(());
+            };
+
+            let insertion = char_range(line, first.start_col + 1, last.end_col);
+            insert_at_col(line, last.end_col, &insertion);
+            inserted_positions
+                .extend((last.index + 1..=last.index + row_bars.len()).map(|index| (row, index)));
         }
 
-        let first = selected_bars.first().cloned().unwrap();
-        let last = selected_bars.last().cloned().unwrap();
-        let mut lines = self.textarea.lines().to_vec();
-        let Some(line) = lines.get_mut(row) else {
-            self.status_message = "Selected bar no longer exists".into();
-            return Ok(());
-        };
-
-        let insertion = char_range(line, first.start_col + 1, last.end_col);
-        insert_at_col(line, last.end_col, &insertion);
-
-        let inserted_indices: Vec<usize> =
-            (last.index + 1..=last.index + selected_bars.len()).collect();
-
+        inserted_positions.sort_unstable();
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_bar_selection_from_row_indices(row, &inserted_indices);
+        self.restore_bar_selection_from_positions(&inserted_positions);
         self.sync_selection_visual();
         self.dirty = true;
         self.compile_and_update_current_source()?;
         self.status_message = format!(
             "Duplicated {} bar{}",
-            selected_bars.len(),
-            if selected_bars.len() == 1 { "" } else { "s" }
+            duplicated_bar_count,
+            if duplicated_bar_count == 1 { "" } else { "s" }
         );
         Ok(())
     }

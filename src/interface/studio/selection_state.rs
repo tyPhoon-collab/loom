@@ -1,7 +1,6 @@
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
-    editable_token_spans_in_line, ordered_bar_span_bounds, BarSpan, EditableTokenSpan,
-    StudioSelection,
+    editable_token_spans_in_line, BarSpan, EditableTokenSpan, StudioSelection,
 };
 use super::StudioApp;
 
@@ -64,23 +63,31 @@ impl StudioApp {
                 format!("bar {} on line {}", span.index + 1, span.row + 1)
             }
             Some(StudioSelection::BarRange { anchor, focus }) => {
-                let (start, end) = ordered_bar_span_bounds(anchor, focus);
-                if start == end {
-                    format!("bar {} on line {}", start.index + 1, start.row + 1)
-                } else if start.row == end.row {
+                let ((start_row, end_row), (start_index, end_index)) =
+                    self.selected_bar_rectangle_bounds(anchor, focus);
+                if start_row == end_row && start_index == end_index {
+                    format!("bar {} on line {}", start_index + 1, start_row + 1)
+                } else if start_row == end_row {
                     format!(
                         "bars {}..{} on line {}",
-                        start.index + 1,
-                        end.index + 1,
-                        start.row + 1
+                        start_index + 1,
+                        end_index + 1,
+                        start_row + 1
+                    )
+                } else if start_index == end_index {
+                    format!(
+                        "bar {} across lines {}..{}",
+                        start_index + 1,
+                        start_row + 1,
+                        end_row + 1
                     )
                 } else {
                     format!(
-                        "bars line {}:{} to line {}:{}",
-                        start.row + 1,
-                        start.index + 1,
-                        end.row + 1,
-                        end.index + 1
+                        "bars {}..{} across lines {}..{}",
+                        start_index + 1,
+                        end_index + 1,
+                        start_row + 1,
+                        end_row + 1
                     )
                 }
             }
@@ -170,29 +177,37 @@ impl StudioApp {
     }
 
     pub(super) fn selected_bar_spans(&self) -> Vec<BarSpan> {
-        let bars = self.bar_spans();
         match &self.selection {
-            Some(StudioSelection::Bar { span }) => bars
-                .iter()
-                .position(|bar| bar == span)
-                .and_then(|index| bars.get(index).cloned())
+            Some(StudioSelection::Bar { span }) => self
+                .bar_spans_on_line(span.row)
+                .into_iter()
+                .find(|bar| bar.index == span.index)
                 .map(|bar| vec![bar])
                 .unwrap_or_default(),
             Some(StudioSelection::BarRange { anchor, focus }) => {
-                let Some(anchor_index) = bars.iter().position(|bar| bar == anchor) else {
-                    return Vec::new();
-                };
-                let Some(focus_index) = bars.iter().position(|bar| bar == focus) else {
-                    return Vec::new();
-                };
-                let start = anchor_index.min(focus_index);
-                let end = anchor_index.max(focus_index);
-                (start..=end)
-                    .filter_map(|index| bars.get(index).cloned())
+                let ((start_row, end_row), (start_index, end_index)) =
+                    self.selected_bar_rectangle_bounds(anchor, focus);
+                (start_row..=end_row)
+                    .flat_map(|row| {
+                        self.bar_spans_on_line(row)
+                            .into_iter()
+                            .filter(move |bar| (start_index..=end_index).contains(&bar.index))
+                    })
                     .collect()
             }
             _ => Vec::new(),
         }
+    }
+
+    pub(super) fn selected_bar_rectangle_bounds(
+        &self,
+        anchor: &BarSpan,
+        focus: &BarSpan,
+    ) -> ((usize, usize), (usize, usize)) {
+        (
+            (anchor.row.min(focus.row), anchor.row.max(focus.row)),
+            (anchor.index.min(focus.index), anchor.index.max(focus.index)),
+        )
     }
 
     pub(super) fn restore_editable_token_selection_from_indices(
@@ -225,44 +240,6 @@ impl StudioApp {
                     return;
                 };
                 self.selection = Some(StudioSelection::EditableTokenRange {
-                    anchor: first.clone(),
-                    focus: last.clone(),
-                });
-            }
-        }
-    }
-
-    pub(super) fn restore_bar_selection_from_row_indices(
-        &mut self,
-        row: usize,
-        selected_indices: &[usize],
-    ) {
-        let bars = self.bar_spans_on_line(row);
-        match selected_indices {
-            [] => {
-                self.selection = None;
-            }
-            [index] => {
-                if let Some(bar) = bars.iter().find(|bar| bar.index == *index) {
-                    self.selection = Some(StudioSelection::Bar { span: bar.clone() });
-                }
-            }
-            indices => {
-                let Some(first) = indices
-                    .first()
-                    .and_then(|index| bars.iter().find(|bar| bar.index == *index))
-                else {
-                    self.selection = None;
-                    return;
-                };
-                let Some(last) = indices
-                    .last()
-                    .and_then(|index| bars.iter().find(|bar| bar.index == *index))
-                else {
-                    self.selection = None;
-                    return;
-                };
-                self.selection = Some(StudioSelection::BarRange {
                     anchor: first.clone(),
                     focus: last.clone(),
                 });
@@ -336,6 +313,12 @@ impl StudioApp {
         self.bar_spans_on_line(row)
             .into_iter()
             .min_by_key(|bar| bar.start_col.abs_diff(col))
+    }
+
+    pub(super) fn bar_on_line_by_index(&self, row: usize, index: usize) -> Option<BarSpan> {
+        self.bar_spans_on_line(row)
+            .into_iter()
+            .find(|bar| bar.index == index)
     }
 
     pub(super) fn editable_token_spans(&self) -> Vec<EditableTokenSpan> {

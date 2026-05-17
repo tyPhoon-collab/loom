@@ -31,12 +31,13 @@ impl StudioApp {
         };
         match set_loop_range_frontmatter(&source, &loop_range) {
             Ok(source) => {
+                let selected_positions: Vec<(usize, usize)> = selected_bars
+                    .iter()
+                    .map(|bar| (bar.row, bar.index))
+                    .collect();
                 self.push_source_undo();
                 self.replace_source(source);
-                self.restore_bar_selection_from_row_indices(
-                    selected_bars[0].row,
-                    &(start_index..=end_index).collect::<Vec<_>>(),
-                );
+                self.restore_bar_selection_from_positions(&selected_positions);
                 self.sync_selection_visual();
                 self.dirty = true;
                 self.compile_and_update_current_source()?;

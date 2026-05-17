@@ -242,8 +242,11 @@ impl StudioApp {
             self.status_message = "No more lines".into();
             return;
         };
-        let Some(bar) = self.nearest_bar_on_line(next_row, focus.start_col) else {
-            self.status_message = "No bar on target line".into();
+        let Some(bar) = self
+            .bar_on_line_by_index(next_row, focus.index)
+            .or_else(|| self.nearest_bar_on_line(next_row, focus.start_col))
+        else {
+            self.status_message = "No matching bar on target line".into();
             return;
         };
         self.expand_bar_selection_to(bar);
@@ -262,10 +265,22 @@ impl StudioApp {
                 self.status_message = format!("Select mode: {}", self.selection_label());
             }
             Some(StudioSelection::Bar {
-                span: BarSpan { row, start_col, .. },
+                span:
+                    BarSpan {
+                        row,
+                        start_col,
+                        index,
+                        ..
+                    },
             })
             | Some(StudioSelection::BarRange {
-                focus: BarSpan { row, start_col, .. },
+                focus:
+                    BarSpan {
+                        row,
+                        start_col,
+                        index,
+                        ..
+                    },
                 ..
             }) => {
                 let next_row = if direction < 0 {
@@ -277,8 +292,11 @@ impl StudioApp {
                     self.status_message = "No more lines".into();
                     return;
                 };
-                let Some(bar) = self.nearest_bar_on_line(next_row, start_col) else {
-                    self.status_message = "No bar on target line".into();
+                let Some(bar) = self
+                    .bar_on_line_by_index(next_row, index)
+                    .or_else(|| self.nearest_bar_on_line(next_row, start_col))
+                else {
+                    self.status_message = "No matching bar on target line".into();
                     return;
                 };
                 self.set_bar_selection(bar);
@@ -404,12 +422,17 @@ impl StudioApp {
                     .move_cursor(CursorMove::Jump(span.row as u16, span.end_col as u16));
             }
             StudioSelection::BarRange { anchor, focus } => {
-                let (start, end) = ordered_bar_span_bounds(&anchor, &focus);
-                self.textarea
-                    .move_cursor(CursorMove::Jump(start.row as u16, start.start_col as u16));
-                self.textarea.start_selection();
-                self.textarea
-                    .move_cursor(CursorMove::Jump(end.row as u16, end.end_col as u16));
+                if anchor.row == focus.row {
+                    let (start, end) = ordered_bar_span_bounds(&anchor, &focus);
+                    self.textarea
+                        .move_cursor(CursorMove::Jump(start.row as u16, start.start_col as u16));
+                    self.textarea.start_selection();
+                    self.textarea
+                        .move_cursor(CursorMove::Jump(end.row as u16, end.end_col as u16));
+                } else {
+                    self.textarea
+                        .move_cursor(CursorMove::Jump(focus.row as u16, focus.start_col as u16));
+                }
             }
             StudioSelection::LineRange { anchor_row } => {
                 let current_row = self.textarea.cursor().0;
