@@ -128,17 +128,17 @@ impl StudioApp {
         self.apply_cursor_source_update(lines, (cursor.0, new_cursor_col), "Added bar".into(), None)
     }
 
-    pub(super) fn place_token_at_current_slot(&mut self, token: &str) -> Result<()> {
+    pub(super) fn place_token_at_current_slot(&mut self, token: &str) -> Result<bool> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(cursor.0) else {
             self.status_message = "No current line".into();
-            return Ok(());
+            return Ok(false);
         };
 
         let Ok(slot) = place_seq_token_at_slot(cursor.0, line, cursor.1, token) else {
             self.status_message = "Place token currently supports seq lines only".into();
-            return Ok(());
+            return Ok(false);
         };
 
         let cursor_col = editable_token_spans_in_line(cursor.0, line)
@@ -151,7 +151,8 @@ impl StudioApp {
             (cursor.0, cursor_col),
             format!("Placed {}", token),
             audition,
-        )
+        )?;
+        Ok(true)
     }
 
     pub(super) fn note_token_for_add(&self) -> String {

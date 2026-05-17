@@ -5,6 +5,17 @@ use miette::{IntoDiagnostic, Result};
 use ratatui_textarea::{CursorMove, TextArea};
 use std::fs;
 
+fn resolve_undo_cursor(
+    target_cursor: (usize, usize),
+    undo_cursor: (usize, usize),
+) -> (usize, usize) {
+    if target_cursor == undo_cursor {
+        target_cursor
+    } else {
+        undo_cursor
+    }
+}
+
 impl StudioApp {
     pub(super) fn source(&self) -> String {
         let mut source = self.textarea.lines().join("\n");
@@ -18,7 +29,9 @@ impl StudioApp {
     }
 
     pub(super) fn push_source_undo(&mut self) {
-        self.source_undo_stack.push(self.source());
+        let cursor = self.textarea.cursor();
+        self.source_undo_stack
+            .push((self.source(), (cursor.0, cursor.1)));
         const MAX_SOURCE_UNDO: usize = 32;
         if self.source_undo_stack.len() > MAX_SOURCE_UNDO {
             self.source_undo_stack.remove(0);
@@ -59,6 +72,38 @@ impl StudioApp {
         self.status_message = status_message;
         self.audition_candidate(audition);
         Ok(())
+    }
+
+    pub(super) fn undo_last_source_edit_to(
+        &mut self,
+        target_cursor: (usize, usize),
+    ) -> Result<bool> {
+        let Some((source, undo_cursor)) = self.source_undo_stack.pop() else {
+            return Ok(false);
+        };
+
+        self.replace_source(source);
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+
+        let desired_cursor = resolve_undo_cursor(target_cursor, undo_cursor);
+
+        if let Some(token) =
+            self.editable_token_at_or_after_cursor(desired_cursor.0, desired_cursor.1)
+        {
+            self.focus_editable_token_cursor(&token);
+            self.last_continuous_edit_cursor = Some((token.row, token.start_col));
+        } else {
+            let row = desired_cursor
+                .0
+                .min(self.textarea.lines().len().saturating_sub(1));
+            let col = desired_cursor.1.min(self.line_len(row));
+            self.textarea
+                .move_cursor(CursorMove::Jump(row as u16, col as u16));
+            self.last_continuous_edit_cursor = Some((row, col));
+        }
+
+        Ok(true)
     }
 
     pub(super) fn save(&mut self) -> Result<()> {
@@ -131,5 +176,39 @@ impl StudioApp {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_undo_cursor;
+
+    #[test]
+    fn undo_cursor_prefers_snapshot_over_advanced_cursor_for_rest_entry() {
+        let rest_token_cursor = (0, 9);
+        let advanced_cursor = (0, 11);
+
+        let resolved = resolve_undo_cursor(advanced_cursor, rest_token_cursor);
+
+        assert_eq!(resolved, rest_token_cursor);
+    }
+
+    #[test]
+    fn undo_cursor_prefers_snapshot_over_advanced_cursor_for_sustain_entry() {
+        let sustain_token_cursor = (2, 13);
+        let advanced_cursor = (2, 15);
+
+        let resolved = resolve_undo_cursor(advanced_cursor, sustain_token_cursor);
+
+        assert_eq!(resolved, sustain_token_cursor);
+    }
+
+    #[test]
+    fn undo_cursor_keeps_snapshot_when_cursor_did_not_advance() {
+        let current_cursor = (1, 7);
+
+        let resolved = resolve_undo_cursor(current_cursor, current_cursor);
+
+        assert_eq!(resolved, current_cursor);
     }
 }

@@ -177,6 +177,45 @@ pub(super) fn editable_token_at_or_near_col(
         .or_else(|| notes.into_iter().next_back())
 }
 
+pub(super) fn next_editable_token_after_position(
+    notes: &[EditableTokenSpan],
+    row: usize,
+    col: usize,
+) -> Option<EditableTokenSpan> {
+    let current_index = notes
+        .iter()
+        .position(|note| note.row == row && col >= note.start_col && col < note.end_col);
+    if let Some(index) = current_index {
+        return notes.get(index + 1).cloned();
+    }
+
+    notes
+        .iter()
+        .find(|note| note.row > row || (note.row == row && note.start_col > col))
+        .cloned()
+}
+
+pub(super) fn previous_editable_token_before_position(
+    notes: &[EditableTokenSpan],
+    row: usize,
+    col: usize,
+) -> Option<EditableTokenSpan> {
+    let current_index = notes
+        .iter()
+        .position(|note| note.row == row && col >= note.start_col && col < note.end_col);
+    if let Some(index) = current_index {
+        return index
+            .checked_sub(1)
+            .and_then(|prev| notes.get(prev).cloned());
+    }
+
+    notes
+        .iter()
+        .rev()
+        .find(|note| note.row < row || (note.row == row && note.start_col < col))
+        .cloned()
+}
+
 pub(super) fn bar_spans_in_line(row: usize, line: &str) -> Vec<BarSpan> {
     let pipe_cols: Vec<usize> = line
         .chars()
@@ -336,8 +375,9 @@ mod tests {
     use super::{
         bar_at_or_near_col, bar_spans_in_line, delete_editable_token,
         editable_token_at_or_near_col, editable_token_spans_in_line, insert_at_col,
-        ordered_bar_span_bounds, ordered_editable_token_span_bounds, replace_char_range,
-        EditableTokenKind,
+        next_editable_token_after_position, ordered_bar_span_bounds,
+        ordered_editable_token_span_bounds, previous_editable_token_before_position,
+        replace_char_range, EditableTokenKind,
     };
 
     #[test]
@@ -473,6 +513,29 @@ mod tests {
         let (start, end) = ordered_editable_token_span_bounds(&notes[2], &notes[0]);
         assert_eq!(start.token, "D4");
         assert_eq!(end.token, "Eb4");
+    }
+
+    #[test]
+    fn next_editable_token_skips_current_token() {
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let next = next_editable_token_after_position(&notes, 0, 6).unwrap();
+        assert_eq!(next.token, ".");
+    }
+
+    #[test]
+    fn previous_editable_token_returns_prior_token() {
+        let notes = editable_token_spans_in_line(0, "seq | D4 . Eb4 |");
+        let previous = previous_editable_token_before_position(&notes, 0, 10).unwrap();
+        assert_eq!(previous.token, ".");
+    }
+
+    #[test]
+    fn next_editable_token_crosses_lines() {
+        let mut notes = editable_token_spans_in_line(0, "seq | D4 . |");
+        notes.extend(editable_token_spans_in_line(1, "kick | ^ . |"));
+        let next = next_editable_token_after_position(&notes, 0, 9).unwrap();
+        assert_eq!(next.row, 1);
+        assert_eq!(next.token, "^");
     }
 
     #[test]

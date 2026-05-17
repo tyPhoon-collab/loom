@@ -1,4 +1,4 @@
-use super::input::ONSET_HELP;
+use super::input::{NoteInputMode, CONTINUOUS_ONSET_HELP, ONSET_HELP};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
     lane_body_token_spans_in_line, lane_head_token, replace_char_range, EditableTokenSpan,
@@ -13,25 +13,45 @@ struct PlacedOnset {
 }
 
 impl StudioApp {
-    pub(super) fn handle_onset_key(&mut self, key: KeyEvent) -> Result<()> {
+    pub(super) fn handle_onset_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         match key.code {
+            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
+                let target = self.last_continuous_edit_cursor.unwrap_or_else(|| {
+                    let cursor = self.textarea.cursor();
+                    (cursor.0, cursor.1)
+                });
+                let undone = self.undo_last_source_edit_to(target)?;
+                self.input_state.begin_continuous_onset();
+                self.status_message = if undone {
+                    self.onset_prompt(mode)
+                } else {
+                    "Nothing to undo".into()
+                };
+            }
             KeyCode::Esc => {
-                self.status_message = "Onset edit cancelled".into();
+                self.status_message = if matches!(mode, NoteInputMode::Continuous) {
+                    "Continuous onset edit cancelled".into()
+                } else {
+                    "Onset edit cancelled".into()
+                };
             }
             KeyCode::Char('x') => {
-                self.place_onset_token_at_current_slot('^')?;
+                self.apply_onset_entry(mode, '^')?;
             }
             KeyCode::Char('.') => {
-                self.place_onset_token_at_current_slot('.')?;
+                self.apply_onset_entry(mode, '.')?;
             }
             KeyCode::Char('-') => {
-                self.place_onset_token_at_current_slot('-')?;
+                self.apply_onset_entry(mode, '-')?;
             }
             KeyCode::Char('t') => {
-                self.toggle_onset_token_at_current_slot()?;
+                self.apply_toggled_onset_entry(mode)?;
             }
             _ => {
-                self.status_message = format!("Unknown onset command. {}", ONSET_HELP);
+                self.status_message = format!("Unknown onset command. {}", self.onset_help(mode));
+                if matches!(mode, NoteInputMode::Continuous) {
+                    self.input_state.begin_continuous_onset();
+                }
             }
         }
         Ok(())
@@ -61,17 +81,17 @@ impl StudioApp {
         Ok(())
     }
 
-    pub(super) fn place_onset_token_at_current_slot(&mut self, token: char) -> Result<()> {
+    pub(super) fn place_onset_token_at_current_slot(&mut self, token: char) -> Result<bool> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(cursor.0) else {
             self.status_message = "No current line".into();
-            return Ok(());
+            return Ok(false);
         };
 
         let Ok(placed) = place_lane_onset_at_slot(cursor.0, line, cursor.1, token) else {
             self.status_message = "Onset edit needs a note-head or drum lane line".into();
-            return Ok(());
+            return Ok(false);
         };
         let audition = if placed.token == '^' {
             lane_head_token(line).map(|head| (cursor.0, head))
@@ -87,15 +107,16 @@ impl StudioApp {
             (cursor.0, cursor_col),
             format!("Placed onset {}", placed.token),
             audition,
-        )
+        )?;
+        Ok(true)
     }
 
-    pub(super) fn toggle_onset_token_at_current_slot(&mut self) -> Result<()> {
+    pub(super) fn toggle_onset_token_at_current_slot(&mut self) -> Result<bool> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(cursor.0) else {
             self.status_message = "No current line".into();
-            return Ok(());
+            return Ok(false);
         };
 
         let token = current_onset_token(line, cursor.1)
@@ -103,7 +124,7 @@ impl StudioApp {
             .unwrap_or('^');
         let Ok(placed) = place_lane_onset_at_slot(cursor.0, line, cursor.1, token) else {
             self.status_message = "Onset toggle needs a note-head or drum lane line".into();
-            return Ok(());
+            return Ok(false);
         };
         let audition = if placed.token == '^' {
             lane_head_token(line).map(|head| (cursor.0, head))
@@ -119,7 +140,46 @@ impl StudioApp {
             (cursor.0, cursor_col),
             format!("Toggled onset to {}", placed.token),
             audition,
-        )
+        )?;
+        Ok(true)
+    }
+
+    fn apply_onset_entry(&mut self, mode: NoteInputMode, token: char) -> Result<()> {
+        let placed = self.place_onset_token_at_current_slot(token)?;
+        self.resume_continuous_onset_if_needed(mode, placed);
+        Ok(())
+    }
+
+    fn apply_toggled_onset_entry(&mut self, mode: NoteInputMode) -> Result<()> {
+        let placed = self.toggle_onset_token_at_current_slot()?;
+        self.resume_continuous_onset_if_needed(mode, placed);
+        Ok(())
+    }
+
+    fn resume_continuous_onset_if_needed(&mut self, mode: NoteInputMode, placed: bool) {
+        if !matches!(mode, NoteInputMode::Continuous) {
+            return;
+        }
+        if placed {
+            let cursor = self.textarea.cursor();
+            self.last_continuous_edit_cursor = Some((cursor.0, cursor.1));
+            if let Some(next) = self.adjacent_editable_token(1, cursor.0, cursor.1) {
+                self.focus_editable_token_cursor(&next);
+            }
+            self.status_message = self.onset_prompt(mode);
+        }
+        self.input_state.begin_continuous_onset();
+    }
+
+    pub(super) fn onset_prompt(&self, mode: NoteInputMode) -> String {
+        self.onset_help(mode).to_string()
+    }
+
+    fn onset_help(&self, mode: NoteInputMode) -> &'static str {
+        match mode {
+            NoteInputMode::Single => ONSET_HELP,
+            NoteInputMode::Continuous => CONTINUOUS_ONSET_HELP,
+        }
     }
 
     pub(super) fn replace_selected_onset_tokens(&mut self, token: char) -> Result<()> {

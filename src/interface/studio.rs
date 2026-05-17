@@ -3,7 +3,7 @@ use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use input::{PendingInput, StudioInputState, ADD_HELP, NOTE_HELP, ONSET_HELP};
+use input::{NoteInputMode, PendingInput, StudioInputState, ADD_HELP};
 use miette::{IntoDiagnostic, Result};
 use note_entry::NoteKeyboard;
 use ratatui::style::{Color, Style};
@@ -67,7 +67,8 @@ pub struct StudioApp {
     textarea: TextArea<'static>,
     textarea_viewport: selection_view::TextAreaViewport,
     selection: Option<StudioSelection>,
-    source_undo_stack: Vec<String>,
+    source_undo_stack: Vec<(String, (usize, usize))>,
+    last_continuous_edit_cursor: Option<(usize, usize)>,
     player: LivePlayer,
 }
 
@@ -116,6 +117,7 @@ impl StudioApp {
             textarea_viewport: selection_view::TextAreaViewport::default(),
             selection: None,
             source_undo_stack: Vec::new(),
+            last_continuous_edit_cursor: None,
             player,
         };
         app.compile_and_update_current_source()?;
@@ -186,12 +188,19 @@ impl StudioApp {
             }
             KeyCode::Char('n') => {
                 self.input_state.begin_note();
-                self.status_message =
-                    format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
+                self.status_message = self.note_prompt(NoteInputMode::Single);
+            }
+            KeyCode::Char('N') => {
+                self.input_state.begin_continuous_note();
+                self.status_message = self.note_prompt(NoteInputMode::Continuous);
             }
             KeyCode::Char('o') => {
                 self.input_state.begin_onset();
-                self.status_message = ONSET_HELP.into();
+                self.status_message = self.onset_prompt(NoteInputMode::Single);
+            }
+            KeyCode::Char('O') => {
+                self.input_state.begin_continuous_onset();
+                self.status_message = self.onset_prompt(NoteInputMode::Continuous);
             }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
@@ -250,8 +259,10 @@ impl StudioApp {
                 if self.textarea.undo() {
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
-                } else if let Some(source) = self.source_undo_stack.pop() {
+                } else if let Some((source, cursor)) = self.source_undo_stack.pop() {
                     self.replace_source(source);
+                    self.textarea
+                        .move_cursor(CursorMove::Jump(cursor.0 as u16, cursor.1 as u16));
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
                     self.status_message = "Undid transform".into();
@@ -288,6 +299,12 @@ impl StudioApp {
             KeyCode::Char('k') => self.textarea.move_cursor(CursorMove::Up),
             KeyCode::Char('h') => self.textarea.move_cursor(CursorMove::Back),
             KeyCode::Char('l') => self.textarea.move_cursor(CursorMove::Forward),
+            KeyCode::Char(',') => {
+                self.move_cursor_to_adjacent_editable_token(-1);
+            }
+            KeyCode::Char('.') => {
+                self.move_cursor_to_adjacent_editable_token(1);
+            }
             _ => {}
         }
         Ok(())
@@ -296,16 +313,16 @@ impl StudioApp {
     fn handle_pending_input(&mut self, pending: PendingInput, key: KeyEvent) -> Result<()> {
         match pending {
             PendingInput::Add => self.handle_add_key(key),
-            PendingInput::Note => self.handle_note_key(key),
-            PendingInput::Onset => self.handle_onset_key(key),
+            PendingInput::Note(mode) => self.handle_note_key(mode, key),
+            PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
         }
     }
 
     fn handle_select_key(&mut self, key: KeyEvent) -> Result<()> {
         if let Some(pending) = self.input_state.take_pending() {
             return match pending {
-                PendingInput::Note => self.handle_select_note_key(key),
-                PendingInput::Onset => self.handle_select_onset_key(key),
+                PendingInput::Note(_) => self.handle_select_note_key(key),
+                PendingInput::Onset(_) => self.handle_select_onset_key(key),
                 PendingInput::Add => self.handle_pending_input(pending, key),
             };
         }
@@ -316,12 +333,11 @@ impl StudioApp {
             }
             KeyCode::Char('n') => {
                 self.input_state.begin_note();
-                self.status_message =
-                    format!("{} | octave {}", NOTE_HELP, self.note_keyboard_octave);
+                self.status_message = self.note_prompt(NoteInputMode::Single);
             }
             KeyCode::Char('o') => {
                 self.input_state.begin_onset();
-                self.status_message = ONSET_HELP.into();
+                self.status_message = self.onset_prompt(NoteInputMode::Single);
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);

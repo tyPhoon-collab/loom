@@ -1,4 +1,7 @@
-use super::input::{PendingInput, ADD_HELP, NOTE_HELP, ONSET_HELP};
+use super::input::{
+    NoteInputMode, PendingInput, ADD_HELP, CONTINUOUS_NOTE_HELP, CONTINUOUS_ONSET_HELP, NOTE_HELP,
+    ONSET_HELP,
+};
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -78,19 +81,36 @@ impl StudioApp {
 
         let help = match self.mode {
             StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Add) => ADD_HELP,
-            StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Note) => {
+            StudioMode::Normal
+                if self.input_state.pending() == Some(PendingInput::Note(NoteInputMode::Single)) =>
+            {
                 NOTE_HELP
             }
-            StudioMode::Select if self.input_state.pending() == Some(PendingInput::Note) => {
+            StudioMode::Normal
+                if self.input_state.pending()
+                    == Some(PendingInput::Note(NoteInputMode::Continuous)) =>
+            {
+                CONTINUOUS_NOTE_HELP
+            }
+            StudioMode::Select
+                if self.input_state.pending() == Some(PendingInput::Note(NoteInputMode::Single)) =>
+            {
                 NOTE_HELP
             }
             StudioMode::Normal | StudioMode::Select
-                if self.input_state.pending() == Some(PendingInput::Onset) =>
+                if self.input_state.pending()
+                    == Some(PendingInput::Onset(NoteInputMode::Single)) =>
             {
                 ONSET_HELP
             }
+            StudioMode::Normal
+                if self.input_state.pending()
+                    == Some(PendingInput::Onset(NoteInputMode::Continuous)) =>
+            {
+                CONTINUOUS_ONSET_HELP
+            }
             StudioMode::Normal => {
-                "i ins | a add | n note | o onset | z/x octave | v note | b bar | +/- transpose | space play | w save"
+                "i ins | a add | n note | N note* | o onset | O onset* | ,/. slot | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
             StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             StudioMode::Select => {

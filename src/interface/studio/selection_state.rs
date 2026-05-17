@@ -1,10 +1,33 @@
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
-    editable_token_spans_in_line, BarSpan, EditableTokenSpan, StudioSelection,
+    editable_token_spans_in_line, next_editable_token_after_position,
+    previous_editable_token_before_position, BarSpan, EditableTokenSpan, StudioSelection,
 };
 use super::StudioApp;
+use ratatui_textarea::CursorMove;
 
 impl StudioApp {
+    pub(super) fn adjacent_editable_token(
+        &self,
+        direction: i32,
+        row: usize,
+        col: usize,
+    ) -> Option<EditableTokenSpan> {
+        let notes = self.editable_token_spans();
+        if direction < 0 {
+            previous_editable_token_before_position(&notes, row, col)
+        } else {
+            next_editable_token_after_position(&notes, row, col)
+        }
+    }
+
+    pub(super) fn focus_editable_token_cursor(&mut self, token: &EditableTokenSpan) {
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.textarea
+            .move_cursor(CursorMove::Jump(token.row as u16, token.start_col as u16));
+    }
+
     pub(super) fn selected_line_range(&self) -> (usize, usize) {
         match &self.selection {
             Some(StudioSelection::LineRange { anchor_row }) => {
@@ -345,6 +368,19 @@ impl StudioApp {
             .get(row)
             .map(|line| editable_token_spans_in_line(row, line))
             .unwrap_or_default()
+    }
+
+    pub(super) fn move_cursor_to_adjacent_editable_token(&mut self, direction: i32) -> bool {
+        let cursor = self.textarea.cursor();
+        let next = self.adjacent_editable_token(direction, cursor.0, cursor.1);
+        let Some(next) = next else {
+            self.status_message = "No more editable tokens".into();
+            return false;
+        };
+
+        self.focus_editable_token_cursor(&next);
+        self.status_message = format!("Normal mode: {}", self.cursor_label());
+        true
     }
 
     pub(super) fn bar_spans_on_line(&self, row: usize) -> Vec<BarSpan> {
