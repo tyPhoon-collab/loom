@@ -52,3 +52,5 @@ For `play`, `live`, and `studio`, the effective MIDI port is resolved in this or
 See [Global Config](/reference/config).
 
 For local sound output, see [Playback](/guide/playback).
+
+For the Studio workflow itself, see [Studio](/guide/studio).

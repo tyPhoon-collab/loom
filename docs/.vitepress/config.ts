@@ -17,7 +17,8 @@ export default defineConfig({
         items: [
           { text: "Getting Started", link: "/guide/getting-started" },
           { text: "Playback", link: "/guide/playback" },
-          { text: "CLI", link: "/guide/cli" }
+          { text: "CLI", link: "/guide/cli" },
+          { text: "Studio", link: "/guide/studio" }
         ]
       },
       {

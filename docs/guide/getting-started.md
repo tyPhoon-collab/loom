@@ -33,5 +33,6 @@ loom save examples/starter/melody-simple.loom
 ## Next
 
 - Learn the [CLI](/guide/cli)
+- Learn [Studio](/guide/studio)
 - Set up [Playback](/guide/playback)
 - Learn the [Language Specification](/language/spec)
