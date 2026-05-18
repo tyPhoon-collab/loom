@@ -54,6 +54,7 @@ pub struct StudioApp {
     should_quit: bool,
     path: PathBuf,
     mode: StudioMode,
+    show_help_overlay: bool,
     input_state: StudioInputState,
     status_message: String,
     compile_status: CompileStatus,
@@ -105,6 +106,7 @@ impl StudioApp {
             should_quit: false,
             path,
             mode: StudioMode::Normal,
+            show_help_overlay: false,
             input_state: StudioInputState::default(),
             status_message: "Ready".to_string(),
             compile_status: CompileStatus::Ok {
@@ -162,6 +164,26 @@ impl StudioApp {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.show_help_overlay {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('?') => {
+                    self.show_help_overlay = false;
+                    self.status_message = format!(
+                        "{} help closed",
+                        match self.mode {
+                            StudioMode::Normal => "Normal",
+                            StudioMode::Insert => "Insert",
+                            StudioMode::Select => "Select",
+                        }
+                    );
+                    return Ok(());
+                }
+                _ => {
+                    self.show_help_overlay = false;
+                }
+            }
+        }
+
         match self.mode {
             StudioMode::Normal => self.handle_normal_key(key),
             StudioMode::Insert => self.handle_insert_key(key),
@@ -224,6 +246,10 @@ impl StudioApp {
         }
 
         match key.code {
+            KeyCode::Char('?') => {
+                self.show_help_overlay = true;
+                self.status_message = "Normal help".into();
+            }
             KeyCode::Char('q') => {
                 if self.dirty {
                     self.status_message = "Unsaved changes. Press w to save or Q to quit.".into();
@@ -407,6 +433,10 @@ impl StudioApp {
             KeyCode::Esc => {
                 self.exit_select_mode();
             }
+            KeyCode::Char('?') => {
+                self.show_help_overlay = true;
+                self.status_message = "Select help".into();
+            }
             KeyCode::Char('n') => {
                 self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
@@ -475,6 +505,12 @@ impl StudioApp {
     }
 
     fn handle_insert_key(&mut self, key: KeyEvent) -> Result<()> {
+        if key.code == KeyCode::Char('?') {
+            self.show_help_overlay = true;
+            self.status_message = "Insert help".into();
+            return Ok(());
+        }
+
         if key.code == KeyCode::Esc {
             self.mode = StudioMode::Normal;
             self.compile_and_update_current_source()?;
