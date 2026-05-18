@@ -1,7 +1,7 @@
 use super::selection::{
     bar_spans_in_line, char_range, delete_editable_token, editable_token_spans_in_line,
-    insert_at_col, is_lane_body_token, is_seq_line, replace_char_range, EditableTokenKind,
-    StudioSelection,
+    group_span_containing_col, insert_at_col, is_lane_body_token, is_seq_line, replace_char_range,
+    EditableTokenKind, GroupSpan, StudioSelection,
 };
 use super::transform::{transpose_bar_text, transpose_line, transpose_note_token};
 use super::{StudioApp, StudioMode};
@@ -103,6 +103,113 @@ impl StudioApp {
             ),
             None,
         )
+    }
+
+    pub(super) fn shrink_current_editable_group(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No editable token on this line".into();
+            return Ok(());
+        };
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(token.row) else {
+            self.status_message = "Selected token no longer exists".into();
+            return Ok(());
+        };
+        let Some(group) = shrinkable_group_at_token(line, &token) else {
+            self.status_message = "Shrink needs a bracket group".into();
+            return Ok(());
+        };
+
+        replace_char_range(
+            line,
+            group.start_col,
+            group.end_col,
+            &group.selected_element,
+        );
+        self.apply_cursor_source_update(
+            lines,
+            (token.row, group.start_col),
+            "Shrank group to selected element".into(),
+            None,
+        )
+    }
+
+    pub(super) fn shrink_selected_editable_groups(&mut self) -> Result<()> {
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "Shrink applies to editable token selection only".into();
+            return Ok(());
+        }
+        selected_tokens.sort_by(|left, right| {
+            left.row
+                .cmp(&right.row)
+                .then_with(|| left.start_col.cmp(&right.start_col))
+        });
+
+        let lines = self.textarea.lines();
+        let mut groups = Vec::<(usize, GroupSpan)>::new();
+        for token in &selected_tokens {
+            let Some(line) = lines.get(token.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            let Some(group) = shrinkable_group_at_token(line, token) else {
+                self.status_message = "Shrink needs bracket groups".into();
+                return Ok(());
+            };
+            if !groups
+                .iter()
+                .any(|(row, existing)| *row == token.row && existing.start_col == group.start_col)
+            {
+                groups.push((token.row, group));
+            }
+        }
+        if groups.is_empty() {
+            self.status_message = "Shrink needs bracket groups".into();
+            return Ok(());
+        }
+
+        groups.sort_by(|(left_row, left), (right_row, right)| {
+            right_row
+                .cmp(left_row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = lines.to_vec();
+        let mut selection_positions = Vec::new();
+        for (row, group) in &groups {
+            let Some(line) = lines.get_mut(*row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(
+                line,
+                group.start_col,
+                group.end_col,
+                &group.selected_element,
+            );
+            selection_positions.push((*row, group.start_col));
+        }
+        selection_positions.sort_unstable();
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_editable_token_selection_from_positions(&selection_positions);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Shrank {} group{} to selected element",
+            selection_positions.len(),
+            if selection_positions.len() == 1 {
+                ""
+            } else {
+                "s"
+            }
+        );
+        Ok(())
     }
 
     pub(super) fn transpose_selection(&mut self, semitones: i32) -> Result<()> {
@@ -590,9 +697,16 @@ fn subdivided_editable_token(token: &str) -> String {
     format!("[{} .]", token)
 }
 
+fn shrinkable_group_at_token(
+    line: &str,
+    token: &super::selection::EditableTokenSpan,
+) -> Option<GroupSpan> {
+    group_span_containing_col(line, token.start_col)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::subdivided_editable_token;
+    use super::{shrinkable_group_at_token, subdivided_editable_token};
     use crate::interface::studio::selection::{editable_token_spans_in_line, replace_char_range};
 
     #[test]
@@ -616,5 +730,28 @@ mod tests {
             &subdivided_editable_token(&token.token),
         );
         assert_eq!(line, "seq | [C4 .] . |");
+    }
+
+    #[test]
+    fn shrinkable_group_at_token_uses_selected_element() {
+        let line = "seq | [C4 .] . |".to_string();
+        let token = editable_token_spans_in_line(0, &line)
+            .into_iter()
+            .find(|span| span.token == "C4")
+            .unwrap();
+        let group = shrinkable_group_at_token(&line, &token).unwrap();
+        assert_eq!(group.selected_element, "C4");
+    }
+
+    #[test]
+    fn shrinkable_group_at_token_uses_nearest_group_element() {
+        let line = "seq | [[C4 .] [. .]] . |".to_string();
+        let token = editable_token_spans_in_line(0, &line)
+            .into_iter()
+            .find(|span| span.token == "C4")
+            .unwrap();
+        let group = shrinkable_group_at_token(&line, &token).unwrap();
+        assert_eq!(group.selected_element, "C4");
+        assert_eq!((group.start_col, group.end_col), (7, 13));
     }
 }

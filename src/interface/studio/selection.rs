@@ -42,6 +42,13 @@ pub(super) struct EditableTokenSpan {
     pub(super) kind: EditableTokenKind,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct GroupSpan {
+    pub(super) start_col: usize,
+    pub(super) end_col: usize,
+    pub(super) selected_element: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum EditableTokenKind {
     Note,
@@ -323,6 +330,122 @@ pub(super) fn is_seq_line(line: &str) -> bool {
     head.trim() == "seq"
 }
 
+pub(super) fn group_span_containing_col(line: &str, col: usize) -> Option<GroupSpan> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut stack = Vec::new();
+    let mut best: Option<(usize, usize)> = None;
+
+    for (index, ch) in chars.iter().copied().enumerate() {
+        match ch {
+            '[' => stack.push(index),
+            ']' => {
+                let Some(start) = stack.pop() else {
+                    continue;
+                };
+                if start < col
+                    && col < index
+                    && best.is_none_or(|(best_start, _)| start >= best_start)
+                {
+                    best = Some((start, index));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let (start_col, end_col) = best?;
+    let selected_element = selected_group_element_text(&chars, start_col, end_col, col)?;
+    Some(GroupSpan {
+        start_col,
+        end_col: end_col + 1,
+        selected_element,
+    })
+}
+
+fn selected_group_element_text(
+    chars: &[char],
+    start_col: usize,
+    end_col: usize,
+    selected_col: usize,
+) -> Option<String> {
+    first_level_group_elements(chars, start_col, end_col)
+        .into_iter()
+        .find(|(element_start, element_end, _)| {
+            *element_start <= selected_col && selected_col < *element_end
+        })
+        .map(|(_, _, text)| text)
+}
+
+fn first_level_group_elements(
+    chars: &[char],
+    start_col: usize,
+    end_col: usize,
+) -> Vec<(usize, usize, String)> {
+    let mut elements = Vec::new();
+    let mut col = start_col + 1;
+    while col < end_col {
+        while col < end_col && chars.get(col).is_some_and(|ch| ch.is_whitespace()) {
+            col += 1;
+        }
+        if col >= end_col {
+            break;
+        }
+
+        let Some(ch) = chars.get(col).copied() else {
+            break;
+        };
+        if ch == '[' {
+            let Some(nested_end) = matching_group_end(chars, col) else {
+                break;
+            };
+            elements.push((
+                col,
+                nested_end + 1,
+                chars[col..=nested_end].iter().collect(),
+            ));
+            col = nested_end + 1;
+            continue;
+        }
+        if is_group_token_char(ch) {
+            let token_start = col;
+            let mut token = String::new();
+            while col < end_col {
+                let Some(ch) = chars.get(col).copied() else {
+                    break;
+                };
+                if is_group_token_char(ch) {
+                    token.push(ch);
+                    col += 1;
+                } else {
+                    break;
+                }
+            }
+            elements.push((token_start, col, token));
+            continue;
+        }
+
+        col += 1;
+    }
+    elements
+}
+
+fn matching_group_end(chars: &[char], start_col: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in chars.iter().copied().enumerate().skip(start_col) {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn push_selectable_span(
     spans: &mut Vec<EditableTokenSpan>,
     row: usize,
@@ -362,6 +485,10 @@ fn is_selectable_token_char(ch: char) -> bool {
     is_note_token_char(ch) || ch == '.'
 }
 
+fn is_group_token_char(ch: char) -> bool {
+    is_selectable_token_char(ch) || ch == '^'
+}
+
 fn char_to_byte_index(input: &str, char_index: usize) -> usize {
     input
         .char_indices()
@@ -374,8 +501,8 @@ fn char_to_byte_index(input: &str, char_index: usize) -> usize {
 mod tests {
     use super::{
         bar_at_or_near_col, bar_spans_in_line, delete_editable_token,
-        editable_token_at_or_near_col, editable_token_spans_in_line, insert_at_col,
-        next_editable_token_after_position, ordered_bar_span_bounds,
+        editable_token_at_or_near_col, editable_token_spans_in_line, group_span_containing_col,
+        insert_at_col, next_editable_token_after_position, ordered_bar_span_bounds,
         ordered_editable_token_span_bounds, previous_editable_token_before_position,
         replace_char_range, EditableTokenKind,
     };
@@ -536,6 +663,37 @@ mod tests {
         let next = next_editable_token_after_position(&notes, 0, 9).unwrap();
         assert_eq!(next.row, 1);
         assert_eq!(next.token, "^");
+    }
+
+    #[test]
+    fn group_span_containing_col_returns_selected_element() {
+        let group = group_span_containing_col("seq | [C4 .] . |", 8).unwrap();
+        assert_eq!(group.selected_element, "C4");
+    }
+
+    #[test]
+    fn group_span_containing_col_uses_nearest_nested_group() {
+        let line = "[^ [^ ^]]";
+        let group = group_span_containing_col(line, 4).unwrap();
+        assert_eq!(group.selected_element, "^");
+        assert_eq!((group.start_col, group.end_col), (3, 8));
+    }
+
+    #[test]
+    fn group_span_containing_col_keeps_nested_selected_element() {
+        let line = "seq | [[C4 .] [. .]] . |";
+        let group = group_span_containing_col(line, 9).unwrap();
+        assert_eq!(group.selected_element, "C4");
+        assert_eq!((group.start_col, group.end_col), (7, 13));
+    }
+
+    #[test]
+    fn group_span_containing_col_picks_element_under_cursor() {
+        let line = "seq | [C4 .] . |";
+        let left = group_span_containing_col(line, 7).unwrap();
+        let right = group_span_containing_col(line, 10).unwrap();
+        assert_eq!(left.selected_element, "C4");
+        assert_eq!(right.selected_element, ".");
     }
 
     #[test]

@@ -255,6 +255,9 @@ impl StudioApp {
             KeyCode::Char('s') => {
                 self.subdivide_current_editable_token()?;
             }
+            KeyCode::Char('S') => {
+                self.shrink_current_editable_group()?;
+            }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
             }
@@ -415,6 +418,9 @@ impl StudioApp {
             }
             KeyCode::Char('s') => {
                 self.subdivide_selected_editable_tokens()?;
+            }
+            KeyCode::Char('S') => {
+                self.shrink_selected_editable_groups()?;
             }
             KeyCode::Char('d') => {
                 self.duplicate_selection()?;

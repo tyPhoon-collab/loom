@@ -270,6 +270,42 @@ impl StudioApp {
         }
     }
 
+    pub(super) fn restore_editable_token_selection_from_positions(
+        &mut self,
+        positions: &[(usize, usize)],
+    ) {
+        let notes = self.editable_token_spans();
+        let resolved: Vec<EditableTokenSpan> = positions
+            .iter()
+            .filter_map(|(row, start_col)| {
+                notes
+                    .iter()
+                    .find(|note| note.row == *row && note.start_col == *start_col)
+                    .cloned()
+            })
+            .collect();
+        match resolved.as_slice() {
+            [] => {
+                self.selection = None;
+            }
+            [token] => {
+                self.selection = Some(StudioSelection::EditableToken {
+                    row: token.row,
+                    start_col: token.start_col,
+                    end_col: token.end_col,
+                    token: token.token.clone(),
+                    kind: token.kind,
+                });
+            }
+            [first, .., last] => {
+                self.selection = Some(StudioSelection::EditableTokenRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+        }
+    }
+
     pub(super) fn restore_bar_selection_from_positions(&mut self, positions: &[(usize, usize)]) {
         match positions {
             [] => {
