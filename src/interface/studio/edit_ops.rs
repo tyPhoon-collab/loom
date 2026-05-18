@@ -9,6 +9,102 @@ use miette::Result;
 use ratatui_textarea::CursorMove;
 
 impl StudioApp {
+    pub(super) fn subdivide_current_editable_token(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No editable token on this line".into();
+            return Ok(());
+        };
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(token.row) else {
+            self.status_message = "Selected token no longer exists".into();
+            return Ok(());
+        };
+        if !is_subdividable_token(line, &token) {
+            self.status_message = "Subdivide needs a seq or lane body token".into();
+            return Ok(());
+        }
+
+        replace_char_range(
+            line,
+            token.start_col,
+            token.end_col,
+            &subdivided_editable_token(&token.token),
+        );
+        let cursor_col = editable_token_spans_in_line(token.row, line)
+            .into_iter()
+            .find(|span| span.start_col >= token.start_col)
+            .map(|span| span.start_col)
+            .unwrap_or(token.start_col);
+
+        self.apply_cursor_source_update(
+            lines,
+            (token.row, cursor_col),
+            "Subdivided token".into(),
+            None,
+        )
+    }
+
+    pub(super) fn subdivide_selected_editable_tokens(&mut self) -> Result<()> {
+        let selected_indices = self.selected_editable_token_indices();
+        let mut selected_tokens = self.selected_editable_token_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "Subdivide applies to editable token selection only".into();
+            return Ok(());
+        }
+
+        let lines = self.textarea.lines();
+        if selected_tokens.iter().any(|selected| {
+            lines
+                .get(selected.row)
+                .is_none_or(|line| !is_subdividable_token(line, selected))
+        }) {
+            self.status_message =
+                "Subdivide applies to seq or lane body token selection only".into();
+            return Ok(());
+        }
+
+        selected_tokens.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = lines.to_vec();
+        for selected in &selected_tokens {
+            let Some(line) = lines.get_mut(selected.row) else {
+                self.status_message = "Selected token no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(
+                line,
+                selected.start_col,
+                selected.end_col,
+                &subdivided_editable_token(&selected.token),
+            );
+        }
+
+        let Some(&first_index) = selected_indices.first() else {
+            self.status_message = "Subdivide applies to editable token selection only".into();
+            return Ok(());
+        };
+        let expanded_indices: Vec<usize> =
+            (first_index..=first_index + selected_indices.len() * 2 - 1).collect();
+
+        self.apply_editable_token_selection_update(
+            lines,
+            &expanded_indices,
+            format!(
+                "Subdivided {} token{}",
+                selected_indices.len(),
+                if selected_indices.len() == 1 { "" } else { "s" }
+            ),
+            None,
+        )
+    }
+
     pub(super) fn transpose_selection(&mut self, semitones: i32) -> Result<()> {
         if matches!(
             self.selection,
@@ -483,5 +579,42 @@ impl StudioApp {
             if duplicated_bar_count == 1 { "" } else { "s" }
         );
         Ok(())
+    }
+}
+
+fn is_subdividable_token(line: &str, token: &super::selection::EditableTokenSpan) -> bool {
+    is_seq_line(line) || is_lane_body_token(line, token)
+}
+
+fn subdivided_editable_token(token: &str) -> String {
+    format!("[{} .]", token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subdivided_editable_token;
+    use crate::interface::studio::selection::{editable_token_spans_in_line, replace_char_range};
+
+    #[test]
+    fn subdivided_editable_token_wraps_seq_note() {
+        assert_eq!(subdivided_editable_token("C4"), "[C4 .]");
+        assert_eq!(subdivided_editable_token("."), "[. .]");
+        assert_eq!(subdivided_editable_token("-"), "[- .]");
+    }
+
+    #[test]
+    fn subdivided_editable_token_replaces_seq_slot() {
+        let mut line = "seq | C4 . |".to_string();
+        let token = editable_token_spans_in_line(0, &line)
+            .into_iter()
+            .find(|span| span.token == "C4")
+            .unwrap();
+        replace_char_range(
+            &mut line,
+            token.start_col,
+            token.end_col,
+            &subdivided_editable_token(&token.token),
+        );
+        assert_eq!(line, "seq | [C4 .] . |");
     }
 }

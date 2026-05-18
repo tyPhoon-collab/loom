@@ -252,6 +252,9 @@ impl StudioApp {
             KeyCode::Char('O') => {
                 self.begin_pending_input(PendingInput::Onset(NoteInputMode::Continuous));
             }
+            KeyCode::Char('s') => {
+                self.subdivide_current_editable_token()?;
+            }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
             }
@@ -410,11 +413,8 @@ impl StudioApp {
             KeyCode::Char('x') => {
                 self.delete_selection()?;
             }
-            KeyCode::Char('r') => {
-                self.replace_selected_tokens(".")?;
-            }
             KeyCode::Char('s') => {
-                self.replace_selected_tokens("-")?;
+                self.subdivide_selected_editable_tokens()?;
             }
             KeyCode::Char('d') => {
                 self.duplicate_selection()?;

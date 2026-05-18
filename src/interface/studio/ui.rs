@@ -78,11 +78,11 @@ impl StudioApp {
         let help = match (self.mode, self.input_state.pending()) {
             (_, Some(pending)) => pending.help_text(),
             (StudioMode::Normal, None) => {
-                "i ins | a add | n note | N note* | o onset | O onset* | ,/. slot | z/x octave | v note | b bar | +/- transpose | space play | w save"
+                "i ins | a add | n note | N note* | o onset | O onset* | s subdivide | ,/. slot | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
             (StudioMode::Insert, None) => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             (StudioMode::Select, None) => {
-                "h/l move | H/L extend | n note | o onset | d duplicate | T template | x delete | r rest | s sustain | Enter loop | Esc"
+                "h/l move | H/L extend | n note | o onset | s subdivide | d duplicate | T template | x delete | Enter loop | Esc"
             }
         };
         let footer = Paragraph::new(help).block(Block::default().borders(Borders::ALL));
