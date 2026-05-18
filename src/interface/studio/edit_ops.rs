@@ -9,6 +9,30 @@ use miette::Result;
 use ratatui_textarea::CursorMove;
 
 impl StudioApp {
+    pub(super) fn delete_current_editable_token(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No editable token on this line".into();
+            return Ok(());
+        };
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(token.row) else {
+            self.status_message = "Selected token no longer exists".into();
+            return Ok(());
+        };
+        delete_editable_token(line, &token);
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump(token.row as u16, token.start_col as u16));
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!("Deleted token {}", token.token);
+        Ok(())
+    }
+
     pub(super) fn subdivide_current_editable_token(&mut self) -> Result<()> {
         let cursor = self.textarea.cursor();
         let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {

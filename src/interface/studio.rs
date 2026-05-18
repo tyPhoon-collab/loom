@@ -258,6 +258,9 @@ impl StudioApp {
             KeyCode::Char('S') => {
                 self.shrink_current_editable_group()?;
             }
+            KeyCode::Char('x') => {
+                self.delete_current_editable_token()?;
+            }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
             }
@@ -431,26 +434,10 @@ impl StudioApp {
             KeyCode::Enter => {
                 self.apply_selected_loop_range()?;
             }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_selection_horizontal(-1);
-            }
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_selection_horizontal(1);
-            }
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_selection_vertical(-1);
-            }
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_selection_vertical(1);
-            }
-            KeyCode::Up | KeyCode::Char('k') => self.move_selection_vertical(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.move_selection_vertical(1),
-            KeyCode::Left | KeyCode::Char('h') => self.move_selection_horizontal(-1),
-            KeyCode::Right | KeyCode::Char('l') => self.move_selection_horizontal(1),
-            KeyCode::Char('H') => self.expand_selection_horizontal(-1),
-            KeyCode::Char('J') => self.expand_selection_vertical(1),
-            KeyCode::Char('K') => self.expand_selection_vertical(-1),
-            KeyCode::Char('L') => self.expand_selection_horizontal(1),
+            KeyCode::Up | KeyCode::Char('k') => self.expand_select_vertical(-1),
+            KeyCode::Down | KeyCode::Char('j') => self.expand_select_vertical(1),
+            KeyCode::Left | KeyCode::Char('h') => self.expand_select_horizontal(-1),
+            KeyCode::Right | KeyCode::Char('l') => self.expand_select_horizontal(1),
             _ => {}
         }
         Ok(())
