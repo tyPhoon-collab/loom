@@ -1,4 +1,4 @@
-use super::input::{NoteInputMode, CONTINUOUS_ONSET_HELP, ONSET_HELP};
+use super::input::{NoteInputMode, PendingInput, ONSET_HELP};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
     lane_body_token_spans_in_line, lane_head_token, replace_char_range, EditableTokenSpan,
@@ -14,43 +14,31 @@ struct PlacedOnset {
 
 impl StudioApp {
     pub(super) fn handle_onset_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
+        let pending = PendingInput::Onset(mode);
+
         match key.code {
-            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
-                let target = self.last_continuous_edit_cursor.unwrap_or_else(|| {
-                    let cursor = self.textarea.cursor();
-                    (cursor.0, cursor.1)
-                });
-                let undone = self.undo_last_source_edit_to(target)?;
-                self.input_state.begin_continuous_onset();
-                self.status_message = if undone {
-                    self.onset_prompt(mode)
-                } else {
-                    "Nothing to undo".into()
-                };
+            KeyCode::Backspace if pending.is_continuous() => {
+                self.handle_continuous_input_undo(pending)?;
             }
             KeyCode::Esc => {
-                self.status_message = if matches!(mode, NoteInputMode::Continuous) {
-                    "Continuous onset edit cancelled".into()
-                } else {
-                    "Onset edit cancelled".into()
-                };
+                self.status_message = pending.cancel_message().into();
             }
             KeyCode::Char('x') => {
-                self.apply_onset_entry(mode, '^')?;
+                self.apply_onset_entry(pending, '^')?;
             }
             KeyCode::Char('.') => {
-                self.apply_onset_entry(mode, '.')?;
+                self.apply_onset_entry(pending, '.')?;
             }
             KeyCode::Char('-') => {
-                self.apply_onset_entry(mode, '-')?;
+                self.apply_onset_entry(pending, '-')?;
             }
             KeyCode::Char('t') => {
-                self.apply_toggled_onset_entry(mode)?;
+                self.apply_toggled_onset_entry(pending)?;
             }
             _ => {
-                self.status_message = format!("Unknown onset command. {}", self.onset_help(mode));
-                if matches!(mode, NoteInputMode::Continuous) {
-                    self.input_state.begin_continuous_onset();
+                self.status_message = pending.unknown_message();
+                if pending.is_continuous() {
+                    self.resume_continuous_input(pending);
                 }
             }
         }
@@ -144,41 +132,26 @@ impl StudioApp {
         Ok(true)
     }
 
-    fn apply_onset_entry(&mut self, mode: NoteInputMode, token: char) -> Result<()> {
+    fn apply_onset_entry(&mut self, pending: PendingInput, token: char) -> Result<()> {
         let placed = self.place_onset_token_at_current_slot(token)?;
-        self.resume_continuous_onset_if_needed(mode, placed);
+        self.resume_continuous_onset_if_needed(pending, placed);
         Ok(())
     }
 
-    fn apply_toggled_onset_entry(&mut self, mode: NoteInputMode) -> Result<()> {
+    fn apply_toggled_onset_entry(&mut self, pending: PendingInput) -> Result<()> {
         let placed = self.toggle_onset_token_at_current_slot()?;
-        self.resume_continuous_onset_if_needed(mode, placed);
+        self.resume_continuous_onset_if_needed(pending, placed);
         Ok(())
     }
 
-    fn resume_continuous_onset_if_needed(&mut self, mode: NoteInputMode, placed: bool) {
-        if !matches!(mode, NoteInputMode::Continuous) {
+    fn resume_continuous_onset_if_needed(&mut self, pending: PendingInput, placed: bool) {
+        if !pending.is_continuous() {
             return;
         }
         if placed {
-            let cursor = self.textarea.cursor();
-            self.last_continuous_edit_cursor = Some((cursor.0, cursor.1));
-            if let Some(next) = self.adjacent_editable_token(1, cursor.0, cursor.1) {
-                self.focus_editable_token_cursor(&next);
-            }
-            self.status_message = self.onset_prompt(mode);
-        }
-        self.input_state.begin_continuous_onset();
-    }
-
-    pub(super) fn onset_prompt(&self, mode: NoteInputMode) -> String {
-        self.onset_help(mode).to_string()
-    }
-
-    fn onset_help(&self, mode: NoteInputMode) -> &'static str {
-        match mode {
-            NoteInputMode::Single => ONSET_HELP,
-            NoteInputMode::Continuous => CONTINUOUS_ONSET_HELP,
+            self.advance_after_continuous_edit(pending);
+        } else {
+            self.resume_continuous_input(pending);
         }
     }
 

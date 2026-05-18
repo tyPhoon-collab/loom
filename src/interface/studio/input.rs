@@ -25,25 +25,58 @@ pub(super) struct StudioInputState {
     pending: Option<PendingInput>,
 }
 
+impl PendingInput {
+    pub(super) fn prompt(self, note_keyboard_octave: i32) -> String {
+        match self {
+            PendingInput::Add => ADD_HELP.to_string(),
+            PendingInput::Note(_) => {
+                format!("{} | octave {}", self.help_text(), note_keyboard_octave)
+            }
+            PendingInput::Onset(_) => self.help_text().to_string(),
+        }
+    }
+
+    pub(super) fn help_text(self) -> &'static str {
+        match self {
+            PendingInput::Add => ADD_HELP,
+            PendingInput::Note(NoteInputMode::Single) => NOTE_HELP,
+            PendingInput::Note(NoteInputMode::Continuous) => CONTINUOUS_NOTE_HELP,
+            PendingInput::Onset(NoteInputMode::Single) => ONSET_HELP,
+            PendingInput::Onset(NoteInputMode::Continuous) => CONTINUOUS_ONSET_HELP,
+        }
+    }
+
+    pub(super) fn cancel_message(self) -> &'static str {
+        match self {
+            PendingInput::Add => "Add cancelled",
+            PendingInput::Note(NoteInputMode::Single) => "Note entry cancelled",
+            PendingInput::Note(NoteInputMode::Continuous) => "Continuous note entry cancelled",
+            PendingInput::Onset(NoteInputMode::Single) => "Onset edit cancelled",
+            PendingInput::Onset(NoteInputMode::Continuous) => "Continuous onset edit cancelled",
+        }
+    }
+
+    pub(super) fn unknown_message(self) -> String {
+        let label = match self {
+            PendingInput::Add => "add command",
+            PendingInput::Note(_) => "note key",
+            PendingInput::Onset(_) => "onset command",
+        };
+        format!("Unknown {}. {}", label, self.help_text())
+    }
+
+    pub(super) fn is_continuous(self) -> bool {
+        matches!(
+            self,
+            PendingInput::Note(NoteInputMode::Continuous)
+                | PendingInput::Onset(NoteInputMode::Continuous)
+        )
+    }
+}
+
 impl StudioInputState {
-    pub(super) fn begin_add(&mut self) {
-        self.pending = Some(PendingInput::Add);
-    }
-
-    pub(super) fn begin_note(&mut self) {
-        self.pending = Some(PendingInput::Note(NoteInputMode::Single));
-    }
-
-    pub(super) fn begin_continuous_note(&mut self) {
-        self.pending = Some(PendingInput::Note(NoteInputMode::Continuous));
-    }
-
-    pub(super) fn begin_onset(&mut self) {
-        self.pending = Some(PendingInput::Onset(NoteInputMode::Single));
-    }
-
-    pub(super) fn begin_continuous_onset(&mut self) {
-        self.pending = Some(PendingInput::Onset(NoteInputMode::Continuous));
+    pub(super) fn begin(&mut self, pending: PendingInput) {
+        self.pending = Some(pending);
     }
 
     pub(super) fn take_pending(&mut self) -> Option<PendingInput> {

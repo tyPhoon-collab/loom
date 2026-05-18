@@ -3,7 +3,7 @@ use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use input::{NoteInputMode, PendingInput, StudioInputState, ADD_HELP};
+use input::{NoteInputMode, PendingInput, StudioInputState};
 use miette::{IntoDiagnostic, Result};
 use note_entry::NoteKeyboard;
 use ratatui::style::{Color, Style};
@@ -67,9 +67,15 @@ pub struct StudioApp {
     textarea: TextArea<'static>,
     textarea_viewport: selection_view::TextAreaViewport,
     selection: Option<StudioSelection>,
-    source_undo_stack: Vec<(String, (usize, usize))>,
+    source_undo_stack: Vec<SourceUndoEntry>,
     last_continuous_edit_cursor: Option<(usize, usize)>,
     player: LivePlayer,
+}
+
+#[derive(Clone, Debug)]
+struct SourceUndoEntry {
+    source: String,
+    cursor: (usize, usize),
 }
 
 impl StudioApp {
@@ -162,6 +168,55 @@ impl StudioApp {
         }
     }
 
+    fn begin_pending_input(&mut self, pending: PendingInput) {
+        self.input_state.begin(pending);
+        self.status_message = pending.prompt(self.note_keyboard_octave);
+    }
+
+    fn resume_continuous_input(&mut self, pending: PendingInput) {
+        if !pending.is_continuous() {
+            return;
+        }
+        self.input_state.begin(pending);
+        self.status_message = pending.prompt(self.note_keyboard_octave);
+    }
+
+    fn record_continuous_edit_cursor(&mut self) {
+        let cursor = self.textarea.cursor();
+        self.last_continuous_edit_cursor = Some((cursor.0, cursor.1));
+    }
+
+    fn advance_after_continuous_edit(&mut self, pending: PendingInput) {
+        if !pending.is_continuous() {
+            return;
+        }
+        self.record_continuous_edit_cursor();
+        let cursor = self.textarea.cursor();
+        if let Some(next) = self.adjacent_editable_token(1, cursor.0, cursor.1) {
+            self.focus_editable_token_cursor(&next);
+        }
+        self.resume_continuous_input(pending);
+    }
+
+    fn handle_continuous_input_undo(&mut self, pending: PendingInput) -> Result<bool> {
+        if !pending.is_continuous() {
+            return Ok(false);
+        }
+
+        let target = self.last_continuous_edit_cursor.unwrap_or_else(|| {
+            let cursor = self.textarea.cursor();
+            (cursor.0, cursor.1)
+        });
+        let undone = self.undo_last_source_edit_to(target)?;
+        self.input_state.begin(pending);
+        self.status_message = if undone {
+            pending.prompt(self.note_keyboard_octave)
+        } else {
+            "Nothing to undo".into()
+        };
+        Ok(undone)
+    }
+
     fn handle_normal_key(&mut self, key: KeyEvent) -> Result<()> {
         if let Some(pending) = self.input_state.take_pending() {
             return self.handle_pending_input(pending, key);
@@ -183,24 +238,19 @@ impl StudioApp {
                 self.status_message = "Insert mode".into();
             }
             KeyCode::Char('a') => {
-                self.input_state.begin_add();
-                self.status_message = ADD_HELP.into();
+                self.begin_pending_input(PendingInput::Add);
             }
             KeyCode::Char('n') => {
-                self.input_state.begin_note();
-                self.status_message = self.note_prompt(NoteInputMode::Single);
+                self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
             KeyCode::Char('N') => {
-                self.input_state.begin_continuous_note();
-                self.status_message = self.note_prompt(NoteInputMode::Continuous);
+                self.begin_pending_input(PendingInput::Note(NoteInputMode::Continuous));
             }
             KeyCode::Char('o') => {
-                self.input_state.begin_onset();
-                self.status_message = self.onset_prompt(NoteInputMode::Single);
+                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
             }
             KeyCode::Char('O') => {
-                self.input_state.begin_continuous_onset();
-                self.status_message = self.onset_prompt(NoteInputMode::Continuous);
+                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Continuous));
             }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
@@ -259,10 +309,12 @@ impl StudioApp {
                 if self.textarea.undo() {
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
-                } else if let Some((source, cursor)) = self.source_undo_stack.pop() {
-                    self.replace_source(source);
-                    self.textarea
-                        .move_cursor(CursorMove::Jump(cursor.0 as u16, cursor.1 as u16));
+                } else if let Some(entry) = self.source_undo_stack.pop() {
+                    self.replace_source(entry.source);
+                    self.textarea.move_cursor(CursorMove::Jump(
+                        entry.cursor.0 as u16,
+                        entry.cursor.1 as u16,
+                    ));
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
                     self.status_message = "Undid transform".into();
@@ -332,12 +384,10 @@ impl StudioApp {
                 self.exit_select_mode();
             }
             KeyCode::Char('n') => {
-                self.input_state.begin_note();
-                self.status_message = self.note_prompt(NoteInputMode::Single);
+                self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
             KeyCode::Char('o') => {
-                self.input_state.begin_onset();
-                self.status_message = self.onset_prompt(NoteInputMode::Single);
+                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);

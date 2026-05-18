@@ -1,4 +1,4 @@
-use super::{configure_textarea_style, CompileStatus, StudioApp};
+use super::{configure_textarea_style, CompileStatus, SourceUndoEntry, StudioApp};
 use crate::compiler;
 use crate::dsl::{formatter, parser};
 use miette::{IntoDiagnostic, Result};
@@ -30,8 +30,10 @@ impl StudioApp {
 
     pub(super) fn push_source_undo(&mut self) {
         let cursor = self.textarea.cursor();
-        self.source_undo_stack
-            .push((self.source(), (cursor.0, cursor.1)));
+        self.source_undo_stack.push(SourceUndoEntry {
+            source: self.source(),
+            cursor: (cursor.0, cursor.1),
+        });
         const MAX_SOURCE_UNDO: usize = 32;
         if self.source_undo_stack.len() > MAX_SOURCE_UNDO {
             self.source_undo_stack.remove(0);
@@ -78,7 +80,11 @@ impl StudioApp {
         &mut self,
         target_cursor: (usize, usize),
     ) -> Result<bool> {
-        let Some((source, undo_cursor)) = self.source_undo_stack.pop() else {
+        let Some(SourceUndoEntry {
+            source,
+            cursor: undo_cursor,
+        }) = self.source_undo_stack.pop()
+        else {
             return Ok(false);
         };
 

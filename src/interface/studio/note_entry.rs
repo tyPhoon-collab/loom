@@ -1,4 +1,4 @@
-use super::input::{NoteInputMode, CONTINUOUS_NOTE_HELP, NOTE_HELP};
+use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -119,32 +119,22 @@ impl Default for NoteKeyboard {
 
 impl StudioApp {
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
+        let pending = PendingInput::Note(mode);
+
         if matches!(mode, NoteInputMode::Continuous) {
             match key.code {
                 KeyCode::Backspace => {
-                    let target = self.last_continuous_edit_cursor.unwrap_or_else(|| {
-                        let cursor = self.textarea.cursor();
-                        (cursor.0, cursor.1)
-                    });
-                    let undone = self.undo_last_source_edit_to(target)?;
-                    self.input_state.begin_continuous_note();
-                    self.status_message = if undone {
-                        self.note_prompt(mode)
-                    } else {
-                        "Nothing to undo".into()
-                    };
+                    self.handle_continuous_input_undo(pending)?;
                     return Ok(());
                 }
                 KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                     self.adjust_note_keyboard_octave(-1);
-                    self.input_state.begin_continuous_note();
-                    self.status_message = self.note_prompt(mode);
+                    self.resume_continuous_input(pending);
                     return Ok(());
                 }
                 KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
                     self.adjust_note_keyboard_octave(1);
-                    self.input_state.begin_continuous_note();
-                    self.status_message = self.note_prompt(mode);
+                    self.resume_continuous_input(pending);
                     return Ok(());
                 }
                 _ => {}
@@ -153,31 +143,22 @@ impl StudioApp {
 
         match self.note_key_input(key) {
             NoteKeyInput::Cancel => {
-                self.status_message = if matches!(mode, NoteInputMode::Continuous) {
-                    "Continuous note entry cancelled".into()
-                } else {
-                    "Note entry cancelled".into()
-                };
+                self.status_message = pending.cancel_message().into();
             }
             NoteKeyInput::Token(token) => {
                 let placed = self.place_token_at_current_slot(&token)?;
-                if matches!(mode, NoteInputMode::Continuous) && placed {
-                    let cursor = self.textarea.cursor();
-                    self.last_continuous_edit_cursor = Some((cursor.0, cursor.1));
-                    let next = self.adjacent_editable_token(1, cursor.0, cursor.1);
-                    if let Some(next) = next {
-                        self.focus_editable_token_cursor(&next);
+                if pending.is_continuous() {
+                    if placed {
+                        self.advance_after_continuous_edit(pending);
+                    } else {
+                        self.resume_continuous_input(pending);
                     }
-                    self.input_state.begin_continuous_note();
-                    self.status_message = self.note_prompt(mode);
-                } else if matches!(mode, NoteInputMode::Continuous) {
-                    self.input_state.begin_continuous_note();
                 }
             }
             NoteKeyInput::Unknown => {
-                self.status_message = format!("Unknown note key. {}", self.note_help(mode));
-                if matches!(mode, NoteInputMode::Continuous) {
-                    self.input_state.begin_continuous_note();
+                self.status_message = pending.unknown_message();
+                if pending.is_continuous() {
+                    self.resume_continuous_input(pending);
                 }
             }
         }
@@ -203,21 +184,6 @@ impl StudioApp {
         self.note_keyboard_octave =
             (self.note_keyboard_octave + delta).clamp(MIN_KEYBOARD_OCTAVE, MAX_KEYBOARD_OCTAVE);
         self.status_message = format!("Keyboard octave: {}", self.note_keyboard_octave);
-    }
-
-    pub(super) fn note_prompt(&self, mode: NoteInputMode) -> String {
-        format!(
-            "{} | octave {}",
-            self.note_help(mode),
-            self.note_keyboard_octave
-        )
-    }
-
-    fn note_help(&self, mode: NoteInputMode) -> &'static str {
-        match mode {
-            NoteInputMode::Single => NOTE_HELP,
-            NoteInputMode::Continuous => CONTINUOUS_NOTE_HELP,
-        }
     }
 
     fn note_key_input(&self, key: KeyEvent) -> NoteKeyInput {

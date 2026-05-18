@@ -1,7 +1,3 @@
-use super::input::{
-    NoteInputMode, PendingInput, ADD_HELP, CONTINUOUS_NOTE_HELP, CONTINUOUS_ONSET_HELP, NOTE_HELP,
-    ONSET_HELP,
-};
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -79,41 +75,13 @@ impl StudioApp {
         });
         f.render_widget(status, chunks[1]);
 
-        let help = match self.mode {
-            StudioMode::Normal if self.input_state.pending() == Some(PendingInput::Add) => ADD_HELP,
-            StudioMode::Normal
-                if self.input_state.pending() == Some(PendingInput::Note(NoteInputMode::Single)) =>
-            {
-                NOTE_HELP
-            }
-            StudioMode::Normal
-                if self.input_state.pending()
-                    == Some(PendingInput::Note(NoteInputMode::Continuous)) =>
-            {
-                CONTINUOUS_NOTE_HELP
-            }
-            StudioMode::Select
-                if self.input_state.pending() == Some(PendingInput::Note(NoteInputMode::Single)) =>
-            {
-                NOTE_HELP
-            }
-            StudioMode::Normal | StudioMode::Select
-                if self.input_state.pending()
-                    == Some(PendingInput::Onset(NoteInputMode::Single)) =>
-            {
-                ONSET_HELP
-            }
-            StudioMode::Normal
-                if self.input_state.pending()
-                    == Some(PendingInput::Onset(NoteInputMode::Continuous)) =>
-            {
-                CONTINUOUS_ONSET_HELP
-            }
-            StudioMode::Normal => {
+        let help = match (self.mode, self.input_state.pending()) {
+            (_, Some(pending)) => pending.help_text(),
+            (StudioMode::Normal, None) => {
                 "i ins | a add | n note | N note* | o onset | O onset* | ,/. slot | z/x octave | v note | b bar | +/- transpose | space play | w save"
             }
-            StudioMode::Insert => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
-            StudioMode::Select => {
+            (StudioMode::Insert, None) => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
+            (StudioMode::Select, None) => {
                 "h/l move | H/L extend | n note | o onset | d duplicate | T template | x delete | r rest | s sustain | Enter loop | Esc"
             }
         };
