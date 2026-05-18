@@ -1,5 +1,7 @@
 pub(super) const ADD_HELP: &str =
     "Add: s seq | l note-head | t track | b bar | d drums | n note | . rest | - sustain";
+pub(super) const GOTO_HELP: &str = "Goto: t next track | T previous track | Esc cancel";
+pub(super) const DELETE_HELP: &str = "Delete: t current track | Esc cancel";
 pub(super) const NOTE_HELP: &str = "Note: keyboard piano key | . rest | - sustain | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
     "Note*: keyboard piano key | . rest | - sustain | z/x octave | Backspace undo | Esc cancel";
@@ -16,6 +18,8 @@ pub(super) enum NoteInputMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PendingInput {
     Add,
+    Goto,
+    DeleteStructure,
     Note(NoteInputMode),
     Onset(NoteInputMode),
 }
@@ -29,6 +33,8 @@ impl PendingInput {
     pub(super) fn prompt(self, note_keyboard_octave: i32) -> String {
         match self {
             PendingInput::Add => ADD_HELP.to_string(),
+            PendingInput::Goto => GOTO_HELP.to_string(),
+            PendingInput::DeleteStructure => DELETE_HELP.to_string(),
             PendingInput::Note(_) => {
                 format!("{} | octave {}", self.help_text(), note_keyboard_octave)
             }
@@ -39,6 +45,8 @@ impl PendingInput {
     pub(super) fn help_text(self) -> &'static str {
         match self {
             PendingInput::Add => ADD_HELP,
+            PendingInput::Goto => GOTO_HELP,
+            PendingInput::DeleteStructure => DELETE_HELP,
             PendingInput::Note(NoteInputMode::Single) => NOTE_HELP,
             PendingInput::Note(NoteInputMode::Continuous) => CONTINUOUS_NOTE_HELP,
             PendingInput::Onset(NoteInputMode::Single) => ONSET_HELP,
@@ -49,6 +57,8 @@ impl PendingInput {
     pub(super) fn cancel_message(self) -> &'static str {
         match self {
             PendingInput::Add => "Add cancelled",
+            PendingInput::Goto => "Goto cancelled",
+            PendingInput::DeleteStructure => "Delete cancelled",
             PendingInput::Note(NoteInputMode::Single) => "Note entry cancelled",
             PendingInput::Note(NoteInputMode::Continuous) => "Continuous note entry cancelled",
             PendingInput::Onset(NoteInputMode::Single) => "Onset edit cancelled",
@@ -59,6 +69,8 @@ impl PendingInput {
     pub(super) fn unknown_message(self) -> String {
         let label = match self {
             PendingInput::Add => "add command",
+            PendingInput::Goto => "goto command",
+            PendingInput::DeleteStructure => "delete command",
             PendingInput::Note(_) => "note key",
             PendingInput::Onset(_) => "onset command",
         };

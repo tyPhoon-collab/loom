@@ -29,6 +29,7 @@ mod settings;
 mod settings_ops;
 mod source;
 mod template_ops;
+mod track_ops;
 mod transform;
 mod ui;
 
@@ -240,6 +241,9 @@ impl StudioApp {
             KeyCode::Char('a') => {
                 self.begin_pending_input(PendingInput::Add);
             }
+            KeyCode::Char('g') => {
+                self.begin_pending_input(PendingInput::Goto);
+            }
             KeyCode::Char('n') => {
                 self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
@@ -260,6 +264,12 @@ impl StudioApp {
             }
             KeyCode::Char('x') => {
                 self.delete_current_editable_token()?;
+            }
+            KeyCode::Char('D') => {
+                self.begin_pending_input(PendingInput::DeleteStructure);
+            }
+            KeyCode::Char('m') => {
+                self.toggle_current_track_mute()?;
             }
             KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
                 self.adjust_note_keyboard_octave(-1);
@@ -374,6 +384,8 @@ impl StudioApp {
     fn handle_pending_input(&mut self, pending: PendingInput, key: KeyEvent) -> Result<()> {
         match pending {
             PendingInput::Add => self.handle_add_key(key),
+            PendingInput::Goto => self.handle_goto_key(key),
+            PendingInput::DeleteStructure => self.handle_delete_structure_key(key),
             PendingInput::Note(mode) => self.handle_note_key(mode, key),
             PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
         }
@@ -384,6 +396,9 @@ impl StudioApp {
             return match pending {
                 PendingInput::Note(_) => self.handle_select_note_key(key),
                 PendingInput::Onset(_) => self.handle_select_onset_key(key),
+                PendingInput::Goto | PendingInput::DeleteStructure => {
+                    self.handle_pending_input(pending, key)
+                }
                 PendingInput::Add => self.handle_pending_input(pending, key),
             };
         }

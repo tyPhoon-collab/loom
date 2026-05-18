@@ -1,5 +1,12 @@
 use crate::dsl::parser;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct TrackHeader {
+    pub(super) name: String,
+    pub(super) channel: u8,
+    pub(super) muted: bool,
+}
+
 pub(super) fn toggle_loop_frontmatter(source: &str) -> std::result::Result<(String, bool), String> {
     let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
 
@@ -232,20 +239,44 @@ pub(super) fn clear_loop_settings_frontmatter(
 }
 
 pub(super) fn parse_track_header_channel(line: &str) -> Option<u8> {
+    parse_track_header(line)
+        .and_then(|header| crate::validation::to_zero_based_channel(header.channel).ok())
+}
+
+pub(super) fn parse_track_header(line: &str) -> Option<TrackHeader> {
     let trimmed = line.trim();
     if trimmed.starts_with("##") || !trimmed.starts_with('#') {
         return None;
     }
 
-    let (_, rest) = trimmed.split_once(':')?;
+    let (name, rest) = trimmed[1..].split_once(':')?;
+    let rest = rest.trim_start();
     let channel = rest
-        .trim_start()
         .chars()
         .take_while(|ch| ch.is_ascii_digit())
         .collect::<String>()
         .parse::<u8>()
         .ok()?;
-    crate::validation::to_zero_based_channel(channel).ok()
+    crate::validation::to_zero_based_channel(channel).ok()?;
+    let remainder = rest
+        .chars()
+        .skip_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    let muted = matches!(remainder.split_whitespace().next(), Some("x"));
+
+    Some(TrackHeader {
+        name: name.trim().to_string(),
+        channel,
+        muted,
+    })
+}
+
+pub(super) fn format_track_header(header: &TrackHeader) -> String {
+    if header.muted {
+        format!("# {}: {} x", header.name, header.channel)
+    } else {
+        format!("# {}: {}", header.name, header.channel)
+    }
 }
 
 fn finish_source(lines: Vec<String>) -> String {
@@ -257,8 +288,9 @@ fn finish_source(lines: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_loop_settings_frontmatter, loop_range_for_bar_indices, parse_track_header_channel,
-        set_loop_range_frontmatter, toggle_loop_frontmatter,
+        clear_loop_settings_frontmatter, format_track_header, loop_range_for_bar_indices,
+        parse_track_header, parse_track_header_channel, set_loop_range_frontmatter,
+        toggle_loop_frontmatter, TrackHeader,
     };
 
     #[test]
@@ -303,6 +335,35 @@ mod tests {
         assert_eq!(parse_track_header_channel("# Drums: 10 mute"), Some(9));
         assert_eq!(parse_track_header_channel("## sound 1"), None);
         assert_eq!(parse_track_header_channel("# Invalid: 17"), None);
+    }
+
+    #[test]
+    fn parse_track_header_reads_name_channel_and_mute() {
+        let header = parse_track_header("# Drums: 10 x").unwrap();
+        assert_eq!(
+            header,
+            TrackHeader {
+                name: "Drums".to_string(),
+                channel: 10,
+                muted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn format_track_header_emits_canonical_spacing() {
+        let header = TrackHeader {
+            name: "Piano".to_string(),
+            channel: 1,
+            muted: false,
+        };
+        assert_eq!(format_track_header(&header), "# Piano: 1");
+
+        let muted = TrackHeader {
+            muted: true,
+            ..header
+        };
+        assert_eq!(format_track_header(&muted), "# Piano: 1 x");
     }
 
     #[test]
