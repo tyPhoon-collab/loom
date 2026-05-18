@@ -121,24 +121,26 @@ impl StudioApp {
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Note(mode);
 
-        if matches!(mode, NoteInputMode::Continuous) {
-            match key.code {
-                KeyCode::Backspace => {
-                    self.handle_continuous_input_undo(pending)?;
-                    return Ok(());
-                }
-                KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
-                    self.adjust_note_keyboard_octave(-1);
-                    self.resume_continuous_input(pending);
-                    return Ok(());
-                }
-                KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
-                    self.adjust_note_keyboard_octave(1);
-                    self.resume_continuous_input(pending);
-                    return Ok(());
-                }
-                _ => {}
+        match key.code {
+            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
+                self.handle_continuous_input_undo(pending)?;
+                return Ok(());
             }
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+                self.adjust_note_keyboard_octave(-1);
+                if pending.is_continuous() {
+                    self.resume_continuous_input(pending);
+                }
+                return Ok(());
+            }
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+                self.adjust_note_keyboard_octave(1);
+                if pending.is_continuous() {
+                    self.resume_continuous_input(pending);
+                }
+                return Ok(());
+            }
+            _ => {}
         }
 
         match self.note_key_input(key) {
@@ -166,6 +168,18 @@ impl StudioApp {
     }
 
     pub(super) fn handle_select_note_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+                self.adjust_note_keyboard_octave(-1);
+                return Ok(());
+            }
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+                self.adjust_note_keyboard_octave(1);
+                return Ok(());
+            }
+            _ => {}
+        }
+
         match self.note_key_input(key) {
             NoteKeyInput::Cancel => {
                 self.status_message = "Note entry cancelled".into();

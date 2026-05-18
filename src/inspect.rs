@@ -11,9 +11,10 @@ pub struct TrackEvent {
 
 pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
     let mut out = Vec::new();
+    let solo_active = song.tracks.iter().any(|track| track.solo);
 
     for track in &song.tracks {
-        if track.muted {
+        if track.muted || (solo_active && !track.solo) {
             continue;
         }
         let single_song = Song {
@@ -33,4 +34,22 @@ pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_track_events;
+    use crate::dsl::parser::parse_song;
+
+    #[test]
+    fn collect_track_events_respects_solo_filter() {
+        let song = parse_song(
+            "# Piano: 1 s\nC4 | ^ |\n\n# Bass: 2\nC2 | ^ |\n\n# Lead: 3 s x\nE4 | ^ |\n"
+                .to_string(),
+        )
+        .unwrap();
+        let events = collect_track_events(&song).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].track, "Piano");
+    }
 }

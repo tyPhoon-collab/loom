@@ -1,5 +1,6 @@
 ---
 source: tests/examples_test.rs
+assertion_line: 47
 expression: events
 ---
 [
@@ -14,32 +15,12 @@ expression: events
         },
     },
     TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 0.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
         track: "Drums",
         event: Note {
             time: 1.0,
             duration: 1.0,
             channel: 9,
             note: 38,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 1.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
             velocity: 100,
         },
     },
@@ -54,32 +35,12 @@ expression: events
         },
     },
     TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 2.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
         track: "Drums",
         event: Note {
             time: 3.0,
             duration: 1.0,
             channel: 9,
             note: 38,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 3.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
             velocity: 100,
         },
     },
@@ -94,32 +55,12 @@ expression: events
         },
     },
     TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 4.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
         track: "Drums",
         event: Note {
             time: 5.0,
             duration: 1.0,
             channel: 9,
             note: 38,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 5.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
             velocity: 100,
         },
     },
@@ -134,32 +75,12 @@ expression: events
         },
     },
     TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 6.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
         track: "Drums",
         event: Note {
             time: 7.0,
             duration: 1.0,
             channel: 9,
             note: 38,
-            velocity: 100,
-        },
-    },
-    TrackEvent {
-        track: "Piano",
-        event: Note {
-            time: 7.0,
-            duration: 1.0,
-            channel: 0,
-            note: 60,
             velocity: 100,
         },
     },

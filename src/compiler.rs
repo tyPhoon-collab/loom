@@ -355,8 +355,9 @@ impl Compiler {
         let mut events =
             compile_track_init_events(song).with_compile_context("collecting track init events")?;
 
+        let solo_active = song.tracks.iter().any(|track| track.solo);
         for track in &song.tracks {
-            if track.muted {
+            if !track_is_active(track, solo_active) {
                 continue;
             }
             self.compile_track(
@@ -887,9 +888,10 @@ fn mix_u64(mut value: u64) -> u64 {
 
 pub fn compile_track_init_events(song: &Song) -> CompileResult<Vec<MidiEvent>> {
     let mut out = Vec::new();
+    let solo_active = song.tracks.iter().any(|track| track.solo);
 
     for track in &song.tracks {
-        if track.muted {
+        if !track_is_active(track, solo_active) {
             continue;
         }
         let channel = crate::validation::to_zero_based_channel(track.channel).map_err(|_| {
@@ -935,6 +937,14 @@ pub fn compile_track_init_events(song: &Song) -> CompileResult<Vec<MidiEvent>> {
     }
 
     Ok(out)
+}
+
+fn track_is_active(track: &Track, solo_active: bool) -> bool {
+    if solo_active {
+        track.solo && !track.muted
+    } else {
+        !track.muted
+    }
 }
 
 /// Apply a post-processing macro to a slice of generated MidiEvents.
@@ -1335,5 +1345,68 @@ impl<'a> LineCompiler<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compile_track_init_events, Compiler, MidiEvent};
+    use crate::dsl::parser::parse_song;
+
+    fn note_count(events: &[MidiEvent]) -> usize {
+        events
+            .iter()
+            .filter(|event| matches!(event, MidiEvent::Note { .. }))
+            .count()
+    }
+
+    #[test]
+    fn compile_without_solo_keeps_all_unmuted_tracks() {
+        let song = parse_song(
+            "# Piano: 1\nC4 | ^ |\n\n# Bass: 2\nC2 | ^ |\n\n# Drums: 10 x\nkick | ^ |\n"
+                .to_string(),
+        )
+        .unwrap();
+        let events = Compiler::new(&song).unwrap().compile(&song).unwrap();
+        assert_eq!(note_count(&events), 2);
+    }
+
+    #[test]
+    fn compile_with_solo_limits_output_to_solo_tracks() {
+        let song = parse_song(
+            "# Piano: 1 s\nC4 | ^ |\n\n# Bass: 2\nC2 | ^ |\n\n# Lead: 3 s\nE4 | ^ |\n".to_string(),
+        )
+        .unwrap();
+        let events = Compiler::new(&song).unwrap().compile(&song).unwrap();
+        assert_eq!(note_count(&events), 2);
+    }
+
+    #[test]
+    fn compile_ignores_muted_solo_tracks() {
+        let song = parse_song(
+            "# Piano: 1 s x\nC4 | ^ |\n\n# Bass: 2 s\nC2 | ^ |\n\n# Lead: 3\nE4 | ^ |\n"
+                .to_string(),
+        )
+        .unwrap();
+        let events = Compiler::new(&song).unwrap().compile(&song).unwrap();
+        assert_eq!(note_count(&events), 1);
+    }
+
+    #[test]
+    fn compile_track_init_events_follow_solo_filter() {
+        let song = parse_song(
+            "# Piano: 1 s\n## pc 1\nC4 | ^ |\n\n# Bass: 2\n## pc 2\nC2 | ^ |\n".to_string(),
+        )
+        .unwrap();
+        let events = compile_track_init_events(&song).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            MidiEvent::ProgramChange {
+                channel: 0,
+                program: 1,
+                ..
+            }
+        ));
     }
 }

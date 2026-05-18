@@ -6,7 +6,8 @@
 Song        = [ Frontmatter ] { Track } ;
 Frontmatter = "---" , newline , yaml_content , "---" , newline ;
 Track       = TrackHeader , { Line } ;
-TrackHeader = "#" , space , name , ":" , space , channel , [ space , "x" ] , newline ;
+TrackHeader = "#" , space , name , ":" , space , channel , { space , TrackFlag } , newline ;
+TrackFlag   = "s" | "x" ;
 ```
 
 Frontmatter keys:
@@ -82,6 +83,10 @@ Whitespace handling note:
 
 - Parsing is whitespace-tolerant around init/header tokens.
 - Canonical spacing (for example `# Track: 1`, `## pc 4`) is defined by the formatter, not by the language acceptance rules.
+- Track header flags may appear in either order on input (`s x` or `x s`), but the formatter emits `s x`.
+- `s` marks a track as solo; `x` marks a track as muted.
+- If at least one track is soloed, only tracks with `s` and without `x` are compiled.
+- Multiple solo tracks are allowed.
 
 ## Modifier Lines
 
@@ -167,6 +172,7 @@ Rules:
 - `BarDouble` => `:|:` - Double bar line / Section boundary
 - `TrackHeader` => `#` - Track header start symbol
 - `TrackHeaderSeparator` => `:` - Track header separator (name:channel)
+- `TrackHeaderSolo` => `s` - Track header solo flag
 - `TrackHeaderMute` => `x` - Track header mute flag
 - `Comment` => `>` - Comment start symbol
 - `TrackWrap` => `---` - Track wrap / Frontmatter boundary

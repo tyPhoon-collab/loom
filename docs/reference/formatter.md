@@ -19,6 +19,8 @@ The formatter normalizes header/init spacing to a canonical form.
 
 - Track header: exactly one space after `#`, and exactly one space after `:`.
   - canonical: `# Track: 1`
+  - flags are emitted in canonical order `s x`
+  - canonical with flags: `# Track: 1 s x`
 - Track init: exactly one space after `##`, and exactly one space between label and value(s).
   - canonical: `## pc 4`
 

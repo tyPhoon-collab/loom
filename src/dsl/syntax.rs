@@ -79,6 +79,8 @@ define_symbols! {
     TrackHeader => "#",
     #[doc = "Track header separator (name:channel)"]
     TrackHeaderSeparator => ":",
+    #[doc = "Track header solo flag"]
+    TrackHeaderSolo => "s",
     #[doc = "Track header mute flag"]
     TrackHeaderMute => "x",
 

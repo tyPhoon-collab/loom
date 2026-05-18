@@ -271,11 +271,11 @@ impl StudioApp {
             KeyCode::Char('m') => {
                 self.toggle_current_track_mute()?;
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
-                self.adjust_note_keyboard_octave(-1);
+            KeyCode::Char('M') => {
+                self.toggle_current_track_solo()?;
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
-                self.adjust_note_keyboard_octave(1);
+            KeyCode::Char('X') => {
+                self.clear_current_track_flags()?;
             }
             KeyCode::Char('v') => {
                 self.enter_note_select_mode();

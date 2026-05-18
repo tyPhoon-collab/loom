@@ -224,6 +224,7 @@ pub struct TemplateDef {
 pub struct Track {
     pub name: String,
     pub channel: u8,
+    pub solo: bool,
     pub muted: bool,
     pub init_events: Vec<TrackInitEvent>,
     pub sequence: Sequence,

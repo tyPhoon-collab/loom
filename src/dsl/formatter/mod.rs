@@ -135,10 +135,12 @@ fn format_meta_line(line: &ParsedLine) -> String {
         ParsedLine::TrackHeader {
             name,
             channel,
+            solo,
             muted,
         } => {
+            let solo_str = if *solo { " s" } else { "" };
             let mute_str = if *muted { " x" } else { "" };
-            write!(out, "# {}: {}{}", name, channel, mute_str).unwrap();
+            write!(out, "# {}: {}{}{}", name, channel, solo_str, mute_str).unwrap();
         }
         ParsedLine::Comment(s) => {
             let trimmed = s.trim();

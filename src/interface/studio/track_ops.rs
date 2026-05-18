@@ -70,6 +70,68 @@ impl StudioApp {
         )
     }
 
+    pub(super) fn toggle_current_track_solo(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(track_index) = current_track_index(&lines, cursor.0) else {
+            self.status_message = "No track header found".into();
+            return Ok(());
+        };
+        let header_rows = track_header_rows(&lines);
+        let header_row = header_rows[track_index];
+        let Some(header) = lines
+            .get(header_row)
+            .and_then(|line| parse_track_header(line))
+        else {
+            self.status_message = "Current track header is invalid".into();
+            return Ok(());
+        };
+
+        let solo = !header.solo;
+        lines[header_row] = format_track_header(&super::settings::TrackHeader { solo, ..header });
+        self.apply_cursor_source_update(
+            lines,
+            (header_row, track_header_cursor_col()),
+            if solo {
+                "Track solo: on".into()
+            } else {
+                "Track solo: off".into()
+            },
+            None,
+        )
+    }
+
+    pub(super) fn clear_current_track_flags(&mut self) -> Result<()> {
+        let mut lines = self.textarea.lines().to_vec();
+        let header_rows = track_header_rows(&lines);
+        let Some(&first_header_row) = header_rows.first() else {
+            self.status_message = "No track header found".into();
+            return Ok(());
+        };
+
+        for &header_row in &header_rows {
+            let Some(header) = lines
+                .get(header_row)
+                .and_then(|line| parse_track_header(line))
+            else {
+                self.status_message = "Current track header is invalid".into();
+                return Ok(());
+            };
+
+            lines[header_row] = format_track_header(&super::settings::TrackHeader {
+                solo: false,
+                muted: false,
+                ..header
+            });
+        }
+        self.apply_cursor_source_update(
+            lines,
+            (first_header_row, track_header_cursor_col()),
+            "All track flags cleared".into(),
+            None,
+        )
+    }
+
     fn goto_adjacent_track(&mut self, direction: i32) {
         let lines = self.textarea.lines().to_vec();
         let header_rows = track_header_rows(&lines);
@@ -189,6 +251,7 @@ mod tests {
     use super::{
         adjacent_track_header_row, current_track_index, track_delete_span, track_header_rows,
     };
+    use crate::interface::studio::settings::{format_track_header, parse_track_header};
 
     #[test]
     fn track_header_rows_collect_headers_only() {
@@ -233,5 +296,24 @@ mod tests {
         ];
         let headers = track_header_rows(&lines);
         assert_eq!(track_delete_span(&lines, &headers, 1), (2, 5, 3));
+    }
+
+    #[test]
+    fn track_header_toggle_helpers_keep_canonical_solo_mute_order() {
+        let header = parse_track_header("# Bass: 2 x s").unwrap();
+        assert_eq!(format_track_header(&header), "# Bass: 2 s x");
+    }
+
+    #[test]
+    fn track_header_clear_helper_removes_solo_and_mute_flags() {
+        let header = parse_track_header("# Bass: 2 s x").unwrap();
+        assert_eq!(
+            format_track_header(&crate::interface::studio::settings::TrackHeader {
+                solo: false,
+                muted: false,
+                ..header
+            }),
+            "# Bass: 2"
+        );
     }
 }

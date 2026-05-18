@@ -78,7 +78,7 @@ impl StudioApp {
         let help = match (self.mode, self.input_state.pending()) {
             (_, Some(pending)) => pending.help_text(),
             (StudioMode::Normal, None) => {
-                "i ins | a add | g goto | n note | N note* | o onset | O onset* | m mute | D delete | x delete | ,/. token | </> bar | v note | b bar | +/- transpose | space play | w save"
+                "i ins | a add | g goto | n note | N note* | o onset | O onset* | m mute | M solo | X clear-all | D delete | x delete | ,/. token | </> bar | v note | b bar | +/- transpose | space play | w save"
             }
             (StudioMode::Insert, None) => "Esc normal | type to edit | Ctrl+U undo | Ctrl+R redo",
             (StudioMode::Select, None) => {

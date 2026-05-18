@@ -41,8 +41,8 @@ l = "D+1"
 
 - `midi.output_port`: default MIDI output port index.
 - `studio.note_keyboard.base_octave`: starting octave for Studio note entry.
-- `studio.note_keyboard.octave_down`: normal-mode key for lowering the note keyboard octave.
-- `studio.note_keyboard.octave_up`: normal-mode key for raising the note keyboard octave.
+- `studio.note_keyboard.octave_down`: note-entry key for lowering the note keyboard octave.
+- `studio.note_keyboard.octave_up`: note-entry key for raising the note keyboard octave.
 - `studio.note_keyboard.keys`: note entry keyboard map.
 
 `studio.note_keyboard.keys` values are relative to `base_octave`:

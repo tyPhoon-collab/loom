@@ -18,7 +18,7 @@ Examples focused on templates, modifiers, repeats, and real-time iteration.
 - `examples/live-coding/feature-modifier-group.loom`
 - `examples/live-coding/feature-modifier.loom`
 - `examples/live-coding/feature-multi-note.loom`
-- `examples/live-coding/feature-mute.loom`
+- `examples/live-coding/feature-solo-mute.loom`
 - `examples/live-coding/feature-nested-tracks.loom`
 - `examples/live-coding/feature-pan.loom`
 - `examples/live-coding/feature-pitch-shift.loom`
@@ -203,7 +203,7 @@ f3,a3,c4 | . ^ |     |
 c3,e3,g3 | ^ . | . ^ |
 ````
 
-##### `examples/live-coding/feature-mute.loom`
+##### `examples/live-coding/feature-solo-mute.loom`
 
 ````loom
 ---
@@ -214,13 +214,16 @@ title: Mute Feature Example
 # Piano: 1
 C3 | ^ ^ ^ ^ | ^ ^ ^ ^ |
 
-# Bass: 2 x
+# Bass: 2 s x
 C2 | ^ . ^ . | ^ . ^ . |
-> This track is muted and will not be exported to MIDI.
+> This track is soloed and muted, so mute wins and it stays silent.
 
-# Drums: 10
+# Drums: 10 s
 kick | ^ . ^ . | ^ . ^ . |
 snare | . ^ . ^ | . ^ . ^ |
+
+# Pad: 3
+C4 | - ^ - ^ | - ^ - ^ |
 ````
 
 ##### `examples/live-coding/feature-nested-tracks.loom`

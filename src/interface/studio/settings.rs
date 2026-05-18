@@ -4,6 +4,7 @@ use crate::dsl::parser;
 pub(super) struct TrackHeader {
     pub(super) name: String,
     pub(super) channel: u8,
+    pub(super) solo: bool,
     pub(super) muted: bool,
 }
 
@@ -262,21 +263,33 @@ pub(super) fn parse_track_header(line: &str) -> Option<TrackHeader> {
         .chars()
         .skip_while(|ch| ch.is_ascii_digit())
         .collect::<String>();
-    let muted = matches!(remainder.split_whitespace().next(), Some("x"));
+    let mut solo = false;
+    let mut muted = false;
+    for flag in remainder.split_whitespace() {
+        match flag {
+            "s" => solo = true,
+            "x" => muted = true,
+            _ => return None,
+        }
+    }
 
     Some(TrackHeader {
         name: name.trim().to_string(),
         channel,
+        solo,
         muted,
     })
 }
 
 pub(super) fn format_track_header(header: &TrackHeader) -> String {
-    if header.muted {
-        format!("# {}: {} x", header.name, header.channel)
-    } else {
-        format!("# {}: {}", header.name, header.channel)
+    let mut out = format!("# {}: {}", header.name, header.channel);
+    if header.solo {
+        out.push_str(" s");
     }
+    if header.muted {
+        out.push_str(" x");
+    }
+    out
 }
 
 fn finish_source(lines: Vec<String>) -> String {
@@ -332,7 +345,8 @@ mod tests {
     #[test]
     fn parse_track_header_channel_returns_zero_based_channel() {
         assert_eq!(parse_track_header_channel("# Piano: 2"), Some(1));
-        assert_eq!(parse_track_header_channel("# Drums: 10 mute"), Some(9));
+        assert_eq!(parse_track_header_channel("# Drums: 10 x"), Some(9));
+        assert_eq!(parse_track_header_channel("# Bass: 2 s x"), Some(1));
         assert_eq!(parse_track_header_channel("## sound 1"), None);
         assert_eq!(parse_track_header_channel("# Invalid: 17"), None);
     }
@@ -345,9 +359,25 @@ mod tests {
             TrackHeader {
                 name: "Drums".to_string(),
                 channel: 10,
+                solo: false,
                 muted: true,
             }
         );
+    }
+
+    #[test]
+    fn parse_track_header_reads_solo_and_rejects_unknown_flags() {
+        let header = parse_track_header("# Bass: 2 x s").unwrap();
+        assert_eq!(
+            header,
+            TrackHeader {
+                name: "Bass".to_string(),
+                channel: 2,
+                solo: true,
+                muted: true,
+            }
+        );
+        assert_eq!(parse_track_header("# Bass: 2 z"), None);
     }
 
     #[test]
@@ -355,15 +385,29 @@ mod tests {
         let header = TrackHeader {
             name: "Piano".to_string(),
             channel: 1,
+            solo: false,
             muted: false,
         };
         assert_eq!(format_track_header(&header), "# Piano: 1");
 
+        let solo = TrackHeader {
+            solo: true,
+            ..header.clone()
+        };
+        assert_eq!(format_track_header(&solo), "# Piano: 1 s");
+
         let muted = TrackHeader {
+            muted: true,
+            ..header.clone()
+        };
+        assert_eq!(format_track_header(&muted), "# Piano: 1 x");
+
+        let both = TrackHeader {
+            solo: true,
             muted: true,
             ..header
         };
-        assert_eq!(format_track_header(&muted), "# Piano: 1 x");
+        assert_eq!(format_track_header(&both), "# Piano: 1 s x");
     }
 
     #[test]

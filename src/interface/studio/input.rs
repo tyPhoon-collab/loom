@@ -2,7 +2,8 @@ pub(super) const ADD_HELP: &str =
     "Add: s seq | l note-head | t track | b bar | d drums | n note | . rest | - sustain";
 pub(super) const GOTO_HELP: &str = "Goto: t next track | T previous track | Esc cancel";
 pub(super) const DELETE_HELP: &str = "Delete: t current track | Esc cancel";
-pub(super) const NOTE_HELP: &str = "Note: keyboard piano key | . rest | - sustain | Esc cancel";
+pub(super) const NOTE_HELP: &str =
+    "Note: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
     "Note*: keyboard piano key | . rest | - sustain | z/x octave | Backspace undo | Esc cancel";
 pub(super) const ONSET_HELP: &str = "Onset: x note-on | . rest | - sustain | t toggle | Esc cancel";

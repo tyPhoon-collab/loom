@@ -11,6 +11,7 @@ pub enum ParsedLine {
     TrackHeader {
         name: String,
         channel: u8,
+        solo: bool,
         muted: bool,
     },
     TrackInit {
@@ -269,15 +270,26 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     let channel = channel_str
         .parse::<u8>()
         .map_err(|_| nom::Err::Failure(Error::new(channel_str, ErrorKind::Digit)))?;
+    let (input, flags) = many0(preceded(
+        space1,
+        alt((
+            Symbol::TrackHeaderSolo.char(),
+            Symbol::TrackHeaderMute.char(),
+        )),
+    ))
+    .parse(input)?;
     let (input, _) = space0.parse(input)?;
-    let (input, muted_flag) = opt(Symbol::TrackHeaderMute.char()).parse(input)?;
+    let (input, _) = eof.parse(input)?;
+    let solo = flags.contains(&Symbol::TrackHeaderSolo.as_char());
+    let muted = flags.contains(&Symbol::TrackHeaderMute.as_char());
 
     Ok((
         input,
         ParsedLine::TrackHeader {
             name: name.trim().to_string(),
             channel,
-            muted: muted_flag.is_some(),
+            solo,
+            muted,
         },
     ))
 }
@@ -984,9 +996,10 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
                 ParsedLine::TrackHeader {
                     name,
                     channel,
+                    solo,
                     muted,
                 } => {
-                    builder.add_track(name, channel, line_str, muted)?;
+                    builder.add_track(name, channel, line_str, solo, muted)?;
                 }
                 ParsedLine::TrackWrap => {
                     builder.add_section(line_str)?;
@@ -1089,6 +1102,7 @@ impl<'a> SongBuilder<'a> {
         name: String,
         channel: u8,
         line_str: &str,
+        solo: bool,
         muted: bool,
     ) -> Result<(), ParseError> {
         if let Err(msg) = crate::validation::ensure_channel_1_based(channel) {
@@ -1104,6 +1118,7 @@ impl<'a> SongBuilder<'a> {
         self.current_track = Some(Track {
             name,
             channel,
+            solo,
             muted,
             init_events: Vec::new(),
             sequence: crate::dsl::token::Sequence {
@@ -1293,5 +1308,47 @@ impl<'a> SongBuilder<'a> {
     ) {
         self.finish_current();
         (self.tracks, self.templates)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_line_entry, parse_song, ParsedLine};
+
+    #[test]
+    fn parse_track_header_accepts_solo_and_mute_flags() {
+        let (_, parsed) = parse_line_entry("# Piano: 1 s x").unwrap();
+        assert!(matches!(
+            parsed,
+            ParsedLine::TrackHeader {
+                name,
+                channel: 1,
+                solo: true,
+                muted: true,
+            } if name == "Piano"
+        ));
+
+        let (_, parsed) = parse_line_entry("# Piano: 1 x s").unwrap();
+        assert!(matches!(
+            parsed,
+            ParsedLine::TrackHeader {
+                solo: true,
+                muted: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_track_header_rejects_unknown_flags() {
+        assert!(parse_line_entry("# Piano: 1 z").is_err());
+    }
+
+    #[test]
+    fn parse_song_tracks_preserve_solo_state() {
+        let song = parse_song("# Piano: 1 s\nC4 | ^ |\n".to_string()).unwrap();
+        assert_eq!(song.tracks.len(), 1);
+        assert!(song.tracks[0].solo);
+        assert!(!song.tracks[0].muted);
     }
 }
