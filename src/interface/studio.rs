@@ -338,13 +338,7 @@ impl StudioApp {
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);
             }
-            KeyCode::Char('>') => {
-                self.apply_transpose(1);
-            }
             KeyCode::Char('-') => {
-                self.apply_transpose(-1);
-            }
-            KeyCode::Char('<') => {
                 self.apply_transpose(-1);
             }
             KeyCode::Char(']') => {
@@ -365,6 +359,12 @@ impl StudioApp {
             }
             KeyCode::Char('.') => {
                 self.move_cursor_to_adjacent_editable_token(1);
+            }
+            KeyCode::Char('<') => {
+                self.move_cursor_to_adjacent_bar(-1);
+            }
+            KeyCode::Char('>') => {
+                self.move_cursor_to_adjacent_bar(1);
             }
             _ => {}
         }
@@ -401,13 +401,7 @@ impl StudioApp {
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);
             }
-            KeyCode::Char('>') => {
-                self.apply_transpose(1);
-            }
             KeyCode::Char('-') => {
-                self.apply_transpose(-1);
-            }
-            KeyCode::Char('<') => {
                 self.apply_transpose(-1);
             }
             KeyCode::Char(']') => {
@@ -434,10 +428,26 @@ impl StudioApp {
             KeyCode::Enter => {
                 self.apply_selected_loop_range()?;
             }
-            KeyCode::Up | KeyCode::Char('k') => self.expand_select_vertical(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.expand_select_vertical(1),
-            KeyCode::Left | KeyCode::Char('h') => self.expand_select_horizontal(-1),
-            KeyCode::Right | KeyCode::Char('l') => self.expand_select_horizontal(1),
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.expand_select_vertical(-1)
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.expand_select_vertical(1)
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.expand_select_horizontal(-1)
+            }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.expand_select_horizontal(1)
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.move_selection_vertical(-1),
+            KeyCode::Down | KeyCode::Char('j') => self.move_selection_vertical(1),
+            KeyCode::Left | KeyCode::Char('h') => self.move_select_horizontal(-1),
+            KeyCode::Right | KeyCode::Char('l') => self.move_select_horizontal(1),
+            KeyCode::Char('K') => self.expand_select_vertical(-1),
+            KeyCode::Char('J') => self.expand_select_vertical(1),
+            KeyCode::Char('H') => self.expand_select_horizontal(-1),
+            KeyCode::Char('L') => self.expand_select_horizontal(1),
             _ => {}
         }
         Ok(())

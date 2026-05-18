@@ -80,6 +80,25 @@ impl StudioApp {
         self.status_message = format!("Normal mode: {}", self.cursor_label());
     }
 
+    pub(super) fn move_select_horizontal(&mut self, direction: i32) {
+        match self.selection {
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
+                self.move_bar_selection(direction);
+            }
+            Some(
+                StudioSelection::EditableToken { .. } | StudioSelection::EditableTokenRange { .. },
+            ) => {
+                self.move_editable_token_selection(direction);
+            }
+            Some(StudioSelection::LineRange { .. }) => {
+                self.status_message = "Line selection moves vertically only".into();
+            }
+            None => {
+                self.status_message = "No selection".into();
+            }
+        }
+    }
+
     pub(super) fn expand_select_horizontal(&mut self, direction: i32) {
         match self.selection {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
@@ -102,7 +121,7 @@ impl StudioApp {
     pub(super) fn expand_select_vertical(&mut self, direction: i32) {
         match self.selection {
             Some(StudioSelection::LineRange { .. }) => {
-                self.move_selection_vertical(direction);
+                self.expand_line_selection_vertical(direction);
             }
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
                 self.expand_bar_selection_vertical(direction);
@@ -116,6 +135,49 @@ impl StudioApp {
                 self.status_message = "No selection".into();
             }
         }
+    }
+
+    pub(super) fn expand_line_selection_vertical(&mut self, direction: i32) {
+        match self.selection {
+            Some(StudioSelection::LineRange { .. }) => {
+                let cursor_move = if direction < 0 {
+                    CursorMove::Up
+                } else {
+                    CursorMove::Down
+                };
+                self.textarea.move_cursor(cursor_move);
+                self.sync_selection_visual();
+                self.status_message = format!("Select mode: {}", self.selection_label());
+            }
+            _ => {
+                self.status_message = "Current selection is not a line selection".into();
+            }
+        }
+    }
+
+    pub(super) fn move_editable_token_selection(&mut self, direction: i32) {
+        let Some(current) = self.focus_editable_token() else {
+            self.status_message = "No editable token selected. Press v first.".into();
+            return;
+        };
+        let notes = self.editable_token_spans();
+        let Some(index) = notes.iter().position(|note| note == &current) else {
+            self.status_message = "Selected token no longer exists".into();
+            return;
+        };
+
+        let next_index = if direction < 0 {
+            index.checked_sub(1)
+        } else {
+            (index + 1 < notes.len()).then_some(index + 1)
+        };
+
+        let Some(next_index) = next_index else {
+            self.status_message = "No more editable tokens".into();
+            return;
+        };
+
+        self.set_editable_token_selection(notes[next_index].clone());
     }
 
     pub(super) fn expand_editable_token_selection(&mut self, direction: i32) {
@@ -162,6 +224,31 @@ impl StudioApp {
             return;
         };
         self.expand_editable_token_selection_to(note);
+    }
+
+    pub(super) fn move_bar_selection(&mut self, direction: i32) {
+        let Some(current) = self.focus_bar() else {
+            self.status_message = "No bar selected. Press b first.".into();
+            return;
+        };
+        let bars = self.bar_spans();
+        let Some(index) = bars.iter().position(|bar| bar == &current) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return;
+        };
+
+        let next_index = if direction < 0 {
+            index.checked_sub(1)
+        } else {
+            (index + 1 < bars.len()).then_some(index + 1)
+        };
+
+        let Some(next_index) = next_index else {
+            self.status_message = "No more bars".into();
+            return;
+        };
+
+        self.set_bar_selection(bars[next_index].clone());
     }
 
     pub(super) fn expand_bar_selection(&mut self, direction: i32) {
