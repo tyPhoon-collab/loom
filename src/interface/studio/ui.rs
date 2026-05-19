@@ -14,13 +14,14 @@ const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit
 const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x delete  d duplicate";
 const FOOTER_NORMAL_TRACK_CONTEXT: &str = "Context: m mute  M solo  X clear-all  D t delete-track";
 const FOOTER_NORMAL_TEMPLATE_CONTEXT: &str =
-    "Context: g d goto-template  a m add-macro  ,/. unit  </> bar";
+    "Context: g d goto-template  a m add-macro  +/-/[] transpose  ,/. unit";
 const FOOTER_NORMAL_EDIT_CONTEXT: &str =
     "Context: x delete-unit  s/S subdivide-shrink  ,/. unit  </> bar";
 const FOOTER_SELECT_BAR_CONTEXT: &str = "Context: Enter loop-range  T template  +/- transpose";
 const FOOTER_SELECT_LINE_CONTEXT: &str = "Context: +/- transpose  vertical selection";
 const FOOTER_SELECT_TOKEN_CONTEXT: &str = "Context: s/S group edit  +/- transpose";
-const FOOTER_SELECT_TEMPLATE_CONTEXT: &str = "Context: x delete  d duplicate  g d goto-template";
+const FOOTER_SELECT_TEMPLATE_CONTEXT: &str =
+    "Context: x delete  d duplicate  g d goto-template  +/-/[] transpose";
 const FOOTER_SELECT_EMPTY_CONTEXT: &str = "Context: Esc normal";
 
 const OVERLAY_GLOBAL_LINES: &[&str] = &[
@@ -32,7 +33,7 @@ const OVERLAY_NORMAL_LINES: &[&str] = &[
     "v/V/b/B select  x delete-unit  s subdivide  S shrink",
     ",/. unit-nav  </> bar-nav  +/-/[] transpose",
     "m mute-track  M solo-track  X clear-all-track-flags  D t delete-track",
-    "template call: g d goto-definition  a m then a/r/s adds arp/rev/strum",
+    "template call: g d goto-definition  a m then a/r/s adds arp/rev/strum  +/-/[] transpose",
     "L toggle-loop  Ctrl-L clear-loop",
 ];
 const OVERLAY_INSERT_LINES: &[&str] = &[
@@ -44,7 +45,7 @@ const OVERLAY_SELECT_LINES: &[&str] = &[
     "hjkl/arrows move focus  HJKL/Shift-arrows expand",
     "n note replace  o onset replace  x delete  d duplicate",
     "s subdivide  S shrink  +/-/[] transpose",
-    "template call selection: x delete  d duplicate  g d goto-definition",
+    "template call selection: x delete  d duplicate  g d goto-definition  +/-/[] transpose",
     "Enter writes loop_range from bar selection  T extracts template",
 ];
 const OVERLAY_CLOSE_LINES: &[&str] = &["Esc or ? closes this overlay"];

@@ -309,6 +309,35 @@ impl StudioApp {
             .collect()
     }
 
+    pub(super) fn restore_template_call_selection_from_indices(
+        &mut self,
+        selected_indices: &[usize],
+    ) {
+        let spans = self.template_call_spans();
+        match selected_indices {
+            [] => self.selection = None,
+            [index] => {
+                if let Some(span) = spans.get(*index) {
+                    self.selection = Some(StudioSelection::TemplateCall { span: span.clone() });
+                }
+            }
+            indices => {
+                let Some(first) = indices.first().and_then(|index| spans.get(*index)) else {
+                    self.selection = None;
+                    return;
+                };
+                let Some(last) = indices.last().and_then(|index| spans.get(*index)) else {
+                    self.selection = None;
+                    return;
+                };
+                self.selection = Some(StudioSelection::TemplateCallRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+        }
+    }
+
     pub(super) fn selected_bar_rectangle_bounds(
         &self,
         anchor: &BarSpan,

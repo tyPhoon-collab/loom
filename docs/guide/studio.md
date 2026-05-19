@@ -117,12 +117,12 @@ Typical Select mode operations:
 - `x` delete selected units or bars
 - `d` duplicate selected units or bars
 - `g d` jumps from a selected template call to its definition
+- transpose with `+`, `-`, `[`, `]` also applies to template call selection by editing the call's `+N` parameter
 - `n` replace selected units through note entry
 - `s` subdivide selected units
 - `S` shrink selected groups
 - `T` extracts selected bars into a template definition
 - `Enter` writes selected bars to `loop_range`
-- transpose with `+`, `-`, `[`, `]`
 
 ## Note Entry
 
@@ -178,6 +178,8 @@ Useful add commands:
 | `a -` | place sustain in the current `seq` slot |
 
 Modifier lines are selectable as units, so `v` / `p` lines support unit navigation plus Select-mode delete and duplicate operations.
+
+When the cursor is on a template call in Normal mode, `+`, `-`, `[`, and `]` edit that call's transpose parameter (`+N`) instead of transposing line text.
 
 Onset editing for note-head and drum-lane rhythm bodies:
 
