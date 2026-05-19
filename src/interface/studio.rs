@@ -383,6 +383,12 @@ impl StudioApp {
             KeyCode::Char('[') => {
                 self.apply_transpose(-12);
             }
+            KeyCode::Char('{') => {
+                self.adjust_template_call_time_scale(-1);
+            }
+            KeyCode::Char('}') => {
+                self.adjust_template_call_time_scale(1);
+            }
             KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
                 self.textarea.input(key);
             }
@@ -397,10 +403,18 @@ impl StudioApp {
                 self.move_cursor_to_adjacent_unit(1);
             }
             KeyCode::Char('<') => {
-                self.move_cursor_to_adjacent_bar(-1);
+                if self.current_template_call_at_cursor().is_some() {
+                    self.adjust_template_call_repeat(-1);
+                } else {
+                    self.move_cursor_to_adjacent_bar(-1);
+                }
             }
             KeyCode::Char('>') => {
-                self.move_cursor_to_adjacent_bar(1);
+                if self.current_template_call_at_cursor().is_some() {
+                    self.adjust_template_call_repeat(1);
+                } else {
+                    self.move_cursor_to_adjacent_bar(1);
+                }
             }
             _ => {}
         }
@@ -458,6 +472,18 @@ impl StudioApp {
             KeyCode::Char('[') => {
                 self.apply_transpose(-12);
             }
+            KeyCode::Char('<') => {
+                self.adjust_template_call_repeat(-1);
+            }
+            KeyCode::Char('>') => {
+                self.adjust_template_call_repeat(1);
+            }
+            KeyCode::Char('{') => {
+                self.adjust_template_call_time_scale(-1);
+            }
+            KeyCode::Char('}') => {
+                self.adjust_template_call_time_scale(1);
+            }
             KeyCode::Char('x') => {
                 self.delete_selection()?;
             }
@@ -504,6 +530,40 @@ impl StudioApp {
     fn apply_transpose(&mut self, semitones: i32) {
         if let Err(e) = self.transpose_selection(semitones) {
             self.status_message = format!("Transpose failed: {}", e);
+        }
+    }
+
+    fn adjust_template_call_repeat(&mut self, delta: i32) {
+        let result = if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.adjust_selected_template_call_repeats(delta)
+        } else if self.selection.is_none() && self.current_template_call_at_cursor().is_some() {
+            self.adjust_current_template_call_repeat(delta)
+        } else {
+            return;
+        };
+
+        if let Err(e) = result {
+            self.status_message = format!("Template call repeat failed: {}", e);
+        }
+    }
+
+    fn adjust_template_call_time_scale(&mut self, delta: i32) {
+        let result = if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.adjust_selected_template_call_time_scales(delta)
+        } else if self.selection.is_none() && self.current_template_call_at_cursor().is_some() {
+            self.adjust_current_template_call_time_scale(delta)
+        } else {
+            return;
+        };
+
+        if let Err(e) = result {
+            self.status_message = format!("Template call time-scale failed: {}", e);
         }
     }
 
