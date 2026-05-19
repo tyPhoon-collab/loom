@@ -57,6 +57,7 @@ Main bindings:
 | `i` | enter Insert mode |
 | `a` | add prefix |
 | `g` | goto prefix |
+| `g d` | jump to template definition under cursor |
 | `n` | single note entry |
 | `N` | continuous note entry |
 | `o` | single onset entry |
@@ -65,12 +66,12 @@ Main bindings:
 | `M` | toggle solo on current track |
 | `X` | clear solo and mute flags on all tracks |
 | `D` | structure delete prefix |
-| `x` | delete current editable token |
-| `s` | subdivide current token |
+| `x` | delete current unit |
+| `s` | subdivide current unit |
 | `S` | shrink current bracket group |
-| `,` / `.` | previous / next editable token |
+| `,` / `.` | previous / next unit |
 | `<` / `>` | previous / next bar |
-| `v` | select current editable token |
+| `v` | select current unit |
 | `V` | select current line |
 | `b` | select current bar |
 | `B` | select all bars on current line |
@@ -103,18 +104,21 @@ Select mode works on Loom-aware units instead of raw text selection.
 
 Supported selections:
 
-- editable token selection
-- editable token range selection
+- unit selection
+- unit range selection
+- template call selection
+- template call range selection
 - line range selection
 - bar range selection
 
 Typical Select mode operations:
 
 - move / expand selection with `hjkl` and `HJKL`
-- `x` delete selected tokens or bars
-- `d` duplicate selected tokens or bars
-- `n` replace selected tokens through note entry
-- `s` subdivide selected tokens
+- `x` delete selected units or bars
+- `d` duplicate selected units or bars
+- `g d` jumps from a selected template call to its definition
+- `n` replace selected units through note entry
+- `s` subdivide selected units
 - `S` shrink selected groups
 - `Enter` writes selected bars to `loop_range`
 - transpose with `+`, `-`, `[`, `]`
@@ -123,8 +127,8 @@ Typical Select mode operations:
 
 Note entry is the fastest way to place notes in `seq` lines.
 
-- `n` places one token
-- `N` keeps advancing to the next editable token
+- `n` places one unit
+- `N` keeps advancing to the next unit
 - `Esc` exits note entry
 - `Backspace` undoes the last step in continuous note entry
 
@@ -162,9 +166,14 @@ Useful add commands:
 | `a t` | add a new track and empty `seq` line |
 | `a b` | append a rest bar |
 | `a d` | add the default drum preset |
+| `a v` | add a velocity modifier line for the current pattern block |
+| `a p` | add a pitch modifier line for the current pattern block |
+| `a m` then `a` / `r` / `s` | add `arp` / `rev` / `strum` to the template call under cursor |
 | `a n` | place a nearby or default note into the current `seq` slot |
 | `a .` | place rest in the current `seq` slot |
 | `a -` | place sustain in the current `seq` slot |
+
+Modifier lines are selectable as units, so `v` / `p` lines support unit navigation plus Select-mode delete and duplicate operations.
 
 Onset editing for note-head and drum-lane rhythm bodies:
 

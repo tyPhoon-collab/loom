@@ -17,6 +17,9 @@ impl StudioApp {
             KeyCode::Char('T') => {
                 self.goto_adjacent_track(-1);
             }
+            KeyCode::Char('d') => {
+                self.goto_current_template_definition()?;
+            }
             _ => {
                 self.status_message = PendingInput::Goto.unknown_message();
             }

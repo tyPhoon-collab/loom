@@ -1,27 +1,30 @@
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
-    editable_token_spans_in_line, next_editable_token_after_position,
-    previous_editable_token_before_position, BarSpan, EditableTokenSpan, StudioSelection,
+    bar_at_or_near_col, bar_spans_in_line, next_unit_after_position, previous_unit_before_position,
+    unit_at_or_near_col, unit_spans_in_line, BarSpan, StudioSelection, UnitSpan,
+};
+use super::template_ops::{
+    template_call_at_or_near_col, template_call_spans_in_line, TemplateCallSpan,
 };
 use super::StudioApp;
 use ratatui_textarea::CursorMove;
 
+#[derive(Clone, Debug)]
+enum SelectableUnit {
+    Unit(UnitSpan),
+    TemplateCall(TemplateCallSpan),
+}
+
 impl StudioApp {
-    pub(super) fn adjacent_editable_token(
-        &self,
-        direction: i32,
-        row: usize,
-        col: usize,
-    ) -> Option<EditableTokenSpan> {
-        let notes = self.editable_token_spans();
+    pub(super) fn adjacent_unit(&self, direction: i32, row: usize, col: usize) -> Option<UnitSpan> {
+        let notes = self.unit_spans();
         if direction < 0 {
-            previous_editable_token_before_position(&notes, row, col)
+            previous_unit_before_position(&notes, row, col)
         } else {
-            next_editable_token_after_position(&notes, row, col)
+            next_unit_after_position(&notes, row, col)
         }
     }
 
-    pub(super) fn focus_editable_token_cursor(&mut self, token: &EditableTokenSpan) {
+    pub(super) fn focus_unit_cursor(&mut self, token: &UnitSpan) {
         self.selection = None;
         self.textarea.cancel_selection();
         self.textarea
@@ -51,12 +54,16 @@ impl StudioApp {
                 let row = self.textarea.cursor().0;
                 ((*anchor_row).min(row), (*anchor_row).max(row))
             }
-            Some(StudioSelection::EditableToken { row, .. }) => (*row, *row),
-            Some(StudioSelection::EditableTokenRange { anchor, focus }) => {
+            Some(StudioSelection::Unit { row, .. }) => (*row, *row),
+            Some(StudioSelection::UnitRange { anchor, focus }) => {
                 (anchor.row.min(focus.row), anchor.row.max(focus.row))
             }
             Some(StudioSelection::Bar { span }) => (span.row, span.row),
             Some(StudioSelection::BarRange { anchor, focus }) => {
+                (anchor.row.min(focus.row), anchor.row.max(focus.row))
+            }
+            Some(StudioSelection::TemplateCall { span }) => (span.row, span.row),
+            Some(StudioSelection::TemplateCallRange { anchor, focus }) => {
                 (anchor.row.min(focus.row), anchor.row.max(focus.row))
             }
             None => {
@@ -73,30 +80,30 @@ impl StudioApp {
 
     pub(super) fn selection_label(&self) -> String {
         match &self.selection {
-            Some(StudioSelection::EditableToken {
+            Some(StudioSelection::Unit {
                 row,
                 start_col,
                 token,
                 ..
-            }) => format!("token {} at line {}, col {}", token, row + 1, start_col + 1),
-            Some(StudioSelection::EditableTokenRange { .. }) => {
-                let selected = self.selected_editable_token_spans();
+            }) => format!("unit {} at line {}, col {}", token, row + 1, start_col + 1),
+            Some(StudioSelection::UnitRange { .. }) => {
+                let selected = self.selected_unit_spans();
                 match (selected.first(), selected.last()) {
                     (Some(first), Some(last)) if selected.len() == 1 => {
                         format!(
-                            "token {} at line {}, col {}",
+                            "unit {} at line {}, col {}",
                             first.token,
                             first.row + 1,
                             first.start_col + 1
                         )
                     }
                     (Some(first), Some(last)) => format!(
-                        "{} tokens from {} to {}",
+                        "{} units from {} to {}",
                         selected.len(),
                         first.token,
                         last.token
                     ),
-                    _ => "no tokens".to_string(),
+                    _ => "no units".to_string(),
                 }
             }
             Some(StudioSelection::Bar { span }) => {
@@ -131,6 +138,30 @@ impl StudioApp {
                     )
                 }
             }
+            Some(StudioSelection::TemplateCall { span }) => format!(
+                "template call {} at line {}, col {}",
+                span.raw_text,
+                span.row + 1,
+                span.start_col + 1
+            ),
+            Some(StudioSelection::TemplateCallRange { .. }) => {
+                let selected = self.selected_template_call_spans();
+                match (selected.first(), selected.last()) {
+                    (Some(first), Some(last)) if selected.len() == 1 => format!(
+                        "template call {} at line {}, col {}",
+                        first.raw_text,
+                        first.row + 1,
+                        first.start_col + 1
+                    ),
+                    (Some(first), Some(last)) => format!(
+                        "{} template calls from {} to {}",
+                        selected.len(),
+                        first.raw_text,
+                        last.raw_text
+                    ),
+                    _ => "no template calls".to_string(),
+                }
+            }
             Some(StudioSelection::LineRange { .. }) | None => {
                 let (start, end) = self.selected_line_range();
                 if start == end {
@@ -142,22 +173,22 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn focus_editable_token(&self) -> Option<EditableTokenSpan> {
+    pub(super) fn focus_unit(&self) -> Option<UnitSpan> {
         match &self.selection {
-            Some(StudioSelection::EditableToken {
+            Some(StudioSelection::Unit {
                 row,
                 start_col,
                 end_col,
                 token,
                 kind,
-            }) => Some(EditableTokenSpan {
+            }) => Some(UnitSpan {
                 row: *row,
                 start_col: *start_col,
                 end_col: *end_col,
                 token: token.clone(),
                 kind: *kind,
             }),
-            Some(StudioSelection::EditableTokenRange { focus, .. }) => Some(focus.clone()),
+            Some(StudioSelection::UnitRange { focus, .. }) => Some(focus.clone()),
             _ => None,
         }
     }
@@ -170,17 +201,25 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn selected_editable_token_indices(&self) -> Vec<usize> {
-        let notes = self.editable_token_spans();
+    pub(super) fn focus_template_call(&self) -> Option<TemplateCallSpan> {
         match &self.selection {
-            Some(StudioSelection::EditableToken {
+            Some(StudioSelection::TemplateCall { span }) => Some(span.clone()),
+            Some(StudioSelection::TemplateCallRange { focus, .. }) => Some(focus.clone()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn selected_unit_indices(&self) -> Vec<usize> {
+        let notes = self.unit_spans();
+        match &self.selection {
+            Some(StudioSelection::Unit {
                 row,
                 start_col,
                 end_col,
                 token,
                 kind,
             }) => {
-                let selected = EditableTokenSpan {
+                let selected = UnitSpan {
                     row: *row,
                     start_col: *start_col,
                     end_col: *end_col,
@@ -193,7 +232,7 @@ impl StudioApp {
                     .map(|index| vec![index])
                     .unwrap_or_default()
             }
-            Some(StudioSelection::EditableTokenRange { anchor, focus }) => {
+            Some(StudioSelection::UnitRange { anchor, focus }) => {
                 let Some(anchor_index) = notes.iter().position(|note| note == anchor) else {
                     return Vec::new();
                 };
@@ -208,9 +247,9 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn selected_editable_token_spans(&self) -> Vec<EditableTokenSpan> {
-        let notes = self.editable_token_spans();
-        self.selected_editable_token_indices()
+    pub(super) fn selected_unit_spans(&self) -> Vec<UnitSpan> {
+        let notes = self.unit_spans();
+        self.selected_unit_indices()
             .into_iter()
             .filter_map(|index| notes.get(index).cloned())
             .collect()
@@ -239,6 +278,37 @@ impl StudioApp {
         }
     }
 
+    pub(super) fn selected_template_call_indices(&self) -> Vec<usize> {
+        let spans = self.template_call_spans();
+        match &self.selection {
+            Some(StudioSelection::TemplateCall { span }) => spans
+                .iter()
+                .position(|existing| existing == span)
+                .map(|index| vec![index])
+                .unwrap_or_default(),
+            Some(StudioSelection::TemplateCallRange { anchor, focus }) => {
+                let Some(anchor_index) = spans.iter().position(|span| span == anchor) else {
+                    return Vec::new();
+                };
+                let Some(focus_index) = spans.iter().position(|span| span == focus) else {
+                    return Vec::new();
+                };
+                let start = anchor_index.min(focus_index);
+                let end = anchor_index.max(focus_index);
+                (start..=end).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    pub(super) fn selected_template_call_spans(&self) -> Vec<TemplateCallSpan> {
+        let spans = self.template_call_spans();
+        self.selected_template_call_indices()
+            .into_iter()
+            .filter_map(|index| spans.get(index).cloned())
+            .collect()
+    }
+
     pub(super) fn selected_bar_rectangle_bounds(
         &self,
         anchor: &BarSpan,
@@ -250,18 +320,15 @@ impl StudioApp {
         )
     }
 
-    pub(super) fn restore_editable_token_selection_from_indices(
-        &mut self,
-        selected_indices: &[usize],
-    ) {
-        let notes = self.editable_token_spans();
+    pub(super) fn restore_unit_selection_from_indices(&mut self, selected_indices: &[usize]) {
+        let notes = self.unit_spans();
         match selected_indices {
             [] => {
                 self.selection = None;
             }
             [index] => {
                 if let Some(note) = notes.get(*index) {
-                    self.selection = Some(StudioSelection::EditableToken {
+                    self.selection = Some(StudioSelection::Unit {
                         row: note.row,
                         start_col: note.start_col,
                         end_col: note.end_col,
@@ -279,7 +346,7 @@ impl StudioApp {
                     self.selection = None;
                     return;
                 };
-                self.selection = Some(StudioSelection::EditableTokenRange {
+                self.selection = Some(StudioSelection::UnitRange {
                     anchor: first.clone(),
                     focus: last.clone(),
                 });
@@ -287,12 +354,9 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn restore_editable_token_selection_from_positions(
-        &mut self,
-        positions: &[(usize, usize)],
-    ) {
-        let notes = self.editable_token_spans();
-        let resolved: Vec<EditableTokenSpan> = positions
+    pub(super) fn restore_unit_selection_from_positions(&mut self, positions: &[(usize, usize)]) {
+        let notes = self.unit_spans();
+        let resolved: Vec<UnitSpan> = positions
             .iter()
             .filter_map(|(row, start_col)| {
                 notes
@@ -306,7 +370,7 @@ impl StudioApp {
                 self.selection = None;
             }
             [token] => {
-                self.selection = Some(StudioSelection::EditableToken {
+                self.selection = Some(StudioSelection::Unit {
                     row: token.row,
                     start_col: token.start_col,
                     end_col: token.end_col,
@@ -315,7 +379,7 @@ impl StudioApp {
                 });
             }
             [first, .., last] => {
-                self.selection = Some(StudioSelection::EditableTokenRange {
+                self.selection = Some(StudioSelection::UnitRange {
                     anchor: first.clone(),
                     focus: last.clone(),
                 });
@@ -363,24 +427,53 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn editable_token_at_or_after_cursor(
-        &self,
-        row: usize,
-        col: usize,
-    ) -> Option<EditableTokenSpan> {
-        editable_token_at_or_near_col(self.editable_token_spans_on_line(row), col)
+    pub(super) fn restore_template_call_selection_from_positions(
+        &mut self,
+        positions: &[(usize, usize)],
+    ) {
+        let spans = self.template_call_spans();
+        let resolved: Vec<TemplateCallSpan> = positions
+            .iter()
+            .filter_map(|(row, start_col)| {
+                spans
+                    .iter()
+                    .find(|span| span.row == *row && span.start_col == *start_col)
+                    .cloned()
+            })
+            .collect();
+        match resolved.as_slice() {
+            [] => self.selection = None,
+            [span] => self.selection = Some(StudioSelection::TemplateCall { span: span.clone() }),
+            [first, .., last] => {
+                self.selection = Some(StudioSelection::TemplateCallRange {
+                    anchor: first.clone(),
+                    focus: last.clone(),
+                });
+            }
+        }
+    }
+
+    pub(super) fn unit_at_or_after_cursor(&self, row: usize, col: usize) -> Option<UnitSpan> {
+        unit_at_or_near_col(self.unit_spans_on_line(row), col)
     }
 
     pub(super) fn bar_at_or_after_cursor(&self, row: usize, col: usize) -> Option<BarSpan> {
         bar_at_or_near_col(self.bar_spans_on_line(row), col)
     }
 
-    pub(super) fn nearest_editable_token_on_line(
+    pub(super) fn template_call_at_or_after_cursor(
         &self,
         row: usize,
         col: usize,
-    ) -> Option<EditableTokenSpan> {
-        self.editable_token_spans_on_line(row)
+    ) -> Option<TemplateCallSpan> {
+        self.textarea
+            .lines()
+            .get(row)
+            .and_then(|line| template_call_at_or_near_col(row, line, col))
+    }
+
+    pub(super) fn nearest_unit_on_line(&self, row: usize, col: usize) -> Option<UnitSpan> {
+        self.unit_spans_on_line(row)
             .into_iter()
             .min_by_key(|note| note.start_col.abs_diff(col))
     }
@@ -391,18 +484,28 @@ impl StudioApp {
             .min_by_key(|bar| bar.start_col.abs_diff(col))
     }
 
+    pub(super) fn nearest_template_call_on_line(
+        &self,
+        row: usize,
+        col: usize,
+    ) -> Option<TemplateCallSpan> {
+        self.template_call_spans_on_line(row)
+            .into_iter()
+            .min_by_key(|span| span.start_col.abs_diff(col))
+    }
+
     pub(super) fn bar_on_line_by_index(&self, row: usize, index: usize) -> Option<BarSpan> {
         self.bar_spans_on_line(row)
             .into_iter()
             .find(|bar| bar.index == index)
     }
 
-    pub(super) fn editable_token_spans(&self) -> Vec<EditableTokenSpan> {
+    pub(super) fn unit_spans(&self) -> Vec<UnitSpan> {
         self.textarea
             .lines()
             .iter()
             .enumerate()
-            .flat_map(|(row, _)| self.editable_token_spans_on_line(row))
+            .flat_map(|(row, _)| self.unit_spans_on_line(row))
             .collect()
     }
 
@@ -415,23 +518,31 @@ impl StudioApp {
             .collect()
     }
 
-    pub(super) fn editable_token_spans_on_line(&self, row: usize) -> Vec<EditableTokenSpan> {
+    pub(super) fn template_call_spans(&self) -> Vec<TemplateCallSpan> {
+        self.textarea
+            .lines()
+            .iter()
+            .enumerate()
+            .flat_map(|(row, _)| self.template_call_spans_on_line(row))
+            .collect()
+    }
+
+    pub(super) fn unit_spans_on_line(&self, row: usize) -> Vec<UnitSpan> {
         self.textarea
             .lines()
             .get(row)
-            .map(|line| editable_token_spans_in_line(row, line))
+            .map(|line| unit_spans_in_line(row, line))
             .unwrap_or_default()
     }
 
-    pub(super) fn move_cursor_to_adjacent_editable_token(&mut self, direction: i32) -> bool {
+    pub(super) fn move_cursor_to_adjacent_unit(&mut self, direction: i32) -> bool {
         let cursor = self.textarea.cursor();
-        let next = self.adjacent_editable_token(direction, cursor.0, cursor.1);
-        let Some(next) = next else {
-            self.status_message = "No more editable tokens".into();
+        let Some(next) = self.adjacent_selectable_unit(direction, cursor.0, cursor.1) else {
+            self.status_message = "No more units".into();
             return false;
         };
 
-        self.focus_editable_token_cursor(&next);
+        self.focus_selectable_unit_cursor(&next);
         self.status_message = format!("Normal mode: {}", self.cursor_label());
         true
     }
@@ -457,11 +568,96 @@ impl StudioApp {
             .unwrap_or_default()
     }
 
+    pub(super) fn template_call_spans_on_line(&self, row: usize) -> Vec<TemplateCallSpan> {
+        self.textarea
+            .lines()
+            .get(row)
+            .map(|line| template_call_spans_in_line(row, line))
+            .unwrap_or_default()
+    }
+
     fn bar_cursor_col(&self, bar: &BarSpan) -> usize {
         let Some(line) = self.textarea.lines().get(bar.row) else {
             return bar.start_col.saturating_add(1);
         };
         bar_cursor_col_in_line(line, bar)
+    }
+
+    fn adjacent_selectable_unit(
+        &self,
+        direction: i32,
+        row: usize,
+        col: usize,
+    ) -> Option<SelectableUnit> {
+        let spans = self.selectable_units();
+        if spans.is_empty() {
+            return None;
+        }
+
+        let current_index = spans.iter().position(|span| match span {
+            SelectableUnit::Unit(token) => {
+                token.row == row && col >= token.start_col && col < token.end_col
+            }
+            SelectableUnit::TemplateCall(call) => {
+                call.row == row && col >= call.start_col && col < call.end_col
+            }
+        });
+
+        if let Some(index) = current_index {
+            return if direction < 0 {
+                index
+                    .checked_sub(1)
+                    .and_then(|prev| spans.get(prev).cloned())
+            } else {
+                spans.get(index + 1).cloned()
+            };
+        }
+
+        if direction < 0 {
+            spans
+                .iter()
+                .rev()
+                .find(|span| selectable_unit_position(span) < (row, col))
+                .cloned()
+        } else {
+            spans
+                .iter()
+                .find(|span| selectable_unit_position(span) > (row, col))
+                .cloned()
+        }
+    }
+
+    fn focus_selectable_unit_cursor(&mut self, span: &SelectableUnit) {
+        self.selection = None;
+        self.textarea.cancel_selection();
+        let (row, col) = match span {
+            SelectableUnit::Unit(token) => (token.row, token.start_col),
+            SelectableUnit::TemplateCall(call) => (call.row, call.start_col),
+        };
+        self.textarea
+            .move_cursor(CursorMove::Jump(row as u16, col as u16));
+    }
+
+    fn selectable_units(&self) -> Vec<SelectableUnit> {
+        let mut spans = self
+            .unit_spans()
+            .into_iter()
+            .map(SelectableUnit::Unit)
+            .collect::<Vec<_>>();
+        spans.extend(
+            self.template_call_spans()
+                .into_iter()
+                .map(SelectableUnit::TemplateCall),
+        );
+        spans.sort_by_key(selectable_unit_position);
+        spans
+    }
+}
+
+fn selectable_unit_position(span: &SelectableUnit) -> (usize, usize) {
+    match span {
+        SelectableUnit::Unit(token) => (token.row, token.start_col),
+        SelectableUnit::TemplateCall(call) => (call.row, call.start_col),
     }
 }
 

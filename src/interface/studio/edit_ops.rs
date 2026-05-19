@@ -1,7 +1,7 @@
 use super::selection::{
-    bar_spans_in_line, char_range, delete_editable_token, editable_token_spans_in_line,
-    group_span_containing_col, insert_at_col, is_lane_body_token, is_seq_line, replace_char_range,
-    EditableTokenKind, GroupSpan, StudioSelection,
+    bar_spans_in_line, char_range, delete_unit, group_span_containing_col, insert_at_col,
+    is_lane_body_token, is_seq_line, replace_char_range, unit_spans_in_line, GroupSpan,
+    StudioSelection,
 };
 use super::transform::{transpose_bar_text, transpose_line, transpose_note_token};
 use super::{StudioApp, StudioMode};
@@ -9,19 +9,19 @@ use miette::Result;
 use ratatui_textarea::CursorMove;
 
 impl StudioApp {
-    pub(super) fn delete_current_editable_token(&mut self) -> Result<()> {
+    pub(super) fn delete_current_unit(&mut self) -> Result<()> {
         let cursor = self.textarea.cursor();
-        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
-            self.status_message = "No editable token on this line".into();
+        let Some(token) = self.unit_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No unit on this line".into();
             return Ok(());
         };
 
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(token.row) else {
-            self.status_message = "Selected token no longer exists".into();
+            self.status_message = "Selected unit no longer exists".into();
             return Ok(());
         };
-        delete_editable_token(line, &token);
+        delete_unit(line, &token);
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
@@ -29,20 +29,20 @@ impl StudioApp {
             .move_cursor(CursorMove::Jump(token.row as u16, token.start_col as u16));
         self.dirty = true;
         self.compile_and_update_current_source()?;
-        self.status_message = format!("Deleted token {}", token.token);
+        self.status_message = format!("Deleted unit {}", token.token);
         Ok(())
     }
 
-    pub(super) fn subdivide_current_editable_token(&mut self) -> Result<()> {
+    pub(super) fn subdivide_current_unit(&mut self) -> Result<()> {
         let cursor = self.textarea.cursor();
-        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
-            self.status_message = "No editable token on this line".into();
+        let Some(token) = self.unit_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No unit on this line".into();
             return Ok(());
         };
 
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(token.row) else {
-            self.status_message = "Selected token no longer exists".into();
+            self.status_message = "Selected unit no longer exists".into();
             return Ok(());
         };
         if !is_subdividable_token(line, &token) {
@@ -54,9 +54,9 @@ impl StudioApp {
             line,
             token.start_col,
             token.end_col,
-            &subdivided_editable_token(&token.token),
+            &subdivided_unit(&token.token),
         );
-        let cursor_col = editable_token_spans_in_line(token.row, line)
+        let cursor_col = unit_spans_in_line(token.row, line)
             .into_iter()
             .find(|span| span.start_col >= token.start_col)
             .map(|span| span.start_col)
@@ -65,16 +65,16 @@ impl StudioApp {
         self.apply_cursor_source_update(
             lines,
             (token.row, cursor_col),
-            "Subdivided token".into(),
+            "Subdivided unit".into(),
             None,
         )
     }
 
-    pub(super) fn subdivide_selected_editable_tokens(&mut self) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let mut selected_tokens = self.selected_editable_token_spans();
+    pub(super) fn subdivide_selected_units(&mut self) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "Subdivide applies to editable token selection only".into();
+            self.status_message = "Subdivide applies to unit selection only".into();
             return Ok(());
         }
 
@@ -85,7 +85,7 @@ impl StudioApp {
                 .is_none_or(|line| !is_subdividable_token(line, selected))
         }) {
             self.status_message =
-                "Subdivide applies to seq or lane body token selection only".into();
+                "Subdivide applies to seq or lane body unit selection only".into();
             return Ok(());
         }
 
@@ -99,29 +99,29 @@ impl StudioApp {
         let mut lines = lines.to_vec();
         for selected in &selected_tokens {
             let Some(line) = lines.get_mut(selected.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             replace_char_range(
                 line,
                 selected.start_col,
                 selected.end_col,
-                &subdivided_editable_token(&selected.token),
+                &subdivided_unit(&selected.token),
             );
         }
 
         let Some(&first_index) = selected_indices.first() else {
-            self.status_message = "Subdivide applies to editable token selection only".into();
+            self.status_message = "Subdivide applies to unit selection only".into();
             return Ok(());
         };
         let expanded_indices: Vec<usize> =
             (first_index..=first_index + selected_indices.len() * 2 - 1).collect();
 
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &expanded_indices,
             format!(
-                "Subdivided {} token{}",
+                "Subdivided {} unit{}",
                 selected_indices.len(),
                 if selected_indices.len() == 1 { "" } else { "s" }
             ),
@@ -131,14 +131,14 @@ impl StudioApp {
 
     pub(super) fn shrink_current_editable_group(&mut self) -> Result<()> {
         let cursor = self.textarea.cursor();
-        let Some(token) = self.editable_token_at_or_after_cursor(cursor.0, cursor.1) else {
-            self.status_message = "No editable token on this line".into();
+        let Some(token) = self.unit_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No unit on this line".into();
             return Ok(());
         };
 
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(token.row) else {
-            self.status_message = "Selected token no longer exists".into();
+            self.status_message = "Selected unit no longer exists".into();
             return Ok(());
         };
         let Some(group) = shrinkable_group_at_token(line, &token) else {
@@ -161,9 +161,9 @@ impl StudioApp {
     }
 
     pub(super) fn shrink_selected_editable_groups(&mut self) -> Result<()> {
-        let mut selected_tokens = self.selected_editable_token_spans();
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "Shrink applies to editable token selection only".into();
+            self.status_message = "Shrink applies to unit selection only".into();
             return Ok(());
         }
         selected_tokens.sort_by(|left, right| {
@@ -176,7 +176,7 @@ impl StudioApp {
         let mut groups = Vec::<(usize, GroupSpan)>::new();
         for token in &selected_tokens {
             let Some(line) = lines.get(token.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             let Some(group) = shrinkable_group_at_token(line, token) else {
@@ -205,7 +205,7 @@ impl StudioApp {
         let mut selection_positions = Vec::new();
         for (row, group) in &groups {
             let Some(line) = lines.get_mut(*row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             replace_char_range(
@@ -220,7 +220,7 @@ impl StudioApp {
 
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_positions(&selection_positions);
+        self.restore_unit_selection_from_positions(&selection_positions);
         self.sync_selection_visual();
         self.dirty = true;
         self.compile_and_update_current_source()?;
@@ -239,17 +239,22 @@ impl StudioApp {
     pub(super) fn transpose_selection(&mut self, semitones: i32) -> Result<()> {
         if matches!(
             self.selection,
-            Some(
-                StudioSelection::EditableToken { .. } | StudioSelection::EditableTokenRange { .. }
-            )
+            Some(StudioSelection::Unit { .. } | StudioSelection::UnitRange { .. })
         ) {
-            return self.transpose_selected_editable_tokens(semitones);
+            return self.transpose_selected_units(semitones);
         }
         if matches!(
             self.selection,
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
         ) {
             return self.transpose_selected_bars(semitones);
+        }
+        if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.status_message = "Transpose does not apply to template call selection".into();
+            return Ok(());
         }
 
         let (start, end) = self.selected_line_range();
@@ -343,10 +348,10 @@ impl StudioApp {
             let new_bar = bar_spans_in_line(old_bar.row, line)
                 .into_iter()
                 .find(|bar| bar.index == old_bar.index)?;
-            editable_token_spans_in_line(old_bar.row, line)
+            unit_spans_in_line(old_bar.row, line)
                 .into_iter()
                 .find(|note| {
-                    note.kind == EditableTokenKind::Note
+                    note.kind.is_pitch()
                         && note.start_col >= new_bar.start_col
                         && note.end_col <= new_bar.end_col
                 })
@@ -369,17 +374,17 @@ impl StudioApp {
         Ok(())
     }
 
-    pub(super) fn transpose_selected_editable_tokens(&mut self, semitones: i32) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let selected_tokens = self.selected_editable_token_spans();
+    pub(super) fn transpose_selected_units(&mut self, semitones: i32) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "No editable token selected".into();
+            self.status_message = "No unit selected".into();
             return Ok(());
         }
 
         let mut replacements = Vec::new();
         for note in selected_tokens {
-            if note.kind != EditableTokenKind::Note {
+            if !note.kind.is_pitch() {
                 continue;
             }
             let mut changed = false;
@@ -407,13 +412,13 @@ impl StudioApp {
         });
         for (note, new_token) in &replacements {
             let Some(line) = lines.get_mut(note.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             replace_char_range(line, note.start_col, note.end_col, new_token);
         }
 
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &selected_indices,
             format!(
@@ -426,11 +431,11 @@ impl StudioApp {
         )
     }
 
-    pub(super) fn replace_selected_tokens(&mut self, replacement: &str) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let mut selected_tokens = self.selected_editable_token_spans();
+    pub(super) fn replace_selected_units(&mut self, replacement: &str) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "Replacement applies to editable token selection only".into();
+            self.status_message = "Replacement applies to unit selection only".into();
             return Ok(());
         }
         let lines = self.textarea.lines();
@@ -442,7 +447,11 @@ impl StudioApp {
                     .is_some_and(|line| is_lane_body_token(line, note))
             })
         {
-            self.status_message = "Note entry does not apply to lane body tokens".into();
+            self.status_message = "Note entry does not apply to lane body units".into();
+            return Ok(());
+        }
+        if selected_tokens.iter().any(|note| note.kind.is_modifier()) {
+            self.status_message = "Note entry does not apply to modifier units".into();
             return Ok(());
         }
 
@@ -469,17 +478,17 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         for note in &selected_tokens {
             let Some(line) = lines.get_mut(note.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             replace_char_range(line, note.start_col, note.end_col, replacement);
         }
 
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &selected_indices,
             format!(
-                "{} {} token{}",
+                "{} {} unit{}",
                 replacement_name,
                 selected_tokens.len(),
                 if selected_tokens.len() == 1 { "" } else { "s" }
@@ -488,10 +497,10 @@ impl StudioApp {
         )
     }
 
-    pub(super) fn delete_selected_editable_tokens(&mut self) -> Result<()> {
-        let mut selected_tokens = self.selected_editable_token_spans();
+    pub(super) fn delete_selected_units(&mut self) -> Result<()> {
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "x applies to editable token selection only".into();
+            self.status_message = "x applies to unit selection only".into();
             return Ok(());
         }
 
@@ -506,10 +515,10 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         for note in &selected_tokens {
             let Some(line) = lines.get_mut(note.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
-            delete_editable_token(line, note);
+            delete_unit(line, note);
         }
 
         self.push_source_undo();
@@ -524,7 +533,7 @@ impl StudioApp {
         self.dirty = true;
         self.compile_and_update_current_source()?;
         self.status_message = format!(
-            "Deleted {} token{}",
+            "Deleted {} unit{}",
             selected_tokens.len(),
             if selected_tokens.len() == 1 { "" } else { "s" }
         );
@@ -537,8 +546,13 @@ impl StudioApp {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
         ) {
             self.delete_selected_bars()
+        } else if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.delete_selected_template_calls()
         } else {
-            self.delete_selected_editable_tokens()
+            self.delete_selected_units()
         }
     }
 
@@ -595,16 +609,64 @@ impl StudioApp {
             Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
         ) {
             self.duplicate_selected_bars()
+        } else if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.duplicate_selected_template_calls()
         } else {
-            self.duplicate_selected_editable_tokens()
+            self.duplicate_selected_units()
         }
     }
 
-    pub(super) fn duplicate_selected_editable_tokens(&mut self) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let selected_tokens = self.selected_editable_token_spans();
+    pub(super) fn delete_selected_template_calls(&mut self) -> Result<()> {
+        let mut selected = self.selected_template_call_spans();
+        if selected.is_empty() {
+            self.status_message = "x applies to template call selection only".into();
+            return Ok(());
+        }
+
+        let first = selected.first().cloned();
+        selected.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for span in &selected {
+            let Some(line) = lines.get_mut(span.row) else {
+                self.status_message = "Selected template call no longer exists".into();
+                return Ok(());
+            };
+            delete_template_call(line, span.start_col, span.end_col);
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        if let Some(span) = first {
+            self.textarea
+                .move_cursor(CursorMove::Jump(span.row as u16, span.start_col as u16));
+        }
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Deleted {} template call{}",
+            selected.len(),
+            if selected.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    pub(super) fn duplicate_selected_units(&mut self) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "d applies to editable token selection only".into();
+            self.status_message = "d applies to unit selection only".into();
             return Ok(());
         }
 
@@ -616,19 +678,20 @@ impl StudioApp {
 
         let mut lines = self.textarea.lines().to_vec();
         let Some(line) = lines.get_mut(row) else {
-            self.status_message = "Selected token no longer exists".into();
+            self.status_message = "Selected unit no longer exists".into();
             return Ok(());
         };
         let Some(last_token) = selected_tokens.last() else {
             return Ok(());
         };
         if !is_seq_line(line)
+            && !selected_tokens.iter().all(|note| note.kind.is_modifier())
             && !selected_tokens
                 .iter()
                 .all(|note| is_lane_body_token(line, note))
         {
             self.status_message =
-                "Duplicate currently supports seq body or lane body tokens only".into();
+                "Duplicate currently supports seq, modifier, or lane body units only".into();
             return Ok(());
         }
 
@@ -643,18 +706,18 @@ impl StudioApp {
         insert_at_col(line, last_token.end_col, &insertion);
 
         let Some(last_selected_index) = selected_indices.iter().max().copied() else {
-            self.status_message = "Selected token no longer exists".into();
+            self.status_message = "Selected unit no longer exists".into();
             return Ok(());
         };
         let inserted_indices: Vec<usize> =
             (last_selected_index + 1..=last_selected_index + selected_tokens.len()).collect();
 
         let audition = self.audition_candidate_from_indices(&inserted_indices);
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &inserted_indices,
             format!(
-                "Duplicated {} token{}",
+                "Duplicated {} unit{}",
                 selected_tokens.len(),
                 if selected_tokens.len() == 1 { "" } else { "s" }
             ),
@@ -711,39 +774,117 @@ impl StudioApp {
         );
         Ok(())
     }
+
+    pub(super) fn duplicate_selected_template_calls(&mut self) -> Result<()> {
+        let selected = self.selected_template_call_spans();
+        if selected.is_empty() {
+            self.status_message = "d applies to template call selection only".into();
+            return Ok(());
+        }
+
+        let row = selected[0].row;
+        if selected.iter().any(|span| span.row != row) {
+            self.status_message = "Duplicate currently supports one template line at a time".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected template call no longer exists".into();
+            return Ok(());
+        };
+        let Some(last) = selected.last() else {
+            return Ok(());
+        };
+        let insertion = format!(
+            " {}",
+            selected
+                .iter()
+                .map(|span| span.raw_text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        insert_at_col(line, last.end_col, &insertion);
+
+        let inserted_positions: Vec<(usize, usize)> =
+            template_call_positions_after_duplication(row, line, selected.len());
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_template_call_selection_from_positions(&inserted_positions);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Duplicated {} template call{}",
+            selected.len(),
+            if selected.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
 }
 
-fn is_subdividable_token(line: &str, token: &super::selection::EditableTokenSpan) -> bool {
-    is_seq_line(line) || is_lane_body_token(line, token)
+fn is_subdividable_token(line: &str, token: &super::selection::UnitSpan) -> bool {
+    token.kind.is_seq_body() || (is_lane_body_token(line, token) && !is_seq_line(line))
 }
 
-fn subdivided_editable_token(token: &str) -> String {
+fn subdivided_unit(token: &str) -> String {
     format!("[{} .]", token)
 }
 
-fn shrinkable_group_at_token(
-    line: &str,
-    token: &super::selection::EditableTokenSpan,
-) -> Option<GroupSpan> {
+fn shrinkable_group_at_token(line: &str, token: &super::selection::UnitSpan) -> Option<GroupSpan> {
     group_span_containing_col(line, token.start_col)
+}
+
+fn delete_template_call(line: &mut String, start_col: usize, end_col: usize) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut start = start_col;
+    let mut end = end_col;
+
+    while end < chars.len() && chars[end].is_whitespace() {
+        end += 1;
+    }
+    if end == end_col {
+        while start > 0 && chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+    }
+
+    replace_char_range(line, start, end, "");
+}
+
+fn template_call_positions_after_duplication(
+    row: usize,
+    line: &str,
+    duplicated_count: usize,
+) -> Vec<(usize, usize)> {
+    let spans = super::template_ops::template_call_spans_in_line(row, line);
+    spans
+        .iter()
+        .rev()
+        .take(duplicated_count)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|span| (span.row, span.start_col))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{shrinkable_group_at_token, subdivided_editable_token};
-    use crate::interface::studio::selection::{editable_token_spans_in_line, replace_char_range};
+    use super::{shrinkable_group_at_token, subdivided_unit};
+    use crate::interface::studio::selection::{replace_char_range, unit_spans_in_line};
 
     #[test]
-    fn subdivided_editable_token_wraps_seq_note() {
-        assert_eq!(subdivided_editable_token("C4"), "[C4 .]");
-        assert_eq!(subdivided_editable_token("."), "[. .]");
-        assert_eq!(subdivided_editable_token("-"), "[- .]");
+    fn subdivided_unit_wraps_seq_note() {
+        assert_eq!(subdivided_unit("C4"), "[C4 .]");
+        assert_eq!(subdivided_unit("."), "[. .]");
+        assert_eq!(subdivided_unit("-"), "[- .]");
     }
 
     #[test]
-    fn subdivided_editable_token_replaces_seq_slot() {
+    fn subdivided_unit_replaces_seq_slot() {
         let mut line = "seq | C4 . |".to_string();
-        let token = editable_token_spans_in_line(0, &line)
+        let token = unit_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "C4")
             .unwrap();
@@ -751,7 +892,7 @@ mod tests {
             &mut line,
             token.start_col,
             token.end_col,
-            &subdivided_editable_token(&token.token),
+            &subdivided_unit(&token.token),
         );
         assert_eq!(line, "seq | [C4 .] . |");
     }
@@ -759,7 +900,7 @@ mod tests {
     #[test]
     fn shrinkable_group_at_token_uses_selected_element() {
         let line = "seq | [C4 .] . |".to_string();
-        let token = editable_token_spans_in_line(0, &line)
+        let token = unit_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "C4")
             .unwrap();
@@ -770,7 +911,7 @@ mod tests {
     #[test]
     fn shrinkable_group_at_token_uses_nearest_group_element() {
         let line = "seq | [[C4 .] [. .]] . |".to_string();
-        let token = editable_token_spans_in_line(0, &line)
+        let token = unit_spans_in_line(0, &line)
             .into_iter()
             .find(|span| span.token == "C4")
             .unwrap();

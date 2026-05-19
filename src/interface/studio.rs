@@ -215,8 +215,8 @@ impl StudioApp {
         }
         self.record_continuous_edit_cursor();
         let cursor = self.textarea.cursor();
-        if let Some(next) = self.adjacent_editable_token(1, cursor.0, cursor.1) {
-            self.focus_editable_token_cursor(&next);
+        if let Some(next) = self.adjacent_unit(1, cursor.0, cursor.1) {
+            self.focus_unit_cursor(&next);
         }
         self.resume_continuous_input(pending);
     }
@@ -283,13 +283,13 @@ impl StudioApp {
                 self.begin_pending_input(PendingInput::Onset(NoteInputMode::Continuous));
             }
             KeyCode::Char('s') => {
-                self.subdivide_current_editable_token()?;
+                self.subdivide_current_unit()?;
             }
             KeyCode::Char('S') => {
                 self.shrink_current_editable_group()?;
             }
             KeyCode::Char('x') => {
-                self.delete_current_editable_token()?;
+                self.delete_current_unit()?;
             }
             KeyCode::Char('D') => {
                 self.begin_pending_input(PendingInput::DeleteStructure);
@@ -391,10 +391,10 @@ impl StudioApp {
             KeyCode::Char('h') => self.textarea.move_cursor(CursorMove::Back),
             KeyCode::Char('l') => self.textarea.move_cursor(CursorMove::Forward),
             KeyCode::Char(',') => {
-                self.move_cursor_to_adjacent_editable_token(-1);
+                self.move_cursor_to_adjacent_unit(-1);
             }
             KeyCode::Char('.') => {
-                self.move_cursor_to_adjacent_editable_token(1);
+                self.move_cursor_to_adjacent_unit(1);
             }
             KeyCode::Char('<') => {
                 self.move_cursor_to_adjacent_bar(-1);
@@ -412,6 +412,7 @@ impl StudioApp {
             PendingInput::Add => self.handle_add_key(key),
             PendingInput::Goto => self.handle_goto_key(key),
             PendingInput::DeleteStructure => self.handle_delete_structure_key(key),
+            PendingInput::TemplateMacro => self.handle_template_macro_key(key),
             PendingInput::Note(mode) => self.handle_note_key(mode, key),
             PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
         }
@@ -425,7 +426,9 @@ impl StudioApp {
                 PendingInput::Goto | PendingInput::DeleteStructure => {
                     self.handle_pending_input(pending, key)
                 }
-                PendingInput::Add => self.handle_pending_input(pending, key),
+                PendingInput::Add | PendingInput::TemplateMacro => {
+                    self.handle_pending_input(pending, key)
+                }
             };
         }
 
@@ -459,7 +462,7 @@ impl StudioApp {
                 self.delete_selection()?;
             }
             KeyCode::Char('s') => {
-                self.subdivide_selected_editable_tokens()?;
+                self.subdivide_selected_units()?;
             }
             KeyCode::Char('S') => {
                 self.shrink_selected_editable_groups()?;

@@ -1,7 +1,7 @@
 use super::input::{NoteInputMode, PendingInput, ONSET_HELP};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
-    lane_body_token_spans_in_line, lane_head_token, replace_char_range, EditableTokenSpan,
+    lane_body_token_spans_in_line, lane_head_token, replace_char_range, UnitSpan,
 };
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -156,10 +156,10 @@ impl StudioApp {
     }
 
     pub(super) fn replace_selected_onset_tokens(&mut self, token: char) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let mut selected_tokens = self.selected_editable_token_spans();
+        let selected_indices = self.selected_unit_indices();
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "Onset edit applies to editable token selection only".into();
+            self.status_message = "Onset edit applies to unit selection only".into();
             return Ok(());
         }
 
@@ -169,7 +169,7 @@ impl StudioApp {
                 .get(selected.row)
                 .is_none_or(|line| !is_lane_body_token(line, selected))
         }) {
-            self.status_message = "Onset edit applies to lane body token selection only".into();
+            self.status_message = "Onset edit applies to lane body unit selection only".into();
             return Ok(());
         }
 
@@ -193,7 +193,7 @@ impl StudioApp {
         let mut lines = lines.to_vec();
         for selected in &selected_tokens {
             let Some(line) = lines.get_mut(selected.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             replace_char_range(
@@ -204,11 +204,11 @@ impl StudioApp {
             );
         }
 
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &selected_indices,
             format!(
-                "Set onset {} on {} token{}",
+                "Set onset {} on {} unit{}",
                 token,
                 selected_tokens.len(),
                 if selected_tokens.len() == 1 { "" } else { "s" }
@@ -218,10 +218,10 @@ impl StudioApp {
     }
 
     pub(super) fn toggle_selected_onset_tokens(&mut self) -> Result<()> {
-        let selected_indices = self.selected_editable_token_indices();
-        let mut selected_tokens = self.selected_editable_token_spans();
+        let selected_indices = self.selected_unit_indices();
+        let mut selected_tokens = self.selected_unit_spans();
         if selected_tokens.is_empty() {
-            self.status_message = "Onset toggle applies to editable token selection only".into();
+            self.status_message = "Onset toggle applies to unit selection only".into();
             return Ok(());
         }
 
@@ -231,7 +231,7 @@ impl StudioApp {
                 .get(selected.row)
                 .is_none_or(|line| !is_lane_body_token(line, selected))
         }) {
-            self.status_message = "Onset toggle applies to lane body token selection only".into();
+            self.status_message = "Onset toggle applies to lane body unit selection only".into();
             return Ok(());
         }
 
@@ -246,7 +246,7 @@ impl StudioApp {
         let mut audition = None;
         for selected in &selected_tokens {
             let Some(line) = lines.get_mut(selected.row) else {
-                self.status_message = "Selected token no longer exists".into();
+                self.status_message = "Selected unit no longer exists".into();
                 return Ok(());
             };
             let token = toggled_onset_token(&selected.token);
@@ -261,11 +261,11 @@ impl StudioApp {
             );
         }
 
-        self.apply_editable_token_selection_update(
+        self.apply_unit_selection_update(
             lines,
             &selected_indices,
             format!(
-                "Toggled onset on {} token{}",
+                "Toggled onset on {} unit{}",
                 selected_tokens.len(),
                 if selected_tokens.len() == 1 { "" } else { "s" }
             ),
@@ -313,7 +313,7 @@ fn place_lane_onset_at_slot(
     })
 }
 
-fn current_onset_token(line: &str, col: usize) -> Option<EditableTokenSpan> {
+fn current_onset_token(line: &str, col: usize) -> Option<UnitSpan> {
     let onsets = lane_body_token_spans_in_line(0, line);
     onset_at_or_near_col_with_index(&onsets, col).map(|(_, onset)| onset)
 }
@@ -326,10 +326,7 @@ fn toggled_onset_token(token: &str) -> char {
     }
 }
 
-fn onset_at_or_near_col_with_index(
-    onsets: &[EditableTokenSpan],
-    col: usize,
-) -> Option<(usize, EditableTokenSpan)> {
+fn onset_at_or_near_col_with_index(onsets: &[UnitSpan], col: usize) -> Option<(usize, UnitSpan)> {
     onsets
         .iter()
         .enumerate()

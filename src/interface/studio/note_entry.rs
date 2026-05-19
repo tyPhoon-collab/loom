@@ -185,7 +185,7 @@ impl StudioApp {
                 self.status_message = "Note entry cancelled".into();
             }
             NoteKeyInput::Token(token) => {
-                self.replace_selected_tokens(&token)?;
+                self.replace_selected_units(&token)?;
             }
             NoteKeyInput::Unknown => {
                 self.status_message = format!("Unknown note key. {}", NOTE_HELP);

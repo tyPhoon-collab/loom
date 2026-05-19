@@ -40,7 +40,7 @@ impl StudioApp {
         }
     }
 
-    pub(super) fn apply_editable_token_selection_update(
+    pub(super) fn apply_unit_selection_update(
         &mut self,
         lines: Vec<String>,
         selected_indices: &[usize],
@@ -49,7 +49,7 @@ impl StudioApp {
     ) -> Result<()> {
         self.push_source_undo();
         self.replace_source(lines.join("\n"));
-        self.restore_editable_token_selection_from_indices(selected_indices);
+        self.restore_unit_selection_from_indices(selected_indices);
         self.sync_selection_visual();
         self.dirty = true;
         self.compile_and_update_current_source()?;
@@ -94,10 +94,8 @@ impl StudioApp {
 
         let desired_cursor = resolve_undo_cursor(target_cursor, undo_cursor);
 
-        if let Some(token) =
-            self.editable_token_at_or_after_cursor(desired_cursor.0, desired_cursor.1)
-        {
-            self.focus_editable_token_cursor(&token);
+        if let Some(token) = self.unit_at_or_after_cursor(desired_cursor.0, desired_cursor.1) {
+            self.focus_unit_cursor(&token);
             self.last_continuous_edit_cursor = Some((token.row, token.start_col));
         } else {
             let row = desired_cursor

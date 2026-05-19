@@ -1,8 +1,7 @@
-use super::input::ADD_HELP;
+use super::input::{PendingInput, ADD_HELP};
 use super::selection::{
-    bar_at_or_near_col, bar_spans_in_line, editable_token_at_or_near_col,
-    editable_token_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
-    EditableTokenSpan,
+    bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
+    unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::parse_track_header_channel;
 use super::StudioApp;
@@ -30,6 +29,20 @@ impl StudioApp {
             }
             KeyCode::Char('d') => {
                 self.add_default_drum_lanes()?;
+            }
+            KeyCode::Char('v') => {
+                self.add_modifier_line("v")?;
+            }
+            KeyCode::Char('p') => {
+                self.add_modifier_line("p")?;
+            }
+            KeyCode::Char('m') => {
+                if self.current_template_call_at_cursor().is_some() {
+                    self.begin_pending_input(PendingInput::TemplateMacro);
+                } else {
+                    self.status_message =
+                        "Template macro add needs the cursor on a template call".into();
+                }
             }
             KeyCode::Char('b') => {
                 self.add_bar()?;
@@ -128,6 +141,25 @@ impl StudioApp {
         self.apply_cursor_source_update(lines, (cursor.0, new_cursor_col), "Added bar".into(), None)
     }
 
+    pub(super) fn add_modifier_line(&mut self, label: &str) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(insert_row) = modifier_insert_row(&lines, cursor.0) else {
+            self.status_message =
+                "Modifier line add needs a seq, note-head, or drum lane block".into();
+            return Ok(());
+        };
+
+        let template = format!("{:<2} | . . . . |", label);
+        lines.insert(insert_row, template);
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row, 5),
+            format!("Added {} modifier line", modifier_label_name(label)),
+            None,
+        )
+    }
+
     pub(super) fn place_token_at_current_slot(&mut self, token: &str) -> Result<bool> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
@@ -141,7 +173,7 @@ impl StudioApp {
             return Ok(false);
         };
 
-        let cursor_col = editable_token_spans_in_line(cursor.0, line)
+        let cursor_col = unit_spans_in_line(cursor.0, line)
             .get(slot.index_on_line)
             .map(|note| note.start_col)
             .unwrap_or(cursor.1);
@@ -157,7 +189,7 @@ impl StudioApp {
 
     pub(super) fn note_token_for_add(&self) -> String {
         let cursor = self.textarea.cursor();
-        if let Some(note) = editable_token_at_or_near_col(
+        if let Some(note) = unit_at_or_near_col(
             self.auditionable_spans_in_line(self.textarea.lines(), cursor.0),
             cursor.1,
         ) {
@@ -185,6 +217,63 @@ fn insert_row_after_cursor(lines: &[String], cursor_row: usize) -> usize {
         0
     } else {
         (cursor_row + 1).min(lines.len())
+    }
+}
+
+fn modifier_insert_row(lines: &[String], cursor_row: usize) -> Option<usize> {
+    let anchor_row = if lines
+        .get(cursor_row)
+        .is_some_and(|line| is_pattern_line(line) || is_modifier_line(line))
+    {
+        cursor_row
+    } else {
+        (0..=cursor_row).rev().find(|&row| {
+            lines
+                .get(row)
+                .is_some_and(|line| is_pattern_line(line) || is_modifier_line(line))
+        })?
+    };
+
+    if lines
+        .get(anchor_row)
+        .is_some_and(|line| is_modifier_line(line))
+    {
+        let pattern_row = (0..anchor_row)
+            .rev()
+            .find(|&row| lines.get(row).is_some_and(|line| is_pattern_line(line)))?;
+        return Some(first_non_modifier_row_after(lines, pattern_row));
+    }
+
+    Some(first_non_modifier_row_after(lines, anchor_row))
+}
+
+fn first_non_modifier_row_after(lines: &[String], row: usize) -> usize {
+    let mut insert_row = row + 1;
+    while insert_row < lines.len() && is_modifier_line(&lines[insert_row]) {
+        insert_row += 1;
+    }
+    insert_row
+}
+
+fn is_pattern_line(line: &str) -> bool {
+    line.contains('|') && !is_modifier_line(line) && !line.trim().starts_with("[@")
+}
+
+fn is_modifier_line(line: &str) -> bool {
+    let Some(pipe_col) = line.chars().position(|ch| ch == '|') else {
+        return false;
+    };
+    matches!(
+        line.chars().take(pipe_col).collect::<String>().trim(),
+        "v" | "p"
+    )
+}
+
+fn modifier_label_name(label: &str) -> &'static str {
+    match label {
+        "v" => "velocity",
+        "p" => "pitch",
+        _ => "unknown",
     }
 }
 
@@ -227,8 +316,8 @@ fn place_seq_token_at_slot(
         return Err(());
     }
 
-    let notes = editable_token_spans_in_line(row, line);
-    if let Some((index, note)) = editable_token_at_or_near_col_with_index(&notes, col) {
+    let notes = unit_spans_in_line(row, line);
+    if let Some((index, note)) = unit_at_or_near_col_with_index(&notes, col) {
         replace_char_range(line, note.start_col, note.end_col, token);
         return Ok(PlacedSlot {
             index_on_line: index,
@@ -252,10 +341,7 @@ fn place_seq_token_at_slot(
     Ok(PlacedSlot { index_on_line: 0 })
 }
 
-fn editable_token_at_or_near_col_with_index(
-    notes: &[EditableTokenSpan],
-    col: usize,
-) -> Option<(usize, EditableTokenSpan)> {
+fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usize, UnitSpan)> {
     notes
         .iter()
         .enumerate()

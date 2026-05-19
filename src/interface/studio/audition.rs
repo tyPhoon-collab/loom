@@ -1,7 +1,4 @@
-use super::selection::{
-    editable_token_at_or_near_col, editable_token_spans_in_line, EditableTokenKind,
-    EditableTokenSpan,
-};
+use super::selection::{unit_at_or_near_col, unit_spans_in_line, UnitSpan};
 use super::settings::parse_track_header_channel;
 use super::StudioApp;
 use crate::dsl::note::Note;
@@ -28,7 +25,7 @@ impl StudioApp {
             start_row
         };
 
-        editable_token_at_or_near_col(
+        unit_at_or_near_col(
             self.auditionable_spans_in_line(lines, preferred_row),
             cursor.1,
         )
@@ -42,17 +39,13 @@ impl StudioApp {
         .map(|note| (note.row, note.token))
     }
 
-    pub(super) fn auditionable_spans_in_line(
-        &self,
-        lines: &[String],
-        row: usize,
-    ) -> Vec<EditableTokenSpan> {
+    pub(super) fn auditionable_spans_in_line(&self, lines: &[String], row: usize) -> Vec<UnitSpan> {
         lines
             .get(row)
             .map(|line| {
-                editable_token_spans_in_line(row, line)
+                unit_spans_in_line(row, line)
                     .into_iter()
-                    .filter(|note| note.kind == EditableTokenKind::Note)
+                    .filter(|note| note.kind.is_pitch())
                     .collect()
             })
             .unwrap_or_default()
@@ -62,11 +55,11 @@ impl StudioApp {
         &self,
         indices: &[usize],
     ) -> Option<(usize, String)> {
-        let notes = self.editable_token_spans();
+        let notes = self.unit_spans();
         indices.iter().find_map(|index| {
             notes
                 .get(*index)
-                .filter(|note| note.kind == EditableTokenKind::Note)
+                .filter(|note| note.kind.is_pitch())
                 .map(|note| (note.row, note.token.clone()))
         })
     }
