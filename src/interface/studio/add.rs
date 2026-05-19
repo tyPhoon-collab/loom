@@ -3,7 +3,7 @@ use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
-use super::settings::parse_track_header_channel;
+use super::settings::{parse_track_header, parse_track_header_channel};
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
@@ -46,6 +46,9 @@ impl StudioApp {
                     self.status_message =
                         "Template macro add needs the cursor on a template call".into();
                 }
+            }
+            KeyCode::Char('T') => {
+                self.add_template_definition()?;
             }
             KeyCode::Char('b') => {
                 self.add_bar()?;
@@ -135,6 +138,26 @@ impl StudioApp {
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         insert_separator_at_row(&mut lines, insert_row);
         self.apply_cursor_source_update(lines, (insert_row, 0), "Added separator".into(), None)
+    }
+
+    pub(super) fn add_template_definition(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let insert_row = insert_row_after_cursor(&lines, cursor.0);
+        let template_name = next_empty_template_name(&lines, cursor.0);
+
+        let inserted = vec![
+            String::new(),
+            format!("# @{}", template_name),
+            "seq | . . . . |".to_string(),
+        ];
+        lines.splice(insert_row..insert_row, inserted);
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row + 2, 6),
+            format!("Added template definition: @{}", template_name),
+            None,
+        )
     }
 
     pub(super) fn add_bar(&mut self) -> Result<()> {
@@ -310,6 +333,44 @@ fn next_track_header(lines: &[String]) -> (String, u8) {
     (format!("Track {}", track_count + 1), next_channel)
 }
 
+fn next_empty_template_name(lines: &[String], cursor_row: usize) -> String {
+    let existing: std::collections::HashSet<String> = lines
+        .iter()
+        .filter_map(|line| line.trim().strip_prefix("# @"))
+        .map(|name| name.trim().to_string())
+        .collect();
+
+    let base = (0..=cursor_row)
+        .rev()
+        .find_map(|row| lines.get(row).and_then(|line| parse_track_header(line)))
+        .map(|header| slugify_template_name(&header.name))
+        .filter(|slug| !slug.is_empty())
+        .unwrap_or_else(|| "template".to_string());
+
+    if !existing.contains(&base) {
+        return base;
+    }
+
+    let mut index = 1usize;
+    loop {
+        let candidate = format!("{}{}", base, index);
+        if !existing.contains(&candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn slugify_template_name(input: &str) -> String {
+    let mut slug = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        }
+    }
+    slug
+}
+
 fn add_rest_bar_to_line(line: &mut String) -> std::result::Result<usize, ()> {
     if !line.contains('|') {
         return Err(());
@@ -381,7 +442,8 @@ fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usi
 #[cfg(test)]
 mod tests {
     use super::{
-        add_rest_bar_to_line, insert_separator_at_row, next_track_header, place_seq_token_at_slot,
+        add_rest_bar_to_line, insert_separator_at_row, next_empty_template_name, next_track_header,
+        place_seq_token_at_slot,
     };
 
     #[test]
@@ -430,5 +492,15 @@ mod tests {
                 "seq | C4 |".to_string()
             ]
         );
+    }
+
+    #[test]
+    pub(super) fn next_empty_template_name_prefers_track_name() {
+        let lines = vec![
+            "# Piano: 1".to_string(),
+            "seq | C4 |".to_string(),
+            "# @piano".to_string(),
+        ];
+        assert_eq!(next_empty_template_name(&lines, 1), "piano1");
     }
 }

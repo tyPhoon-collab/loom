@@ -120,6 +120,7 @@ Typical Select mode operations:
 - `n` replace selected units through note entry
 - `s` subdivide selected units
 - `S` shrink selected groups
+- `T` extracts selected bars into a template definition
 - `Enter` writes selected bars to `loop_range`
 - transpose with `+`, `-`, `[`, `]`
 
@@ -165,6 +166,7 @@ Useful add commands:
 | `a l` | add a note-head line |
 | `a t` | add a new track and empty `seq` line |
 | `a h` | add a `---` separator line |
+| `a T` | add an empty template definition |
 | `a b` | append a rest bar |
 | `a d` | add the default drum preset |
 | `a v` | add a velocity modifier line for the current pattern block |
@@ -210,6 +212,7 @@ Currently supported frontmatter editing:
 
 - `L` toggles `loop`
 - `Ctrl-L` clears `loop` and `loop_range`
+- bar selection + `T` extracts a template definition
 - bar selection + `Enter` writes a `loop_range`
 
 Studio only edits simple scalar loop settings directly. Complex frontmatter should still be edited manually in Insert mode.

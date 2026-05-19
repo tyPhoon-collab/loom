@@ -335,7 +335,7 @@ fn common_track_header_row(lines: &[String], row_start: usize, row_end: usize) -
     header_row
 }
 
-fn next_template_name(
+pub(super) fn next_template_name(
     lines: &[String],
     track_header_row: usize,
     row_start: usize,
