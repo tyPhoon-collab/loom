@@ -256,6 +256,9 @@ impl StudioApp {
             self.status_message = "Transpose does not apply to template call selection".into();
             return Ok(());
         }
+        if self.selection.is_none() {
+            return self.transpose_current_unit(semitones);
+        }
 
         let (start, end) = self.selected_line_range();
         let mut lines = self.textarea.lines().to_vec();
@@ -297,6 +300,39 @@ impl StudioApp {
         );
         self.audition_candidate(audition);
         Ok(())
+    }
+
+    pub(super) fn transpose_current_unit(&mut self, semitones: i32) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let Some(unit) = self.unit_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No unit on this line".into();
+            return Ok(());
+        };
+        if !unit.kind.is_pitch() {
+            self.status_message = "Transpose applies to pitch units only".into();
+            return Ok(());
+        }
+
+        let mut changed = false;
+        let new_token = transpose_note_token(&unit.token, semitones, &mut changed)?;
+        if !changed {
+            self.status_message = "No transposable note on current unit".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(unit.row) else {
+            self.status_message = "Selected unit no longer exists".into();
+            return Ok(());
+        };
+        replace_char_range(line, unit.start_col, unit.end_col, &new_token);
+
+        self.apply_cursor_source_update(
+            lines,
+            (unit.row, unit.start_col),
+            format!("Transposed current unit by {:+}", semitones),
+            Some((unit.row, new_token)),
+        )
     }
 
     pub(super) fn transpose_selected_bars(&mut self, semitones: i32) -> Result<()> {
