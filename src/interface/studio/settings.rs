@@ -75,6 +75,104 @@ pub(super) fn loop_range_for_bar_indices(
     }
 }
 
+pub(super) fn track_bar_index_at(
+    source: &str,
+    target_row: usize,
+    local_index: usize,
+) -> std::result::Result<usize, String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut row = 0usize;
+
+    if matches!(lines.first().copied(), Some("---")) {
+        row = score_body_start_row(source)?;
+    }
+
+    let mut in_track = false;
+    let mut in_template = false;
+    let mut section_base = 0usize;
+    let mut section_bar_count = 0usize;
+
+    while row < lines.len() {
+        let line = lines[row];
+        let trimmed = line.trim();
+
+        if parse_track_header(line).is_some() {
+            in_track = true;
+            in_template = false;
+            section_base = 0;
+            section_bar_count = 0;
+            row += 1;
+            continue;
+        }
+
+        if is_template_header(line) {
+            in_track = false;
+            in_template = true;
+            row += 1;
+            continue;
+        }
+
+        if trimmed == "---" {
+            if in_track {
+                section_base += section_bar_count;
+                section_bar_count = 0;
+            }
+            row += 1;
+            continue;
+        }
+
+        if row == target_row {
+            if in_template || !in_track {
+                return Err("Loop range needs bars in a track body".to_string());
+            }
+
+            let bar_count = bar_count_in_line(line);
+            if local_index >= bar_count {
+                return Err("Selected bar no longer exists".to_string());
+            }
+            return Ok(section_base + local_index);
+        }
+
+        if in_track {
+            section_bar_count = section_bar_count.max(bar_count_in_line(line));
+        }
+        row += 1;
+    }
+
+    Err("Selected bar no longer exists".to_string())
+}
+
+pub(super) fn score_body_start_row(source: &str) -> std::result::Result<usize, String> {
+    let lines: Vec<&str> = source.lines().collect();
+    if !matches!(lines.first().copied(), Some("---")) {
+        return Ok(0);
+    }
+
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (*line == "---").then_some(index))
+    else {
+        return Err("Frontmatter block is not closed".to_string());
+    };
+
+    let mut row = end_index + 1;
+    while row < lines.len() && lines[row].trim().is_empty() {
+        row += 1;
+    }
+    Ok(row)
+}
+
+fn is_template_header(line: &str) -> bool {
+    line.trim().starts_with("# @")
+}
+
+fn bar_count_in_line(line: &str) -> usize {
+    let pipe_count = line.chars().filter(|&ch| ch == '|').count();
+    pipe_count.saturating_sub(1)
+}
+
 fn format_loop_range_number(start: f64, end: f64) -> String {
     format!("{}..{}", format_loop_bound(start), format_loop_bound(end))
 }
@@ -302,8 +400,8 @@ fn finish_source(lines: Vec<String>) -> String {
 mod tests {
     use super::{
         clear_loop_settings_frontmatter, format_track_header, loop_range_for_bar_indices,
-        parse_track_header, parse_track_header_channel, set_loop_range_frontmatter,
-        toggle_loop_frontmatter, TrackHeader,
+        parse_track_header, parse_track_header_channel, score_body_start_row,
+        set_loop_range_frontmatter, toggle_loop_frontmatter, track_bar_index_at, TrackHeader,
     };
 
     #[test]
@@ -473,5 +571,42 @@ mod tests {
         )
         .unwrap();
         assert_eq!(range, "3..9");
+    }
+
+    #[test]
+    fn track_bar_index_at_continues_across_track_wraps() {
+        let source = "# Piano: 1\nseq | C4 | D4 |\n---\nseq | E4 | F4 |\n";
+        assert_eq!(track_bar_index_at(source, 1, 0).unwrap(), 0);
+        assert_eq!(track_bar_index_at(source, 1, 1).unwrap(), 1);
+        assert_eq!(track_bar_index_at(source, 3, 0).unwrap(), 2);
+        assert_eq!(track_bar_index_at(source, 3, 1).unwrap(), 3);
+    }
+
+    #[test]
+    fn track_bar_index_at_uses_widest_line_in_previous_section() {
+        let source = "# Drums: 10\nkick  | ^ | ^ |\nsnare | . |\n---\nkick  | ^ |\n";
+        assert_eq!(track_bar_index_at(source, 4, 0).unwrap(), 2);
+    }
+
+    #[test]
+    fn track_bar_index_at_rejects_template_bars() {
+        let source = "# @riff\nseq | C4 | D4 |\n";
+        assert_eq!(
+            track_bar_index_at(source, 1, 0).unwrap_err(),
+            "Loop range needs bars in a track body"
+        );
+    }
+
+    #[test]
+    fn score_body_start_row_accounts_for_frontmatter_gap() {
+        assert_eq!(score_body_start_row("# Piano: 1\n").unwrap(), 0);
+        assert_eq!(
+            score_body_start_row("---\nloop: true\n---\n\n# Piano: 1\n").unwrap(),
+            4
+        );
+        assert_eq!(
+            score_body_start_row("---\nloop: true\n---\n# Piano: 1\n").unwrap(),
+            3
+        );
     }
 }

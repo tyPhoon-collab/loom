@@ -1,5 +1,5 @@
 pub(super) const ADD_HELP: &str =
-    "Add: s seq | l note-head | t track | b bar | d drums | v velocity-mod | p pitch-mod | m template-macro | n note | . rest | - sustain";
+    "Add: s seq | l note-head | t track | h separator | b bar | d drums | v velocity-mod | p pitch-mod | m template-macro | n note | . rest | - sustain";
 pub(super) const GOTO_HELP: &str =
     "Goto: t next track | T previous track | d template definition | Esc cancel";
 pub(super) const DELETE_HELP: &str = "Delete: t current track | Esc cancel";

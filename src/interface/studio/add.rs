@@ -27,6 +27,9 @@ impl StudioApp {
             KeyCode::Char('t') => {
                 self.add_track()?;
             }
+            KeyCode::Char('h') => {
+                self.add_separator()?;
+            }
             KeyCode::Char('d') => {
                 self.add_default_drum_lanes()?;
             }
@@ -126,6 +129,14 @@ impl StudioApp {
         )
     }
 
+    pub(super) fn add_separator(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let insert_row = insert_row_after_cursor(&lines, cursor.0);
+        insert_separator_at_row(&mut lines, insert_row);
+        self.apply_cursor_source_update(lines, (insert_row, 0), "Added separator".into(), None)
+    }
+
     pub(super) fn add_bar(&mut self) -> Result<()> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
@@ -218,6 +229,10 @@ fn insert_row_after_cursor(lines: &[String], cursor_row: usize) -> usize {
     } else {
         (cursor_row + 1).min(lines.len())
     }
+}
+
+fn insert_separator_at_row(lines: &mut Vec<String>, row: usize) {
+    lines.insert(row, "---".to_string());
 }
 
 fn modifier_insert_row(lines: &[String], cursor_row: usize) -> Option<usize> {
@@ -365,7 +380,9 @@ fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usi
 
 #[cfg(test)]
 mod tests {
-    use super::{add_rest_bar_to_line, next_track_header, place_seq_token_at_slot};
+    use super::{
+        add_rest_bar_to_line, insert_separator_at_row, next_track_header, place_seq_token_at_slot,
+    };
 
     #[test]
     pub(super) fn add_rest_bar_appends_grid_bar() {
@@ -399,5 +416,19 @@ mod tests {
             "# Bass: 3".to_string(),
         ];
         assert_eq!(next_track_header(&lines), ("Track 3".to_string(), 4));
+    }
+
+    #[test]
+    pub(super) fn insert_separator_at_row_inserts_rule() {
+        let mut lines = vec!["# Piano: 1".to_string(), "seq | C4 |".to_string()];
+        insert_separator_at_row(&mut lines, 1);
+        assert_eq!(
+            lines,
+            vec![
+                "# Piano: 1".to_string(),
+                "---".to_string(),
+                "seq | C4 |".to_string()
+            ]
+        );
     }
 }

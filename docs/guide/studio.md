@@ -164,6 +164,7 @@ Useful add commands:
 | `a s` | add a `seq` line |
 | `a l` | add a note-head line |
 | `a t` | add a new track and empty `seq` line |
+| `a h` | add a `---` separator line |
 | `a b` | append a rest bar |
 | `a d` | add the default drum preset |
 | `a v` | add a velocity modifier line for the current pattern block |
