@@ -122,6 +122,16 @@ impl StudioApp {
         let pending = PendingInput::Note(mode);
 
         match key.code {
+            KeyCode::Tab if matches!(mode, NoteInputMode::Continuous) => {
+                self.subdivide_current_unit()?;
+                self.resume_continuous_input(pending);
+                return Ok(());
+            }
+            KeyCode::BackTab if matches!(mode, NoteInputMode::Continuous) => {
+                self.shrink_current_editable_group()?;
+                self.resume_continuous_input(pending);
+                return Ok(());
+            }
             KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
                 self.handle_continuous_input_undo(pending)?;
                 return Ok(());

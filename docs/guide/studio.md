@@ -130,6 +130,7 @@ Note entry is the fastest way to place notes in `seq` lines.
 
 - `n` places one unit
 - `N` keeps advancing to the next unit
+- during `N`, `Tab` subdivides the current unit and `Shift-Tab` shrinks the current bracket group
 - `Esc` exits note entry
 - `Backspace` undoes the last step in continuous note entry
 

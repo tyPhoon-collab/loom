@@ -6,7 +6,7 @@ pub(super) const DELETE_HELP: &str = "Delete: t current track | Esc cancel";
 pub(super) const NOTE_HELP: &str =
     "Note: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
-    "Note*: keyboard piano key | . rest | - sustain | z/x octave | Backspace undo | Esc cancel";
+    "Note*: keyboard piano key | . rest | - sustain | z/x octave | Tab subdivide | S-Tab shrink | Backspace undo | Esc cancel";
 pub(super) const ONSET_HELP: &str = "Onset: x note-on | . rest | - sustain | t toggle | Esc cancel";
 pub(super) const CONTINUOUS_ONSET_HELP: &str =
     "Onset*: x note-on | . rest | - sustain | t toggle | Backspace undo | Esc cancel";
