@@ -35,7 +35,7 @@ loom save examples/starter/melody-simple.loom
 
 - Docs source: `docs/` (VitePress)
 - Playback setup: `docs/guide/playback.md`
-- AI-oriented overview: `llms.txt` and `docs/llms.md`
+- AI-oriented overview: `docs/llms.md`
 - Some documentation sections are auto-generated from source-of-truth in code/tests.
   - Generate: `cargo xtask gen-docs` (or `just docs-gen`)
   - Verify up-to-date: `cargo xtask check-docs` (or `just docs-check`)
@@ -58,13 +58,12 @@ npm run docs:dev
 - `examples/`: runnable `.loom` examples
 - `src/`: compiler, parser, runtime, commands
 - `tests/`: integration and snapshot tests
-- `llms.txt`: machine entrypoint for doc discovery
 
 ## Top-level Files Policy
 
 To keep the repository root focused and navigable:
 
-- Keep only entrypoint documents at top level (for example `README.md`, `LICENSE`, `llms.txt`).
+- Keep only entrypoint documents at top level (for example `README.md`, `LICENSE`).
 - Keep full user-facing documentation under `docs/`.
 - Avoid duplicating long-form docs between root and `docs/`.
 - Keep implementation and tests in `src/` and `tests/`.
