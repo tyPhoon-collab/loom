@@ -11,6 +11,8 @@ It is optimized for a fast compose-listen-edit loop inside one terminal session:
 
 `loom live` remains the external-editor workflow. `loom studio` is the in-app workflow.
 
+Studio is designed around modern terminals with Kitty keyboard protocol support. In practice, preview note input and other Shift/release-sensitive bindings are expected to work best in terminals such as Ghostty, Kitty, WezTerm, or Alacritty.
+
 ## Launch
 
 ```bash
@@ -58,6 +60,7 @@ Main bindings:
 | `a` | add prefix |
 | `g` | goto prefix |
 | `g d` | jump to template definition under cursor |
+| `P` | preview note audition |
 | `n` | single note entry |
 | `N` | continuous note entry |
 | `o` | single onset entry |
@@ -130,11 +133,14 @@ Typical Select mode operations:
 
 Note entry is the fastest way to place notes in `seq` lines.
 
+- `P` enters preview-only audition using the same keyboard mapping without editing source
 - `n` places one unit
 - `N` keeps advancing to the next unit
 - during `N`, `Tab` subdivides the current unit and `Shift-Tab` shrinks the current bracket group
 - `Esc` exits note entry
 - `Backspace` undoes the last step in continuous note entry
+- during `P`, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
+- during `P`, octave changes still work and `.` / `-` stay silent
 
 Default keyboard layout:
 
@@ -240,6 +246,7 @@ Behavior:
 
 Studio also previews notes for many musical edits:
 
+- `P` manual preview mode
 - note entry
 - onset placement
 - transpose

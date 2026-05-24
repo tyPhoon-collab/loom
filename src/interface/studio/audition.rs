@@ -3,7 +3,6 @@ use super::settings::parse_track_header_channel;
 use super::StudioApp;
 use crate::dsl::note::Note;
 use crate::dsl::parser;
-use std::time::Duration;
 
 impl StudioApp {
     pub(super) fn current_loop_range(&self) -> Option<String> {
@@ -79,15 +78,28 @@ impl StudioApp {
     }
 
     pub(super) fn preview_token(&self, row: usize, token: &str) -> Option<()> {
+        let (channel, midi) = self.preview_target(row, token)?;
+        self.player
+            .preview_note(channel, midi, 96, std::time::Duration::from_millis(180));
+        Some(())
+    }
+
+    pub(super) fn preview_target(&self, row: usize, token: &str) -> Option<(u8, u8)> {
         let note = token.parse::<Note>().ok()?;
         let midi = note.to_midi_checked().ok()?;
         let channel = match note {
             Note::Drum(_) => 9,
             _ => self.track_channel_for_row(row)?,
         };
-        self.player
-            .preview_note(channel, midi, 96, Duration::from_millis(180));
-        Some(())
+        Some((channel, midi))
+    }
+
+    pub(super) fn clear_active_preview_notes(&mut self) {
+        if self.active_preview_keys.is_empty() {
+            return;
+        }
+        self.active_preview_keys.clear();
+        self.player.preview_silence_all();
     }
 
     pub(super) fn track_channel_for_row(&self, row: usize) -> Option<u8> {

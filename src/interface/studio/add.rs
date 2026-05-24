@@ -4,7 +4,7 @@ use super::selection::{
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
-use super::StudioApp;
+use super::{is_plain_char, is_shift_char, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 
@@ -18,28 +18,28 @@ impl StudioApp {
             KeyCode::Esc => {
                 self.status_message = "Add cancelled".into();
             }
-            KeyCode::Char('s') => {
+            _ if is_plain_char(&key, 's') => {
                 self.add_seq_line()?;
             }
-            KeyCode::Char('l') => {
+            _ if is_plain_char(&key, 'l') => {
                 self.add_note_head_line()?;
             }
-            KeyCode::Char('t') => {
+            _ if is_plain_char(&key, 't') => {
                 self.add_track()?;
             }
-            KeyCode::Char('h') => {
+            _ if is_plain_char(&key, 'h') => {
                 self.add_separator()?;
             }
-            KeyCode::Char('d') => {
+            _ if is_plain_char(&key, 'd') => {
                 self.add_default_drum_lanes()?;
             }
-            KeyCode::Char('v') => {
+            _ if is_plain_char(&key, 'v') => {
                 self.add_modifier_line("v")?;
             }
-            KeyCode::Char('p') => {
+            _ if is_plain_char(&key, 'p') => {
                 self.add_modifier_line("p")?;
             }
-            KeyCode::Char('m') => {
+            _ if is_plain_char(&key, 'm') => {
                 if self.current_template_call_at_cursor().is_some() {
                     self.begin_pending_input(PendingInput::TemplateMacro);
                 } else {
@@ -47,13 +47,13 @@ impl StudioApp {
                         "Template macro add needs the cursor on a template call".into();
                 }
             }
-            KeyCode::Char('T') => {
+            _ if is_shift_char(&key, 't') => {
                 self.add_template_definition()?;
             }
-            KeyCode::Char('b') => {
+            _ if is_plain_char(&key, 'b') => {
                 self.add_bar()?;
             }
-            KeyCode::Char('n') => {
+            _ if is_plain_char(&key, 'n') => {
                 let token = self.note_token_for_add();
                 self.place_token_at_current_slot(&token)?;
             }

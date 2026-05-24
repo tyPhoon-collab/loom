@@ -7,6 +7,8 @@ pub(super) const NOTE_HELP: &str =
     "Note: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
     "Note*: keyboard piano key | . rest | - sustain | z/x octave | Tab subdivide | S-Tab shrink | Backspace undo | Esc cancel";
+pub(super) const PREVIEW_NOTE_HELP: &str =
+    "Preview: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const ONSET_HELP: &str = "Onset: x note-on | . rest | - sustain | t toggle | Esc cancel";
 pub(super) const CONTINUOUS_ONSET_HELP: &str =
     "Onset*: x note-on | . rest | - sustain | t toggle | Backspace undo | Esc cancel";
@@ -24,6 +26,7 @@ pub(super) enum PendingInput {
     Goto,
     DeleteStructure,
     TemplateMacro,
+    PreviewNote,
     Note(NoteInputMode),
     Onset(NoteInputMode),
 }
@@ -40,6 +43,9 @@ impl PendingInput {
             PendingInput::Goto => GOTO_HELP.to_string(),
             PendingInput::DeleteStructure => DELETE_HELP.to_string(),
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP.to_string(),
+            PendingInput::PreviewNote => {
+                format!("{} | octave {}", self.help_text(), note_keyboard_octave)
+            }
             PendingInput::Note(_) => {
                 format!("{} | octave {}", self.help_text(), note_keyboard_octave)
             }
@@ -53,6 +59,7 @@ impl PendingInput {
             PendingInput::Goto => GOTO_HELP,
             PendingInput::DeleteStructure => DELETE_HELP,
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP,
+            PendingInput::PreviewNote => PREVIEW_NOTE_HELP,
             PendingInput::Note(NoteInputMode::Single) => NOTE_HELP,
             PendingInput::Note(NoteInputMode::Continuous) => CONTINUOUS_NOTE_HELP,
             PendingInput::Onset(NoteInputMode::Single) => ONSET_HELP,
@@ -66,6 +73,7 @@ impl PendingInput {
             PendingInput::Goto => "Goto cancelled",
             PendingInput::DeleteStructure => "Delete cancelled",
             PendingInput::TemplateMacro => "Template macro cancelled",
+            PendingInput::PreviewNote => "Preview cancelled",
             PendingInput::Note(NoteInputMode::Single) => "Note entry cancelled",
             PendingInput::Note(NoteInputMode::Continuous) => "Continuous note entry cancelled",
             PendingInput::Onset(NoteInputMode::Single) => "Onset edit cancelled",
@@ -79,6 +87,7 @@ impl PendingInput {
             PendingInput::Goto => "goto command",
             PendingInput::DeleteStructure => "delete command",
             PendingInput::TemplateMacro => "template macro command",
+            PendingInput::PreviewNote => "preview key",
             PendingInput::Note(_) => "note key",
             PendingInput::Onset(_) => "onset command",
         };

@@ -1,6 +1,6 @@
 use super::input::PendingInput;
 use super::settings::{format_track_header, parse_track_header};
-use super::StudioApp;
+use super::{is_plain_char, is_shift_char, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use ratatui_textarea::CursorMove;
@@ -11,13 +11,13 @@ impl StudioApp {
             KeyCode::Esc => {
                 self.status_message = PendingInput::Goto.cancel_message().into();
             }
-            KeyCode::Char('t') => {
+            _ if is_plain_char(&key, 't') => {
                 self.goto_adjacent_track(1);
             }
-            KeyCode::Char('T') => {
+            _ if is_shift_char(&key, 't') => {
                 self.goto_adjacent_track(-1);
             }
-            KeyCode::Char('d') => {
+            _ if is_plain_char(&key, 'd') => {
                 self.goto_current_template_definition()?;
             }
             _ => {
@@ -32,7 +32,7 @@ impl StudioApp {
             KeyCode::Esc => {
                 self.status_message = PendingInput::DeleteStructure.cancel_message().into();
             }
-            KeyCode::Char('t') => {
+            _ if is_plain_char(&key, 't') => {
                 self.delete_current_track()?;
             }
             _ => {

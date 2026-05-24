@@ -10,6 +10,7 @@ use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::StudioSelection;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -71,6 +72,7 @@ pub struct StudioApp {
     selection: Option<StudioSelection>,
     source_undo_stack: Vec<SourceUndoEntry>,
     last_continuous_edit_cursor: Option<(usize, usize)>,
+    active_preview_keys: HashMap<char, ActivePreviewNote>,
     player: LivePlayer,
 }
 
@@ -78,6 +80,12 @@ pub struct StudioApp {
 struct SourceUndoEntry {
     source: String,
     cursor: (usize, usize),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActivePreviewNote {
+    channel: u8,
+    note: u8,
 }
 
 impl StudioApp {
@@ -127,6 +135,7 @@ impl StudioApp {
             selection: None,
             source_undo_stack: Vec::new(),
             last_continuous_edit_cursor: None,
+            active_preview_keys: HashMap::new(),
             player,
         };
         app.compile_and_update_current_source()?;
@@ -147,8 +156,17 @@ impl StudioApp {
 
             if event::poll(Duration::from_millis(33)).into_diagnostic()? {
                 if let event::Event::Key(key) = event::read().into_diagnostic()? {
-                    if key.kind == KeyEventKind::Press {
-                        self.handle_key(key)?;
+                    match key.kind {
+                        KeyEventKind::Press => self.handle_key(key)?,
+                        KeyEventKind::Release
+                            if matches!(
+                                self.input_state.pending(),
+                                Some(PendingInput::PreviewNote)
+                            ) =>
+                        {
+                            self.handle_key(key)?;
+                        }
+                        _ => {}
                     }
                 }
             } else {
@@ -250,85 +268,89 @@ impl StudioApp {
                 self.show_help_overlay = true;
                 self.status_message = "Normal help".into();
             }
-            KeyCode::Char('q') => {
+            _ if is_plain_char(&key, 'q') => {
                 if self.dirty {
                     self.status_message = "Unsaved changes. Press w to save or Q to quit.".into();
                 } else {
                     self.should_quit = true;
                 }
             }
-            KeyCode::Char('Q') => {
+            _ if is_shift_char(&key, 'q') => {
                 self.should_quit = true;
             }
-            KeyCode::Char('i') => {
+            _ if is_plain_char(&key, 'i') => {
                 self.mode = StudioMode::Insert;
                 self.status_message = "Insert mode".into();
             }
-            KeyCode::Char('a') => {
+            _ if is_plain_char(&key, 'a') => {
                 self.begin_pending_input(PendingInput::Add);
             }
-            KeyCode::Char('g') => {
+            _ if is_plain_char(&key, 'g') => {
                 self.begin_pending_input(PendingInput::Goto);
             }
-            KeyCode::Char('n') => {
+            _ if is_shift_char(&key, 'p') => {
+                self.clear_active_preview_notes();
+                self.begin_pending_input(PendingInput::PreviewNote);
+            }
+            _ if is_plain_char(&key, 'n') => {
                 self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
-            KeyCode::Char('N') => {
+            _ if is_shift_char(&key, 'n') => {
                 self.begin_pending_input(PendingInput::Note(NoteInputMode::Continuous));
             }
-            KeyCode::Char('o') => {
+            _ if is_plain_char(&key, 'o') => {
                 self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
             }
-            KeyCode::Char('O') => {
+            _ if is_shift_char(&key, 'o') => {
                 self.begin_pending_input(PendingInput::Onset(NoteInputMode::Continuous));
             }
-            KeyCode::Char('s') => {
+            _ if is_plain_char(&key, 's') => {
                 self.subdivide_current_unit()?;
             }
-            KeyCode::Char('S') => {
+            _ if is_shift_char(&key, 's') => {
                 self.shrink_current_editable_group()?;
             }
-            KeyCode::Char('x') => {
+            _ if is_plain_char(&key, 'x') => {
                 self.delete_current_unit()?;
             }
-            KeyCode::Char('D') => {
+            _ if is_shift_char(&key, 'd') => {
                 self.begin_pending_input(PendingInput::DeleteStructure);
             }
-            KeyCode::Char('m') => {
+            _ if is_plain_char(&key, 'm') => {
                 self.toggle_current_track_mute()?;
             }
-            KeyCode::Char('M') => {
+            _ if is_shift_char(&key, 'm') => {
                 self.toggle_current_track_solo()?;
             }
-            KeyCode::Char('X') => {
+            _ if is_shift_char(&key, 'x') => {
                 self.clear_current_track_flags()?;
             }
-            KeyCode::Char('v') => {
+            _ if is_plain_char(&key, 'v') => {
                 self.enter_note_select_mode();
             }
-            KeyCode::Char('V') => {
+            _ if is_shift_char(&key, 'v') => {
                 self.enter_line_select_mode();
             }
-            KeyCode::Char('b') => {
+            _ if is_plain_char(&key, 'b') => {
                 self.enter_bar_select_mode();
             }
-            KeyCode::Char('B') => {
+            _ if is_shift_char(&key, 'b') => {
                 self.enter_line_bar_select_mode();
             }
             KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.clear_loop_settings()?;
             }
-            KeyCode::Char('L') => {
+            _ if is_shift_char(&key, 'l') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.clear_loop_settings()?;
                 } else {
                     self.toggle_loop()?;
                 }
             }
-            KeyCode::Char('w') => {
+            _ if is_plain_char(&key, 'w') => {
                 self.save()?;
             }
-            KeyCode::Char('f') => {
+            _ if is_plain_char(&key, 'f') => {
                 self.format_current_source()?;
             }
             KeyCode::Char(' ') => {
@@ -342,7 +364,7 @@ impl StudioApp {
                     self.status_message = "Playing".into();
                 }
             }
-            KeyCode::Char('r') => {
+            _ if is_plain_char(&key, 'r') => {
                 self.player.restart();
                 if !self.is_playing {
                     self.player.play();
@@ -350,7 +372,7 @@ impl StudioApp {
                 }
                 self.status_message = "Restarted from beginning".into();
             }
-            KeyCode::Char('u') => {
+            _ if is_plain_char(&key, 'u') => {
                 if self.textarea.undo() {
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
@@ -365,7 +387,7 @@ impl StudioApp {
                     self.status_message = "Undid transform".into();
                 }
             }
-            KeyCode::Char('R') => {
+            _ if is_shift_char(&key, 'r') => {
                 if self.textarea.redo() {
                     self.dirty = true;
                     self.compile_and_update_current_source()?;
@@ -392,10 +414,10 @@ impl StudioApp {
             KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
                 self.textarea.input(key);
             }
-            KeyCode::Char('j') => self.textarea.move_cursor(CursorMove::Down),
-            KeyCode::Char('k') => self.textarea.move_cursor(CursorMove::Up),
-            KeyCode::Char('h') => self.textarea.move_cursor(CursorMove::Back),
-            KeyCode::Char('l') => self.textarea.move_cursor(CursorMove::Forward),
+            _ if is_plain_char(&key, 'j') => self.textarea.move_cursor(CursorMove::Down),
+            _ if is_plain_char(&key, 'k') => self.textarea.move_cursor(CursorMove::Up),
+            _ if is_plain_char(&key, 'h') => self.textarea.move_cursor(CursorMove::Back),
+            _ if is_plain_char(&key, 'l') => self.textarea.move_cursor(CursorMove::Forward),
             KeyCode::Char(',') => {
                 self.move_cursor_to_adjacent_unit(-1);
             }
@@ -427,6 +449,7 @@ impl StudioApp {
             PendingInput::Goto => self.handle_goto_key(key),
             PendingInput::DeleteStructure => self.handle_delete_structure_key(key),
             PendingInput::TemplateMacro => self.handle_template_macro_key(key),
+            PendingInput::PreviewNote => self.handle_preview_note_key(key),
             PendingInput::Note(mode) => self.handle_note_key(mode, key),
             PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
         }
@@ -435,6 +458,7 @@ impl StudioApp {
     fn handle_select_key(&mut self, key: KeyEvent) -> Result<()> {
         if let Some(pending) = self.input_state.take_pending() {
             return match pending {
+                PendingInput::PreviewNote => self.handle_pending_input(pending, key),
                 PendingInput::Note(_) => self.handle_select_note_key(key),
                 PendingInput::Onset(_) => self.handle_select_onset_key(key),
                 PendingInput::Goto | PendingInput::DeleteStructure => {
@@ -454,10 +478,10 @@ impl StudioApp {
                 self.show_help_overlay = true;
                 self.status_message = "Select help".into();
             }
-            KeyCode::Char('n') => {
+            _ if is_plain_char(&key, 'n') => {
                 self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
             }
-            KeyCode::Char('o') => {
+            _ if is_plain_char(&key, 'o') => {
                 self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
@@ -484,19 +508,19 @@ impl StudioApp {
             KeyCode::Char('}') => {
                 self.adjust_template_call_time_scale(1);
             }
-            KeyCode::Char('x') => {
+            _ if is_plain_char(&key, 'x') => {
                 self.delete_selection()?;
             }
-            KeyCode::Char('s') => {
+            _ if is_plain_char(&key, 's') => {
                 self.subdivide_selected_units()?;
             }
-            KeyCode::Char('S') => {
+            _ if is_shift_char(&key, 's') => {
                 self.shrink_selected_editable_groups()?;
             }
-            KeyCode::Char('d') => {
+            _ if is_plain_char(&key, 'd') => {
                 self.duplicate_selection()?;
             }
-            KeyCode::Char('T') => {
+            _ if is_shift_char(&key, 't') => {
                 self.extract_selected_bars_to_template()?;
             }
             KeyCode::Enter => {
@@ -514,14 +538,30 @@ impl StudioApp {
             KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.expand_select_horizontal(1)
             }
-            KeyCode::Up | KeyCode::Char('k') => self.move_selection_vertical(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.move_selection_vertical(1),
-            KeyCode::Left | KeyCode::Char('h') => self.move_select_horizontal(-1),
-            KeyCode::Right | KeyCode::Char('l') => self.move_select_horizontal(1),
-            KeyCode::Char('K') => self.expand_select_vertical(-1),
-            KeyCode::Char('J') => self.expand_select_vertical(1),
-            KeyCode::Char('H') => self.expand_select_horizontal(-1),
-            KeyCode::Char('L') => self.expand_select_horizontal(1),
+            KeyCode::Up | KeyCode::Char('k')
+                if is_plain_char(&key, 'k') || matches!(key.code, KeyCode::Up) =>
+            {
+                self.move_selection_vertical(-1)
+            }
+            KeyCode::Down | KeyCode::Char('j')
+                if is_plain_char(&key, 'j') || matches!(key.code, KeyCode::Down) =>
+            {
+                self.move_selection_vertical(1)
+            }
+            KeyCode::Left | KeyCode::Char('h')
+                if is_plain_char(&key, 'h') || matches!(key.code, KeyCode::Left) =>
+            {
+                self.move_select_horizontal(-1)
+            }
+            KeyCode::Right | KeyCode::Char('l')
+                if is_plain_char(&key, 'l') || matches!(key.code, KeyCode::Right) =>
+            {
+                self.move_select_horizontal(1)
+            }
+            _ if is_shift_char(&key, 'k') => self.expand_select_vertical(-1),
+            _ if is_shift_char(&key, 'j') => self.expand_select_vertical(1),
+            _ if is_shift_char(&key, 'h') => self.expand_select_horizontal(-1),
+            _ if is_shift_char(&key, 'l') => self.expand_select_horizontal(1),
             _ => {}
         }
         Ok(())
@@ -594,6 +634,16 @@ impl StudioApp {
     fn sync_playback_state(&mut self) {
         self.is_playing = self.player.playback_state() == PlaybackState::Playing;
     }
+}
+
+pub(super) fn is_plain_char(key: &KeyEvent, ch: char) -> bool {
+    matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
+        && !key.modifiers.contains(KeyModifiers::SHIFT)
+}
+
+pub(super) fn is_shift_char(key: &KeyEvent, ch: char) -> bool {
+    matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
+        && key.modifiers.contains(KeyModifiers::SHIFT)
 }
 
 fn configure_textarea_style(textarea: &mut TextArea<'static>) {

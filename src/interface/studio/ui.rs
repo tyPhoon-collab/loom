@@ -9,7 +9,8 @@ use ratatui::{
 };
 
 const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save  f format  q quit";
-const FOOTER_NORMAL_HELP: &str = "Normal: a add  g goto  n/N note  o/O onset  v/V/b/B select";
+const FOOTER_NORMAL_HELP: &str =
+    "Normal: a add  g goto  P preview  n/N note  o/O onset  v/V/b/B select";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
 const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x delete  d duplicate";
 const FOOTER_NORMAL_TRACK_CONTEXT: &str = "Context: m mute  M solo  X clear-all  D t delete-track";
@@ -29,7 +30,7 @@ const OVERLAY_GLOBAL_LINES: &[&str] = &[
     "space play/pause  r restart  w save  f format  q quit  Q force quit",
 ];
 const OVERLAY_NORMAL_LINES: &[&str] = &[
-    "i insert  a add  g goto  n/N note  o/O onset",
+    "i insert  a add  g goto  P preview  n/N note  o/O onset",
     "v/V/b/B select  x delete-unit  s subdivide  S shrink",
     ",/. unit-nav  </> bar-nav  +/-/[] transpose",
     "m mute-track  M solo-track  X clear-all-track-flags  D t delete-track",
@@ -200,7 +201,7 @@ impl StudioApp {
             push_blank_line(&mut sections);
             sections.push("Pending".to_string());
             sections.push(format!("  {}", pending.help_text()));
-            if matches!(pending, PendingInput::Note(_)) {
+            if matches!(pending, PendingInput::PreviewNote | PendingInput::Note(_)) {
                 sections.push(format!("  current octave {}", self.note_keyboard_octave));
             }
             push_blank_line(&mut sections);

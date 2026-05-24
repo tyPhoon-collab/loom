@@ -1,7 +1,10 @@
 use std::io::{stdout, Stdout};
 
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{
+        DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -40,6 +43,14 @@ impl Drop for Tui {
 pub fn init() -> Result<Tui> {
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture).into_diagnostic()?;
     enable_raw_mode().into_diagnostic()?;
+    execute!(
+        stdout(),
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+        )
+    )
+    .into_diagnostic()?;
     install_panic_hook();
     let backend = CrosstermBackend::new(stdout());
     let terminal = Terminal::new(backend).into_diagnostic()?;
@@ -47,7 +58,13 @@ pub fn init() -> Result<Tui> {
 }
 
 fn restore() -> Result<()> {
-    execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture).into_diagnostic()?;
+    execute!(
+        stdout(),
+        PopKeyboardEnhancementFlags,
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )
+    .into_diagnostic()?;
     disable_raw_mode().into_diagnostic()?;
     Ok(())
 }

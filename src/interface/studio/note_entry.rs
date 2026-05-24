@@ -1,7 +1,7 @@
-use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
+use super::input::{NoteInputMode, PendingInput, NOTE_HELP, PREVIEW_NOTE_HELP};
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use miette::Result;
 use std::collections::HashMap;
 
@@ -27,6 +27,12 @@ enum NoteKeyInput {
     Cancel,
     Token(String),
     Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewAction {
+    AuditionPitch,
+    SilentToken,
 }
 
 impl NoteKeyboard {
@@ -118,6 +124,94 @@ impl Default for NoteKeyboard {
 }
 
 impl StudioApp {
+    pub(super) fn handle_preview_note_key(&mut self, key: KeyEvent) -> Result<()> {
+        let pending = PendingInput::PreviewNote;
+
+        if key.kind == KeyEventKind::Release {
+            if let Some(ch) = preview_key_char(&key) {
+                if let Some(active) = self.active_preview_keys.remove(&ch) {
+                    self.player.preview_note_off(active.channel, active.note);
+                }
+            }
+            self.begin_pending_input(pending);
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+                self.adjust_note_keyboard_octave(-1);
+                self.begin_pending_input(pending);
+                return Ok(());
+            }
+            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+                self.adjust_note_keyboard_octave(1);
+                self.begin_pending_input(pending);
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        let Some(ch) = preview_key_char(&key) else {
+            match self.note_key_input(key) {
+                NoteKeyInput::Cancel => {
+                    self.clear_active_preview_notes();
+                    self.status_message = pending.cancel_message().into();
+                }
+                NoteKeyInput::Unknown => {
+                    self.status_message = format!("Unknown preview key. {}", PREVIEW_NOTE_HELP);
+                    self.begin_pending_input(pending);
+                }
+                NoteKeyInput::Token(_) => unreachable!(),
+            }
+            return Ok(());
+        };
+
+        if self.active_preview_keys.contains_key(&ch) {
+            self.begin_pending_input(pending);
+            return Ok(());
+        }
+
+        match preview_action(self.note_key_input(key)) {
+            Some(PreviewAction::AuditionPitch) => {
+                let NoteKeyInput::Token(token) = self.note_key_input(key) else {
+                    unreachable!();
+                };
+                let row = self.textarea.cursor().0;
+                if self.is_playing {
+                    self.status_message = format!("Preview suppressed while playing: {}", token);
+                } else if let Some((channel, note)) = self.preview_target(row, &token) {
+                    self.player.preview_note_on(channel, note, 96);
+                    self.active_preview_keys
+                        .insert(ch, super::ActivePreviewNote { channel, note });
+                    self.status_message = format!("Preview: {}", token);
+                } else {
+                    self.active_preview_keys.remove(&ch);
+                    self.status_message = format!("Preview unavailable here: {}", token);
+                }
+                self.begin_pending_input(pending);
+            }
+            Some(PreviewAction::SilentToken) => {
+                let NoteKeyInput::Token(token) = self.note_key_input(key) else {
+                    unreachable!();
+                };
+                self.active_preview_keys.remove(&ch);
+                self.status_message = format!("Preview silent: {}", token);
+                self.begin_pending_input(pending);
+            }
+            None => match self.note_key_input(key) {
+                NoteKeyInput::Cancel => {
+                    self.status_message = pending.cancel_message().into();
+                }
+                NoteKeyInput::Unknown => {
+                    self.status_message = format!("Unknown preview key. {}", PREVIEW_NOTE_HELP);
+                    self.begin_pending_input(pending);
+                }
+                NoteKeyInput::Token(_) => unreachable!(),
+            },
+        }
+        Ok(())
+    }
+
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Note(mode);
 
@@ -222,6 +316,23 @@ impl StudioApp {
     }
 }
 
+fn preview_action(input: NoteKeyInput) -> Option<PreviewAction> {
+    match input {
+        NoteKeyInput::Token(token) if token == "." || token == "-" => {
+            Some(PreviewAction::SilentToken)
+        }
+        NoteKeyInput::Token(_) => Some(PreviewAction::AuditionPitch),
+        NoteKeyInput::Cancel | NoteKeyInput::Unknown => None,
+    }
+}
+
+fn preview_key_char(key: &KeyEvent) -> Option<char> {
+    match key.code {
+        KeyCode::Char(ch) => Some(ch.to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
 fn single_char_key(value: &str) -> Option<char> {
     let mut chars = value.chars();
     let key = chars.next()?;
@@ -267,8 +378,12 @@ fn is_note_name(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_note_binding, NoteKeyboard, MAX_KEYBOARD_OCTAVE};
+    use super::{
+        parse_note_binding, preview_action, preview_key_char, NoteKeyInput, NoteKeyboard,
+        PreviewAction, MAX_KEYBOARD_OCTAVE,
+    };
     use crate::config::NoteKeyboardConfig;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use std::collections::HashMap;
 
     #[test]
@@ -352,5 +467,55 @@ mod tests {
         assert!(parse_note_binding("sustain").is_some());
         assert!(parse_note_binding("Db").is_none());
         assert!(parse_note_binding("C#x").is_none());
+    }
+
+    #[test]
+    fn preview_action_marks_pitch_tokens_as_audition() {
+        assert_eq!(
+            preview_action(NoteKeyInput::Token("C4".to_string())),
+            Some(PreviewAction::AuditionPitch)
+        );
+    }
+
+    #[test]
+    fn preview_action_marks_rest_and_sustain_as_silent() {
+        assert_eq!(
+            preview_action(NoteKeyInput::Token(".".to_string())),
+            Some(PreviewAction::SilentToken)
+        );
+        assert_eq!(
+            preview_action(NoteKeyInput::Token("-".to_string())),
+            Some(PreviewAction::SilentToken)
+        );
+    }
+
+    #[test]
+    fn preview_action_ignores_cancel_and_unknown() {
+        assert_eq!(preview_action(NoteKeyInput::Cancel), None);
+        assert_eq!(preview_action(NoteKeyInput::Unknown), None);
+    }
+
+    #[test]
+    fn preview_key_char_normalizes_case() {
+        let key = KeyEvent {
+            code: KeyCode::Char('A'),
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+
+        assert_eq!(preview_key_char(&key), Some('a'));
+    }
+
+    #[test]
+    fn preview_key_char_ignores_non_char_keys() {
+        let key = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::empty(),
+        };
+
+        assert_eq!(preview_key_char(&key), None);
     }
 }

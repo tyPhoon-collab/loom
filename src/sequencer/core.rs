@@ -19,6 +19,12 @@ struct ActiveNote {
     off_time: f64,
 }
 
+struct ActivePreviewNote {
+    channel: u8,
+    note: u8,
+    off_at: Instant,
+}
+
 pub struct Core {
     store: Store,
     conn: MidiOutputConnection,
@@ -26,6 +32,7 @@ pub struct Core {
     start_time: Instant,
     seq_offset: f64, // Beat offset
     active_notes: Vec<ActiveNote>,
+    active_preview_notes: Vec<ActivePreviewNote>,
     last_processed_beat: f64,
     loop_range: Option<(f64, f64)>, // Start/End beats
 }
@@ -42,6 +49,7 @@ impl Core {
             start_time: Instant::now(),
             seq_offset: 0.0,
             active_notes: Vec::new(),
+            active_preview_notes: Vec::new(),
             last_processed_beat: -1.0,
             loop_range: None,
         })
@@ -117,12 +125,45 @@ impl Core {
         }
 
         self.send_midi(&[0x90 | channel, note, velocity])?;
-        std::thread::sleep(duration);
-        self.send_midi(&[0x80 | channel, note, 0])?;
+        self.active_preview_notes.push(ActivePreviewNote {
+            channel,
+            note,
+            off_at: Instant::now() + duration,
+        });
         Ok(true)
     }
 
+    pub fn preview_note_on(&mut self, channel: u8, note: u8, velocity: u8) -> Result<bool> {
+        if self.state == PlaybackState::Playing {
+            return Ok(false);
+        }
+
+        self.active_preview_notes
+            .retain(|active| !(active.channel == channel && active.note == note));
+        self.send_midi(&[0x90 | channel, note, velocity])?;
+        self.active_preview_notes.push(ActivePreviewNote {
+            channel,
+            note,
+            off_at: Instant::now() + Duration::from_secs(60),
+        });
+        Ok(true)
+    }
+
+    pub fn preview_note_off(&mut self, channel: u8, note: u8) -> Result<bool> {
+        if let Some(index) = self
+            .active_preview_notes
+            .iter()
+            .position(|active| active.channel == channel && active.note == note)
+        {
+            self.send_midi(&[0x80 | channel, note, 0])?;
+            self.active_preview_notes.remove(index);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     pub fn tick(&mut self) -> Result<PlaybackState> {
+        self.process_active_preview_notes()?;
         if self.state != PlaybackState::Playing {
             return Ok(self.state);
         }
@@ -187,6 +228,22 @@ impl Core {
         Ok(())
     }
 
+    fn process_active_preview_notes(&mut self) -> Result<()> {
+        let now = Instant::now();
+        let mut i = 0;
+        while i < self.active_preview_notes.len() {
+            if self.active_preview_notes[i].off_at <= now {
+                let channel = self.active_preview_notes[i].channel;
+                let note = self.active_preview_notes[i].note;
+                self.send_midi(&[0x80 | channel, note, 0])?;
+                self.active_preview_notes.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+
     fn process_new_events(&mut self, current_beat: f64) -> Result<()> {
         let events_to_emit: Vec<MidiEvent> = self
             .store
@@ -239,6 +296,15 @@ impl Core {
         }
         self.active_notes.clear();
 
+        for n in &self.active_preview_notes {
+            if let Err(e) = self.conn.send(&[0x80 | n.channel, n.note, 0]) {
+                if first_error.is_none() {
+                    first_error = Some(e.to_string());
+                }
+            }
+        }
+        self.active_preview_notes.clear();
+
         // CC All Notes Off
         for i in 0..16 {
             if let Err(e) = self.conn.send(&[0xB0 | i, 123, 0]) {
@@ -250,6 +316,25 @@ impl Core {
 
         if let Some(msg) = first_error {
             return Err(miette!("MIDI send failed while silencing: {}", msg));
+        }
+
+        Ok(())
+    }
+
+    pub fn silence_preview_notes(&mut self) -> Result<()> {
+        let mut first_error: Option<String> = None;
+
+        for n in &self.active_preview_notes {
+            if let Err(e) = self.conn.send(&[0x80 | n.channel, n.note, 0]) {
+                if first_error.is_none() {
+                    first_error = Some(e.to_string());
+                }
+            }
+        }
+        self.active_preview_notes.clear();
+
+        if let Some(msg) = first_error {
+            return Err(miette!("MIDI send failed while silencing preview: {}", msg));
         }
 
         Ok(())

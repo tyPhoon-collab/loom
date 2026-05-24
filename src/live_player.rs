@@ -21,6 +21,16 @@ pub enum PlayerCommand {
         velocity: u8,
         duration: Duration,
     },
+    PreviewNoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    PreviewNoteOff {
+        channel: u8,
+        note: u8,
+    },
+    PreviewSilenceAll,
 }
 
 pub struct LivePlayer {
@@ -75,6 +85,24 @@ impl LivePlayer {
             velocity,
             duration,
         });
+    }
+
+    pub fn preview_note_on(&self, channel: u8, note: u8, velocity: u8) {
+        let _ = self.command_sender.send(PlayerCommand::PreviewNoteOn {
+            channel,
+            note,
+            velocity,
+        });
+    }
+
+    pub fn preview_note_off(&self, channel: u8, note: u8) {
+        let _ = self
+            .command_sender
+            .send(PlayerCommand::PreviewNoteOff { channel, note });
+    }
+
+    pub fn preview_silence_all(&self) {
+        let _ = self.command_sender.send(PlayerCommand::PreviewSilenceAll);
     }
 
     pub fn playback_state(&self) -> PlaybackState {
@@ -136,6 +164,19 @@ fn run_player_loop(
                     duration,
                 } => {
                     core.preview_note(channel, note, velocity, duration)?;
+                }
+                PlayerCommand::PreviewNoteOn {
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    core.preview_note_on(channel, note, velocity)?;
+                }
+                PlayerCommand::PreviewNoteOff { channel, note } => {
+                    core.preview_note_off(channel, note)?;
+                }
+                PlayerCommand::PreviewSilenceAll => {
+                    core.silence_preview_notes()?;
                 }
                 PlayerCommand::Stop => {
                     core.stop()?;
