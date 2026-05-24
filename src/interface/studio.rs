@@ -157,7 +157,7 @@ impl StudioApp {
             if event::poll(Duration::from_millis(33)).into_diagnostic()? {
                 if let event::Event::Key(key) = event::read().into_diagnostic()? {
                     match key.kind {
-                        KeyEventKind::Press => self.handle_key(key)?,
+                        KeyEventKind::Press | KeyEventKind::Repeat => self.handle_key(key)?,
                         KeyEventKind::Release
                             if matches!(
                                 self.input_state.pending(),
