@@ -1,0 +1,461 @@
+use crate::interface::studio::selection::{
+    char_range, delete_unit, insert_at_col, is_lane_body_token, is_seq_line, replace_char_range,
+    StudioSelection,
+};
+use crate::interface::studio::template_ops::template_call_spans_in_line;
+use crate::interface::studio::{StudioApp, StudioMode};
+use miette::Result;
+use ratatui_textarea::CursorMove;
+
+impl StudioApp {
+    pub(crate) fn delete_current_unit(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let Some(token) = self.unit_at_or_after_cursor(cursor.0, cursor.1) else {
+            self.status_message = "No unit on this line".into();
+            return Ok(());
+        };
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(token.row) else {
+            self.status_message = "Selected unit no longer exists".into();
+            return Ok(());
+        };
+        delete_unit(line, &token);
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump(token.row as u16, token.start_col as u16));
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!("Deleted unit {}", token.token);
+        Ok(())
+    }
+
+    pub(crate) fn replace_selected_units(&mut self, replacement: &str) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let mut selected_tokens = self.selected_unit_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "Replacement applies to unit selection only".into();
+            return Ok(());
+        }
+        let lines = self.textarea.lines();
+        if replacement != "."
+            && replacement != "-"
+            && selected_tokens.iter().any(|note| {
+                lines
+                    .get(note.row)
+                    .is_some_and(|line| is_lane_body_token(line, note))
+            })
+        {
+            self.status_message = "Note entry does not apply to lane body units".into();
+            return Ok(());
+        }
+        if selected_tokens.iter().any(|note| note.kind.is_modifier()) {
+            self.status_message = "Note entry does not apply to modifier units".into();
+            return Ok(());
+        }
+
+        let audition = (replacement != "." && replacement != "-")
+            .then(|| {
+                selected_tokens
+                    .first()
+                    .map(|note| (note.row, replacement.to_string()))
+            })
+            .flatten();
+
+        let replacement_name = match replacement {
+            "." => "Rested",
+            "-" => "Sustained",
+            _ => "Replaced",
+        };
+        selected_tokens.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for note in &selected_tokens {
+            let Some(line) = lines.get_mut(note.row) else {
+                self.status_message = "Selected unit no longer exists".into();
+                return Ok(());
+            };
+            replace_char_range(line, note.start_col, note.end_col, replacement);
+        }
+
+        self.apply_unit_selection_update(
+            lines,
+            &selected_indices,
+            format!(
+                "{} {} unit{}",
+                replacement_name,
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
+    }
+
+    pub(crate) fn delete_selected_units(&mut self) -> Result<()> {
+        let mut selected_tokens = self.selected_unit_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "x applies to unit selection only".into();
+            return Ok(());
+        }
+
+        let first = selected_tokens.first().cloned();
+        selected_tokens.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for note in &selected_tokens {
+            let Some(line) = lines.get_mut(note.row) else {
+                self.status_message = "Selected unit no longer exists".into();
+                return Ok(());
+            };
+            delete_unit(line, note);
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        if let Some(note) = first {
+            self.textarea
+                .move_cursor(CursorMove::Jump(note.row as u16, note.start_col as u16));
+        }
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Deleted {} unit{}",
+            selected_tokens.len(),
+            if selected_tokens.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    pub(crate) fn delete_selection(&mut self) -> Result<()> {
+        if matches!(
+            self.selection,
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
+        ) {
+            self.delete_selected_bars()
+        } else if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.delete_selected_template_calls()
+        } else {
+            self.delete_selected_units()
+        }
+    }
+
+    pub(crate) fn delete_selected_bars(&mut self) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "x applies to bar selection only".into();
+            return Ok(());
+        }
+
+        let row = selected_bars[0].row;
+        if selected_bars.iter().any(|bar| bar.row != row) {
+            self.status_message = "Bar delete currently supports one line at a time".into();
+            return Ok(());
+        }
+        if selected_bars.len() == self.bar_spans_on_line(row).len() {
+            self.status_message = "Cannot delete all bars on a line".into();
+            return Ok(());
+        }
+
+        let first = selected_bars.first().cloned().unwrap();
+        let last = selected_bars.last().cloned().unwrap();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected bar no longer exists".into();
+            return Ok(());
+        };
+        replace_char_range(line, first.start_col + 1, last.end_col, "");
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.textarea
+            .move_cursor(CursorMove::Jump(row as u16, first.start_col as u16));
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        let mut status_message = format!(
+            "Deleted {} bar{}",
+            selected_bars.len(),
+            if selected_bars.len() == 1 { "" } else { "s" }
+        );
+        if self.current_loop_range().is_some() {
+            status_message.push_str(" | loop_range unchanged");
+        }
+        self.status_message = status_message;
+        Ok(())
+    }
+
+    pub(crate) fn duplicate_selection(&mut self) -> Result<()> {
+        if matches!(
+            self.selection,
+            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. })
+        ) {
+            self.duplicate_selected_bars()
+        } else if matches!(
+            self.selection,
+            Some(StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. })
+        ) {
+            self.duplicate_selected_template_calls()
+        } else {
+            self.duplicate_selected_units()
+        }
+    }
+
+    pub(crate) fn delete_selected_template_calls(&mut self) -> Result<()> {
+        let mut selected = self.selected_template_call_spans();
+        if selected.is_empty() {
+            self.status_message = "x applies to template call selection only".into();
+            return Ok(());
+        }
+
+        let first = selected.first().cloned();
+        selected.sort_by(|left, right| {
+            right
+                .row
+                .cmp(&left.row)
+                .then_with(|| right.start_col.cmp(&left.start_col))
+        });
+
+        let mut lines = self.textarea.lines().to_vec();
+        for span in &selected {
+            let Some(line) = lines.get_mut(span.row) else {
+                self.status_message = "Selected template call no longer exists".into();
+                return Ok(());
+            };
+            delete_template_call(line, span.start_col, span.end_col);
+        }
+
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        if let Some(span) = first {
+            self.textarea
+                .move_cursor(CursorMove::Jump(span.row as u16, span.start_col as u16));
+        }
+        self.selection = None;
+        self.textarea.cancel_selection();
+        self.mode = StudioMode::Normal;
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Deleted {} template call{}",
+            selected.len(),
+            if selected.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    pub(crate) fn duplicate_selected_units(&mut self) -> Result<()> {
+        let selected_indices = self.selected_unit_indices();
+        let selected_tokens = self.selected_unit_spans();
+        if selected_tokens.is_empty() {
+            self.status_message = "d applies to unit selection only".into();
+            return Ok(());
+        }
+
+        let row = selected_tokens[0].row;
+        if selected_tokens.iter().any(|note| note.row != row) {
+            self.status_message = "Duplicate currently supports one seq line at a time".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected unit no longer exists".into();
+            return Ok(());
+        };
+        let Some(last_token) = selected_tokens.last() else {
+            return Ok(());
+        };
+        if !is_seq_line(line)
+            && !selected_tokens.iter().all(|note| note.kind.is_modifier())
+            && !selected_tokens
+                .iter()
+                .all(|note| is_lane_body_token(line, note))
+        {
+            self.status_message =
+                "Duplicate currently supports seq, modifier, or lane body units only".into();
+            return Ok(());
+        }
+
+        let insertion = format!(
+            " {}",
+            selected_tokens
+                .iter()
+                .map(|note| note.token.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        insert_at_col(line, last_token.end_col, &insertion);
+
+        let Some(last_selected_index) = selected_indices.iter().max().copied() else {
+            self.status_message = "Selected unit no longer exists".into();
+            return Ok(());
+        };
+        let inserted_indices: Vec<usize> =
+            (last_selected_index + 1..=last_selected_index + selected_tokens.len()).collect();
+
+        let audition = self.audition_candidate_from_indices(&inserted_indices);
+        self.apply_unit_selection_update(
+            lines,
+            &inserted_indices,
+            format!(
+                "Duplicated {} unit{}",
+                selected_tokens.len(),
+                if selected_tokens.len() == 1 { "" } else { "s" }
+            ),
+            audition,
+        )
+    }
+
+    pub(crate) fn duplicate_selected_bars(&mut self) -> Result<()> {
+        let selected_bars = self.selected_bar_spans();
+        if selected_bars.is_empty() {
+            self.status_message = "d applies to bar selection only".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let mut inserted_positions = Vec::new();
+        let mut selected_by_row = std::collections::BTreeMap::<
+            usize,
+            Vec<crate::interface::studio::selection::BarSpan>,
+        >::new();
+        for bar in selected_bars {
+            selected_by_row.entry(bar.row).or_default().push(bar);
+        }
+        let duplicated_bar_count: usize = selected_by_row.values().map(Vec::len).sum();
+
+        for (row, mut row_bars) in selected_by_row.into_iter().rev() {
+            row_bars.sort_by_key(|bar| bar.index);
+            let Some(first) = row_bars.first().cloned() else {
+                continue;
+            };
+            let Some(last) = row_bars.last().cloned() else {
+                continue;
+            };
+            let Some(line) = lines.get_mut(row) else {
+                self.status_message = "Selected bar no longer exists".into();
+                return Ok(());
+            };
+
+            let insertion = char_range(line, first.start_col + 1, last.end_col);
+            insert_at_col(line, last.end_col, &insertion);
+            inserted_positions
+                .extend((last.index + 1..=last.index + row_bars.len()).map(|index| (row, index)));
+        }
+
+        inserted_positions.sort_unstable();
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_bar_selection_from_positions(&inserted_positions);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Duplicated {} bar{}",
+            duplicated_bar_count,
+            if duplicated_bar_count == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    pub(crate) fn duplicate_selected_template_calls(&mut self) -> Result<()> {
+        let selected = self.selected_template_call_spans();
+        if selected.is_empty() {
+            self.status_message = "d applies to template call selection only".into();
+            return Ok(());
+        }
+
+        let row = selected[0].row;
+        if selected.iter().any(|span| span.row != row) {
+            self.status_message = "Duplicate currently supports one template line at a time".into();
+            return Ok(());
+        }
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(line) = lines.get_mut(row) else {
+            self.status_message = "Selected template call no longer exists".into();
+            return Ok(());
+        };
+        let Some(last) = selected.last() else {
+            return Ok(());
+        };
+        let insertion = format!(
+            " {}",
+            selected
+                .iter()
+                .map(|span| span.raw_text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        insert_at_col(line, last.end_col, &insertion);
+
+        let inserted_positions: Vec<(usize, usize)> =
+            template_call_positions_after_duplication(row, line, selected.len());
+        self.push_source_undo();
+        self.replace_source(lines.join("\n"));
+        self.restore_template_call_selection_from_positions(&inserted_positions);
+        self.sync_selection_visual();
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = format!(
+            "Duplicated {} template call{}",
+            selected.len(),
+            if selected.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+}
+
+fn delete_template_call(line: &mut String, start_col: usize, end_col: usize) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut start = start_col;
+    let mut end = end_col;
+
+    while end < chars.len() && chars[end].is_whitespace() {
+        end += 1;
+    }
+    if end == end_col {
+        while start > 0 && chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+    }
+
+    replace_char_range(line, start, end, "");
+}
+
+fn template_call_positions_after_duplication(
+    row: usize,
+    line: &str,
+    duplicated_count: usize,
+) -> Vec<(usize, usize)> {
+    let spans = template_call_spans_in_line(row, line);
+    spans
+        .iter()
+        .rev()
+        .take(duplicated_count)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|span| (span.row, span.start_col))
+        .collect()
+}

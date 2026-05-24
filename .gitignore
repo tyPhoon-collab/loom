@@ -9,3 +9,5 @@ memo*.md
 /docs/.vitepress/dist
 /.pnpm-store
 /.wrangler
+
+.antigravitycli

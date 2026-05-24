@@ -1,10 +1,20 @@
-use super::error::ParseError;
-use super::syntax::Symbol;
-use super::token::{
-    Bar, Block, Frontmatter, Line, LineEntry, ModifierBlock, ModifierKind, ModifierLine,
-    ModifierValue, Note, Song, SwingConfig, TemplateMacro, Token, Track, TrackInitEvent,
-    TrackInitLabel,
+use crate::dsl::syntax::Symbol;
+use crate::dsl::token::{
+    Bar, Block, Frontmatter, ModifierBlock, ModifierKind, ModifierValue, Note, SwingConfig,
+    TemplateMacro, Token, TrackInitEvent, TrackInitLabel,
 };
+use nom::error::{Error, ErrorKind};
+use nom::{
+    branch::alt,
+    bytes::complete::{take_until, take_while1},
+    character::complete::{digit1, line_ending, not_line_ending, space0, space1},
+    combinator::{eof, map, opt, value},
+    multi::many0,
+    sequence::{delimited, preceded, terminated},
+    IResult, Parser,
+};
+use std::str::FromStr;
+
 #[derive(Debug, Clone)]
 pub enum ParsedLine {
     Frontmatter(String),
@@ -39,22 +49,6 @@ pub enum ParsedLine {
     },
     TemplateCalls(Vec<crate::dsl::token::TemplateCall>),
 }
-use miette::Result;
-use nom::error::{Error, ErrorKind};
-use nom::{
-    branch::alt,
-    bytes::complete::{take_until, take_while1},
-    character::complete::{digit1, line_ending, not_line_ending, space0, space1},
-    combinator::{eof, map, opt, value},
-    multi::many0,
-    sequence::{delimited, preceded, terminated},
-    IResult, Parser,
-};
-use std::str::FromStr;
-
-// Convert nom error to Miette Diagnostic
-// This requires access to the full original source string to create NamedSource and spans.
-// Since parsers return IResult, we handle conversion at the top level.
 
 // --- Token Parsers ---
 
@@ -147,9 +141,6 @@ fn parse_seq_token(input: &str) -> IResult<&str, Token> {
     .parse(input)
 }
 
-// --- Block Parser ---
-// function removed
-
 fn parse_block_tokens_only(input: &str) -> IResult<&str, Vec<Token>> {
     terminated(many0(parse_token), space0).parse(input)
 }
@@ -183,7 +174,6 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)>
         // Look for the next bar
         match parse_bar(input_after_tokens) {
             Ok((rest, next_bar)) => {
-                // dbg!(&next_bar);
                 blocks.push(Block {
                     start_bar: current_bar,
                     tokens,
@@ -192,8 +182,6 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)>
                 current_bar = next_bar;
             }
             Err(_) => {
-                // In strict mode, if we have content, we MUST have a closing bar.
-                // If tokens are not empty and we fail to parse a bar, it's an error.
                 if !tokens.is_empty() {
                     use nom::error::{Error, ErrorKind};
                     return Err(nom::Err::Failure(Error::new(
@@ -201,15 +189,6 @@ pub(crate) fn parse_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, Bar)>
                         ErrorKind::Tag,
                     )));
                 }
-                // If tokens are empty, it means we are at the end of the line (or just whitespace).
-                // The `current_bar` is the "end bar" of the previous block,
-                // OR it is the final bar of the sequence.
-                // E.g. `| A |`:
-                // 1. `|` (Start)
-                // 2. `A` -> `|` (Next). push Block(|, A). current=|.
-                // 3. `Empty` -> Error(EOF). Break.
-                // Return blocks=[Block(|, A)], end_bar=|.
-
                 break;
             }
         }
@@ -251,6 +230,7 @@ pub(crate) fn parse_seq_line_blocks(input: &str) -> IResult<&str, (Vec<Block>, B
 
     Ok((current_input, (blocks, current_bar)))
 }
+
 // --- Line Types ---
 
 fn parse_comment(input: &str) -> IResult<&str, ParsedLine> {
@@ -294,7 +274,7 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
     ))
 }
 
-fn parse_track_init_command(
+pub fn parse_track_init_command(
     command: &str,
 ) -> std::result::Result<(TrackInitEvent, TrackInitLabel), String> {
     let parts: Vec<&str> = command.split_whitespace().collect();
@@ -551,7 +531,7 @@ fn parse_template_list(input: &str) -> IResult<&str, ParsedLine> {
     Ok((input, ParsedLine::TemplateCalls(expansions)))
 }
 
-pub(crate) fn parse_key(input: &str) -> IResult<&str, &str> {
+pub fn parse_key(input: &str) -> IResult<&str, &str> {
     take_while1(|c: char| c != Symbol::BarStandard.as_char() && c != '\n' && c != '\r').parse(input)
 }
 
@@ -596,7 +576,6 @@ pub(crate) fn parse_pattern_line(input: &str) -> IResult<&str, ParsedLine> {
             },
         )),
         false => {
-            // For strict mode, we return an error here.
             use nom::error::{Error, ErrorKind};
             Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))
         }
@@ -744,7 +723,6 @@ fn parse_modifier_block_values(input: &str) -> IResult<&str, Vec<ModifierValue>>
 
     loop {
         let (rest, _) = space0.parse(current)?;
-        // Check if we hit a bar or end
         if rest.is_empty()
             || rest.starts_with(Symbol::BarStandard.as_char())
             || rest.starts_with(Symbol::TrackHeaderSeparator.as_char())
@@ -795,12 +773,10 @@ fn parse_modifier_line_blocks(input: &str) -> IResult<&str, (Vec<ModifierBlock>,
 }
 
 fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
-    // Parse modifier kind label: "v" or "p" followed by space and bar
     let (input, kind_char) =
         alt((Symbol::ModVelocity.char(), Symbol::ModPitch.char())).parse(input)?;
     let (input, _) = space0.parse(input)?;
 
-    // Must be followed by a bar
     if !input.starts_with(Symbol::BarStandard.as_char())
         && !input.starts_with(Symbol::BarRepeatEnd.as_str())
     {
@@ -818,7 +794,6 @@ fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
 
     let (input, (blocks, end_bar)) = parse_modifier_line_blocks(input)?;
 
-    // Check for trailing comment
     let (input, _) = space0(input)?;
     let (input, trailing_comment) =
         opt(preceded(Symbol::Comment.char(), not_line_ending)).parse(input)?;
@@ -850,9 +825,7 @@ pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     .parse(input)
 }
 
-// --- High Level ---
-
-fn parse_frontmatter(input: &str) -> IResult<&str, Frontmatter> {
+pub(crate) fn parse_frontmatter(input: &str) -> IResult<&str, Frontmatter> {
     let (input, _) = Symbol::TrackWrap.tag().parse(input)?;
     let (input, _) = line_ending.parse(input)?;
     let (input, yaml_content) = take_until(Symbol::TrackWrap.as_str()).parse(input)?;
@@ -866,7 +839,7 @@ fn parse_frontmatter(input: &str) -> IResult<&str, Frontmatter> {
     Ok((input, fm))
 }
 
-fn validate_swing_config(swing: &SwingConfig) -> std::result::Result<(), String> {
+pub(crate) fn validate_swing_config(swing: &SwingConfig) -> std::result::Result<(), String> {
     match swing {
         SwingConfig::Detailed { grid, amount } => {
             if *grid == 0 {
@@ -896,459 +869,5 @@ fn validate_swing_config(swing: &SwingConfig) -> std::result::Result<(), String>
             Ok(())
         }
         SwingConfig::Boolean(_) => Ok(()),
-    }
-}
-
-pub fn parse_song(source: String) -> Result<Song, ParseError> {
-    let input = source.as_str();
-
-    // Frontmatter
-    let (input, metadata) = if input.starts_with("---") {
-        match parse_frontmatter(input) {
-            Ok(res) => res,
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                return Err(ParseError::from_yaml(
-                    e.input,
-                    &source,
-                    "Invalid Frontmatter YAML".to_string(),
-                ));
-            }
-            Err(_) => panic!("Incomplete input"),
-        }
-    } else {
-        (input, Frontmatter::default())
-    };
-
-    if metadata.bpm == 0 || metadata.bpm > 999 {
-        return Err(ParseError::from_validation(
-            &source[..3], // Point to the start of frontmatter
-            &source,
-            format!("Invalid BPM: {}", metadata.bpm),
-            Some("BPM must be between 1 and 999. Example: bpm: 120".to_string()),
-        ));
-    }
-
-    let frontmatter_line = source.lines().next().unwrap_or(&source);
-    if let Err(msg) = crate::validation::parse_signature(&metadata.signature) {
-        return Err(ParseError::from_validation(
-            frontmatter_line,
-            &source,
-            msg,
-            Some("Example: signature: 4/4".to_string()),
-        ));
-    }
-    if let Err(msg) = crate::validation::validate_unit(&metadata.unit) {
-        return Err(ParseError::from_validation(
-            frontmatter_line,
-            &source,
-            msg,
-            Some("Example: unit: bar".to_string()),
-        ));
-    }
-    if let Err(msg) = validate_swing_config(&metadata.swing) {
-        return Err(ParseError::from_validation(
-            frontmatter_line,
-            &source,
-            msg,
-            Some("Examples: swing: 8, swing: 16, swing: { grid: 8, amount: 66 }".to_string()),
-        ));
-    }
-    if let Some(humanize) = metadata.humanize.values() {
-        if let Err(msg) = crate::validation::validate_humanize(humanize.timing, humanize.velocity) {
-            return Err(ParseError::from_validation(
-                frontmatter_line,
-                &source,
-                msg,
-                Some(
-                    "Examples: humanize: true, humanize: { timing: 0.015, velocity: 5, seed: 42 }"
-                        .to_string(),
-                ),
-            ));
-        }
-    }
-    if let Some(loop_range) = &metadata.loop_range {
-        if let Err(msg) = crate::validation::parse_loop_range_units(loop_range) {
-            return Err(ParseError::from_validation(
-                frontmatter_line,
-                &source,
-                msg,
-                Some("Example: loop_range: 0..4".to_string()),
-            ));
-        }
-        if let Err(msg) = crate::validation::beats_per_unit(&metadata.unit, &metadata.signature) {
-            return Err(ParseError::from_validation(
-                frontmatter_line,
-                &source,
-                msg,
-                Some("Ensure both `unit` and `signature` are valid.".to_string()),
-            ));
-        }
-    }
-
-    let mut builder = SongBuilder::new(&source);
-
-    // Line by line parsing
-    for line_str in input.lines() {
-        let trimmed = line_str.trim();
-
-        match parse_line_entry(trimmed) {
-            Ok((_, parsed)) => match parsed {
-                ParsedLine::TrackHeader {
-                    name,
-                    channel,
-                    solo,
-                    muted,
-                } => {
-                    builder.add_track(name, channel, line_str, solo, muted)?;
-                }
-                ParsedLine::TrackWrap => {
-                    builder.add_section(line_str)?;
-                }
-                ParsedLine::TrackInit { event, .. } => {
-                    builder.add_track_init(line_str, event)?;
-                }
-                ParsedLine::TemplateHeader { name } => {
-                    builder.start_template(name);
-                }
-                ParsedLine::TemplateCalls(calls) => {
-                    builder.add_template_calls(calls);
-                }
-                ParsedLine::Pattern {
-                    notes,
-                    blocks,
-                    end_bar,
-                    ..
-                } => {
-                    builder.add_pattern(line_str, notes, blocks, end_bar)?;
-                }
-                ParsedLine::Modifier {
-                    kind,
-                    blocks,
-                    end_bar,
-                    trailing_comment,
-                } => {
-                    builder.add_modifier(line_str, kind, blocks, end_bar, trailing_comment)?;
-                }
-                ParsedLine::Comment(_) | ParsedLine::Empty | ParsedLine::Frontmatter(_) => {}
-            },
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                if let Some(rest) = trimmed.strip_prefix("##") {
-                    if let Err(msg) = parse_track_init_command(rest.trim()) {
-                        return Err(ParseError::from_validation(line_str, &source, msg, None));
-                    }
-                }
-                return Err(ParseError::from_nom(
-                    line_str,
-                    &source,
-                    format!("{:?}", e.code),
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    let (tracks, templates) = builder.finish();
-
-    Ok(Song {
-        metadata,
-        tracks,
-        templates,
-    })
-}
-
-struct SongBuilder<'a> {
-    tracks: Vec<Track>,
-    templates: std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
-    current_track: Option<Track>,
-    current_template: Option<(String, crate::dsl::token::Sequence)>,
-    source: &'a str,
-}
-
-impl<'a> SongBuilder<'a> {
-    fn new(source: &'a str) -> Self {
-        Self {
-            tracks: Vec::new(),
-            templates: std::collections::HashMap::new(),
-            current_track: None,
-            current_template: None,
-            source,
-        }
-    }
-
-    fn start_template(&mut self, name: String) {
-        self.finish_current();
-        self.current_template = Some((
-            name,
-            crate::dsl::token::Sequence {
-                entries: Vec::new(),
-            },
-        ));
-    }
-
-    fn finish_current(&mut self) {
-        if let Some(t) = self.current_track.take() {
-            self.tracks.push(t);
-        }
-        if let Some((name, sequence)) = self.current_template.take() {
-            self.templates.insert(
-                name.clone(),
-                crate::dsl::token::TemplateDef { name, sequence },
-            );
-        }
-    }
-
-    fn add_track(
-        &mut self,
-        name: String,
-        channel: u8,
-        line_str: &str,
-        solo: bool,
-        muted: bool,
-    ) -> Result<(), ParseError> {
-        if let Err(msg) = crate::validation::ensure_channel_1_based(channel) {
-            return Err(ParseError::from_validation(
-                line_str,
-                self.source,
-                msg,
-                Some("MIDI channel must be between 1 and 16. Example: # Piano: 1".to_string()),
-            ));
-        }
-
-        self.finish_current();
-        self.current_track = Some(Track {
-            name,
-            channel,
-            solo,
-            muted,
-            init_events: Vec::new(),
-            sequence: crate::dsl::token::Sequence {
-                entries: Vec::new(),
-            },
-        });
-        Ok(())
-    }
-
-    fn add_section(&mut self, _line_str: &str) -> Result<(), ParseError> {
-        if let Some(ref mut track) = self.current_track {
-            track.sequence.entries.push(LineEntry::TrackWrap);
-        }
-        Ok(())
-    }
-
-    fn add_pattern(
-        &mut self,
-        _line_str: &str,
-        notes: Vec<Note>,
-        blocks: Vec<Block>,
-        end_bar: Bar,
-    ) -> Result<(), ParseError> {
-        let entry = LineEntry::Pattern(Line {
-            notes,
-            blocks,
-            end_bar,
-            modifiers: Vec::new(),
-        });
-
-        if let Some((_, ref mut seq)) = self.current_template {
-            seq.entries.push(entry);
-        } else if let Some(ref mut track) = self.current_track {
-            track.sequence.entries.push(entry);
-        }
-
-        Ok(())
-    }
-
-    fn add_template_calls(&mut self, calls: Vec<crate::dsl::token::TemplateCall>) {
-        let entry = LineEntry::TemplateCalls(calls);
-
-        if let Some((_, ref mut seq)) = self.current_template {
-            seq.entries.push(entry);
-        } else if let Some(ref mut track) = self.current_track {
-            track.sequence.entries.push(entry);
-        }
-    }
-
-    fn add_track_init(&mut self, line_str: &str, event: TrackInitEvent) -> Result<(), ParseError> {
-        if self.current_template.is_some() {
-            return Err(ParseError::from_context(
-                line_str,
-                self.source,
-                "Track init line (## ...) is not allowed inside template".to_string(),
-            ));
-        }
-
-        let track = self.current_track.as_mut().ok_or_else(|| {
-            ParseError::from_context(
-                line_str,
-                self.source,
-                "Track header required before init line".to_string(),
-            )
-        })?;
-
-        match &event {
-            TrackInitEvent::ProgramChange { .. } => {
-                if track
-                    .init_events
-                    .iter()
-                    .any(|e| matches!(e, TrackInitEvent::ProgramChange { .. }))
-                {
-                    return Err(ParseError::from_validation(
-                        line_str,
-                        self.source,
-                        "Duplicate program change in the same track".to_string(),
-                        Some("Use only one `## pc ...` per track.".to_string()),
-                    ));
-                }
-            }
-            TrackInitEvent::BankSelect { .. } => {
-                if track
-                    .init_events
-                    .iter()
-                    .any(|e| matches!(e, TrackInitEvent::BankSelect { .. }))
-                {
-                    return Err(ParseError::from_validation(
-                        line_str,
-                        self.source,
-                        "Duplicate bank select in the same track".to_string(),
-                        Some("Use only one `## bank ...` per track.".to_string()),
-                    ));
-                }
-                if track.init_events.iter().any(|e| {
-                    matches!(e, TrackInitEvent::ControlChange { cc, .. } if *cc == 0 || *cc == 32)
-                }) {
-                    return Err(ParseError::from_validation(
-                        line_str,
-                        self.source,
-                        "Cannot mix `## bank ...` with `## cc 0 ...` / `## cc 32 ...`".to_string(),
-                        None,
-                    ));
-                }
-            }
-            TrackInitEvent::ControlChange { cc, .. } => {
-                if (*cc == 0 || *cc == 32)
-                    && track
-                        .init_events
-                        .iter()
-                        .any(|e| matches!(e, TrackInitEvent::BankSelect { .. }))
-                {
-                    return Err(ParseError::from_validation(
-                        line_str,
-                        self.source,
-                        "Cannot mix `## cc 0/32 ...` with `## bank ...`".to_string(),
-                        None,
-                    ));
-                }
-                if track.init_events.iter().any(
-                    |e| matches!(e, TrackInitEvent::ControlChange { cc: prev, .. } if prev == cc),
-                ) {
-                    return Err(ParseError::from_validation(
-                        line_str,
-                        self.source,
-                        format!("Duplicate CC{} init event in the same track", cc),
-                        None,
-                    ));
-                }
-            }
-        }
-
-        track.init_events.push(event);
-        Ok(())
-    }
-
-    fn add_modifier(
-        &mut self,
-        line_str: &str,
-        kind: ModifierKind,
-        blocks: Vec<ModifierBlock>,
-        end_bar: Bar,
-        trailing_comment: Option<String>,
-    ) -> Result<(), ParseError> {
-        let entries = if let Some((_, ref mut seq)) = self.current_template {
-            &mut seq.entries
-        } else if let Some(ref mut track) = self.current_track {
-            &mut track.sequence.entries
-        } else {
-            return Err(ParseError::from_context(
-                line_str,
-                self.source,
-                "Track or template header required before modifier line".to_string(),
-            ));
-        };
-
-        let last_entry = entries.last_mut().ok_or_else(|| {
-            ParseError::from_context(
-                line_str,
-                self.source,
-                "Pattern line required before modifier line".to_string(),
-            )
-        })?;
-
-        if let LineEntry::Pattern(ref mut line) = last_entry {
-            line.modifiers.push(ModifierLine {
-                kind,
-                blocks,
-                end_bar,
-                trailing_comment,
-            });
-            Ok(())
-        } else {
-            Err(ParseError::from_context(
-                line_str,
-                self.source,
-                "Modifier cannot follow a template expansion directly".to_string(),
-            ))
-        }
-    }
-
-    fn finish(
-        mut self,
-    ) -> (
-        Vec<Track>,
-        std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
-    ) {
-        self.finish_current();
-        (self.tracks, self.templates)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{parse_line_entry, parse_song, ParsedLine};
-
-    #[test]
-    fn parse_track_header_accepts_solo_and_mute_flags() {
-        let (_, parsed) = parse_line_entry("# Piano: 1 s x").unwrap();
-        assert!(matches!(
-            parsed,
-            ParsedLine::TrackHeader {
-                name,
-                channel: 1,
-                solo: true,
-                muted: true,
-            } if name == "Piano"
-        ));
-
-        let (_, parsed) = parse_line_entry("# Piano: 1 x s").unwrap();
-        assert!(matches!(
-            parsed,
-            ParsedLine::TrackHeader {
-                solo: true,
-                muted: true,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn parse_track_header_rejects_unknown_flags() {
-        assert!(parse_line_entry("# Piano: 1 z").is_err());
-    }
-
-    #[test]
-    fn parse_song_tracks_preserve_solo_state() {
-        let song = parse_song("# Piano: 1 s\nC4 | ^ |\n".to_string()).unwrap();
-        assert_eq!(song.tracks.len(), 1);
-        assert!(song.tracks[0].solo);
-        assert!(!song.tracks[0].muted);
     }
 }
