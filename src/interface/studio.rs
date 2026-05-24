@@ -399,16 +399,20 @@ impl StudioApp {
             KeyCode::Char('-') => {
                 self.apply_transpose(-1);
             }
-            KeyCode::Char(']') => {
+            KeyCode::Char(']') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.apply_transpose(12);
             }
-            KeyCode::Char('[') => {
+            KeyCode::Char('[') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.apply_transpose(-12);
             }
-            KeyCode::Char('{') => {
+            code if code == KeyCode::Char('{')
+                || (code == KeyCode::Char('[') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_time_scale(-1);
             }
-            KeyCode::Char('}') => {
+            code if code == KeyCode::Char('}')
+                || (code == KeyCode::Char(']') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_time_scale(1);
             }
             KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
@@ -418,25 +422,29 @@ impl StudioApp {
             _ if is_plain_char(&key, 'k') => self.textarea.move_cursor(CursorMove::Up),
             _ if is_plain_char(&key, 'h') => self.textarea.move_cursor(CursorMove::Back),
             _ if is_plain_char(&key, 'l') => self.textarea.move_cursor(CursorMove::Forward),
-            KeyCode::Char(',') => {
-                self.move_cursor_to_adjacent_unit(-1);
-            }
-            KeyCode::Char('.') => {
-                self.move_cursor_to_adjacent_unit(1);
-            }
-            KeyCode::Char('<') => {
+            code if code == KeyCode::Char('<')
+                || (code == KeyCode::Char(',') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 if self.current_template_call_at_cursor().is_some() {
                     self.adjust_template_call_repeat(-1);
                 } else {
                     self.move_cursor_to_adjacent_bar(-1);
                 }
             }
-            KeyCode::Char('>') => {
+            code if code == KeyCode::Char('>')
+                || (code == KeyCode::Char('.') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 if self.current_template_call_at_cursor().is_some() {
                     self.adjust_template_call_repeat(1);
                 } else {
                     self.move_cursor_to_adjacent_bar(1);
                 }
+            }
+            KeyCode::Char(',') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.move_cursor_to_adjacent_unit(-1);
+            }
+            KeyCode::Char('.') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.move_cursor_to_adjacent_unit(1);
             }
             _ => {}
         }
@@ -490,22 +498,30 @@ impl StudioApp {
             KeyCode::Char('-') => {
                 self.apply_transpose(-1);
             }
-            KeyCode::Char(']') => {
+            KeyCode::Char(']') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.apply_transpose(12);
             }
-            KeyCode::Char('[') => {
+            KeyCode::Char('[') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.apply_transpose(-12);
             }
-            KeyCode::Char('<') => {
+            code if code == KeyCode::Char('<')
+                || (code == KeyCode::Char(',') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_repeat(-1);
             }
-            KeyCode::Char('>') => {
+            code if code == KeyCode::Char('>')
+                || (code == KeyCode::Char('.') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_repeat(1);
             }
-            KeyCode::Char('{') => {
+            code if code == KeyCode::Char('{')
+                || (code == KeyCode::Char('[') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_time_scale(-1);
             }
-            KeyCode::Char('}') => {
+            code if code == KeyCode::Char('}')
+                || (code == KeyCode::Char(']') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
+            {
                 self.adjust_template_call_time_scale(1);
             }
             _ if is_plain_char(&key, 'x') => {
