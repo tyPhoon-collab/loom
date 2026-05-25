@@ -2,8 +2,9 @@ use crate::config::StudioConfig;
 use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
-use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
 use input::{NoteInputMode, PendingInput, StudioInputState};
+use keystroke::{key_stroke_matches, lookup_key_action, KeyBinding, KeyStroke};
 use miette::{IntoDiagnostic, Result};
 use note_entry::NoteKeyboard;
 use ratatui::style::{Color, Style};
@@ -20,6 +21,7 @@ mod add;
 mod audition;
 mod edit_ops;
 mod input;
+mod keystroke;
 mod note_entry;
 mod onset;
 mod selection;
@@ -90,239 +92,367 @@ enum KeyAction {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum KeySpec {
-    PlainChar(char),
-    ShiftChar(char),
-    CtrlChar(char),
-    Code(KeyCode),
-    ShiftCode(KeyCode),
+enum CursorMotion {
+    Up,
+    Down,
+    Back,
+    Forward,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct KeyBinding<T> {
-    spec: KeySpec,
-    action: T,
+enum NormalFallbackAction {
+    Transpose(i32),
+    AdjustTemplateCallTimeScale(i32),
+    MoveCursor(CursorMotion),
+    MoveAdjacentBarOrRepeat(i32),
+    MoveAdjacentUnit(i32),
+    PassThroughTextArea,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SelectFallbackAction {
+    Transpose(i32),
+    AdjustTemplateCallTimeScale(i32),
+    AdjustTemplateCallRepeat(i32),
 }
 
 const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::PlainChar('q'),
+        stroke: KeyStroke::Char('q'),
         action: KeyAction::Quit,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('q'),
+        stroke: KeyStroke::ShiftChar('q'),
         action: KeyAction::ForceQuit,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('i'),
+        stroke: KeyStroke::Char('i'),
         action: KeyAction::EnterInsertMode,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('a'),
+        stroke: KeyStroke::Char('a'),
         action: KeyAction::BeginPending(PendingInput::Add),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('g'),
+        stroke: KeyStroke::Char('g'),
         action: KeyAction::BeginPending(PendingInput::Goto),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('p'),
+        stroke: KeyStroke::ShiftChar('p'),
         action: KeyAction::ClearPreviewAndBegin(PendingInput::PreviewNote),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('n'),
+        stroke: KeyStroke::Char('n'),
         action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Single)),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('n'),
+        stroke: KeyStroke::ShiftChar('n'),
         action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Continuous)),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('o'),
+        stroke: KeyStroke::Char('o'),
         action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Single)),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('o'),
+        stroke: KeyStroke::ShiftChar('o'),
         action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Continuous)),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('s'),
+        stroke: KeyStroke::Char('s'),
         action: KeyAction::SubdivideCurrentUnit,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('s'),
+        stroke: KeyStroke::ShiftChar('s'),
         action: KeyAction::ShrinkCurrentEditableGroup,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('x'),
+        stroke: KeyStroke::Char('x'),
         action: KeyAction::DeleteCurrentUnit,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('d'),
+        stroke: KeyStroke::ShiftChar('d'),
         action: KeyAction::BeginPending(PendingInput::DeleteStructure),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('m'),
+        stroke: KeyStroke::Char('m'),
         action: KeyAction::ToggleCurrentTrackMute,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('m'),
+        stroke: KeyStroke::ShiftChar('m'),
         action: KeyAction::ToggleCurrentTrackSolo,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('x'),
+        stroke: KeyStroke::ShiftChar('x'),
         action: KeyAction::ClearCurrentTrackFlags,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('v'),
+        stroke: KeyStroke::Char('v'),
         action: KeyAction::EnterNoteSelectMode,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('v'),
+        stroke: KeyStroke::ShiftChar('v'),
         action: KeyAction::EnterLineSelectMode,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('b'),
+        stroke: KeyStroke::Char('b'),
         action: KeyAction::EnterBarSelectMode,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('b'),
+        stroke: KeyStroke::ShiftChar('b'),
         action: KeyAction::EnterLineBarSelectMode,
     },
     KeyBinding {
-        spec: KeySpec::CtrlChar('l'),
+        stroke: KeyStroke::CtrlChar('l'),
         action: KeyAction::ClearLoopSettings,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('l'),
+        stroke: KeyStroke::ShiftChar('l'),
         action: KeyAction::ToggleLoop,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('w'),
+        stroke: KeyStroke::Char('w'),
         action: KeyAction::Save,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('f'),
+        stroke: KeyStroke::Char('f'),
         action: KeyAction::FormatCurrentSource,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char(' ')),
+        stroke: KeyStroke::Char(' '),
         action: KeyAction::TogglePlayback,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('r'),
+        stroke: KeyStroke::Char('r'),
         action: KeyAction::RestartPlayback,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('u'),
+        stroke: KeyStroke::Char('u'),
         action: KeyAction::Undo,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('r'),
+        stroke: KeyStroke::ShiftChar('r'),
         action: KeyAction::Redo,
     },
 ];
 
 const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: KeyAction::ExitSelectMode,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('n'),
+        stroke: KeyStroke::Char('n'),
         action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Single)),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('o'),
+        stroke: KeyStroke::Char('o'),
         action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Single)),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('x'),
+        stroke: KeyStroke::Char('x'),
         action: KeyAction::DeleteSelection,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('s'),
+        stroke: KeyStroke::Char('s'),
         action: KeyAction::SubdivideSelectedUnits,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('s'),
+        stroke: KeyStroke::ShiftChar('s'),
         action: KeyAction::ShrinkSelectedEditableGroups,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('d'),
+        stroke: KeyStroke::Char('d'),
         action: KeyAction::DuplicateSelection,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('t'),
+        stroke: KeyStroke::ShiftChar('t'),
         action: KeyAction::ExtractSelectedBarsToTemplate,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Enter),
+        stroke: KeyStroke::Code(KeyCode::Enter),
         action: KeyAction::ApplySelectedLoopRange,
     },
     KeyBinding {
-        spec: KeySpec::ShiftCode(KeyCode::Up),
+        stroke: KeyStroke::ShiftCode(KeyCode::Up),
         action: KeyAction::ExpandSelectVertical(-1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftCode(KeyCode::Down),
+        stroke: KeyStroke::ShiftCode(KeyCode::Down),
         action: KeyAction::ExpandSelectVertical(1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftCode(KeyCode::Left),
+        stroke: KeyStroke::ShiftCode(KeyCode::Left),
         action: KeyAction::ExpandSelectHorizontal(-1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftCode(KeyCode::Right),
+        stroke: KeyStroke::ShiftCode(KeyCode::Right),
         action: KeyAction::ExpandSelectHorizontal(1),
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Up),
+        stroke: KeyStroke::Code(KeyCode::Up),
         action: KeyAction::MoveSelectionVertical(-1),
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Down),
+        stroke: KeyStroke::Code(KeyCode::Down),
         action: KeyAction::MoveSelectionVertical(1),
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Left),
+        stroke: KeyStroke::Code(KeyCode::Left),
         action: KeyAction::MoveSelectionHorizontal(-1),
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Right),
+        stroke: KeyStroke::Code(KeyCode::Right),
         action: KeyAction::MoveSelectionHorizontal(1),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('k'),
+        stroke: KeyStroke::Char('k'),
         action: KeyAction::MoveSelectionVertical(-1),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('j'),
+        stroke: KeyStroke::Char('j'),
         action: KeyAction::MoveSelectionVertical(1),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('h'),
+        stroke: KeyStroke::Char('h'),
         action: KeyAction::MoveSelectionHorizontal(-1),
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('l'),
+        stroke: KeyStroke::Char('l'),
         action: KeyAction::MoveSelectionHorizontal(1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('k'),
+        stroke: KeyStroke::ShiftChar('k'),
         action: KeyAction::ExpandSelectVertical(-1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('j'),
+        stroke: KeyStroke::ShiftChar('j'),
         action: KeyAction::ExpandSelectVertical(1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('h'),
+        stroke: KeyStroke::ShiftChar('h'),
         action: KeyAction::ExpandSelectHorizontal(-1),
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('l'),
+        stroke: KeyStroke::ShiftChar('l'),
         action: KeyAction::ExpandSelectHorizontal(1),
+    },
+];
+
+const NORMAL_FALLBACK_BINDINGS: &[KeyBinding<NormalFallbackAction>] = &[
+    KeyBinding {
+        stroke: KeyStroke::Symbol('+'),
+        action: NormalFallbackAction::Transpose(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('='),
+        action: NormalFallbackAction::Transpose(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('-'),
+        action: NormalFallbackAction::Transpose(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol(']'),
+        action: NormalFallbackAction::Transpose(12),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('['),
+        action: NormalFallbackAction::Transpose(-12),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('{'),
+        action: NormalFallbackAction::AdjustTemplateCallTimeScale(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('}'),
+        action: NormalFallbackAction::AdjustTemplateCallTimeScale(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Code(KeyCode::Up),
+        action: NormalFallbackAction::PassThroughTextArea,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Code(KeyCode::Down),
+        action: NormalFallbackAction::PassThroughTextArea,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Code(KeyCode::Left),
+        action: NormalFallbackAction::PassThroughTextArea,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Code(KeyCode::Right),
+        action: NormalFallbackAction::PassThroughTextArea,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('j'),
+        action: NormalFallbackAction::MoveCursor(CursorMotion::Down),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('k'),
+        action: NormalFallbackAction::MoveCursor(CursorMotion::Up),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('h'),
+        action: NormalFallbackAction::MoveCursor(CursorMotion::Back),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('l'),
+        action: NormalFallbackAction::MoveCursor(CursorMotion::Forward),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('<'),
+        action: NormalFallbackAction::MoveAdjacentBarOrRepeat(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('>'),
+        action: NormalFallbackAction::MoveAdjacentBarOrRepeat(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol(','),
+        action: NormalFallbackAction::MoveAdjacentUnit(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('.'),
+        action: NormalFallbackAction::MoveAdjacentUnit(1),
+    },
+];
+
+const SELECT_FALLBACK_BINDINGS: &[KeyBinding<SelectFallbackAction>] = &[
+    KeyBinding {
+        stroke: KeyStroke::Symbol('+'),
+        action: SelectFallbackAction::Transpose(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('='),
+        action: SelectFallbackAction::Transpose(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('-'),
+        action: SelectFallbackAction::Transpose(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol(']'),
+        action: SelectFallbackAction::Transpose(12),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('['),
+        action: SelectFallbackAction::Transpose(-12),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('<'),
+        action: SelectFallbackAction::AdjustTemplateCallRepeat(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('>'),
+        action: SelectFallbackAction::AdjustTemplateCallRepeat(1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('{'),
+        action: SelectFallbackAction::AdjustTemplateCallTimeScale(-1),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol('}'),
+        action: SelectFallbackAction::AdjustTemplateCallTimeScale(1),
     },
 ];
 
@@ -464,7 +594,7 @@ impl StudioApp {
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         if self.show_help_overlay {
-            if key.code == KeyCode::Esc || is_help_key(&key) {
+            if is_escape_key(&key) || is_help_key(&key) {
                 self.show_help_overlay = false;
                 self.status_message = format!(
                     "{} help closed",
@@ -593,61 +723,27 @@ impl StudioApp {
             return self.execute_key_action(action);
         }
 
-        match key.code {
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.apply_transpose(1);
-            }
-            KeyCode::Char('-') => {
-                self.apply_transpose(-1);
-            }
-            KeyCode::Char(']') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.apply_transpose(12);
-            }
-            KeyCode::Char('[') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.apply_transpose(-12);
-            }
-            code if code == KeyCode::Char('{')
-                || (code == KeyCode::Char('[') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_time_scale(-1);
-            }
-            code if code == KeyCode::Char('}')
-                || (code == KeyCode::Char(']') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_time_scale(1);
-            }
-            KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
-                self.textarea.input(key);
-            }
-            _ if is_plain_char(&key, 'j') => self.textarea.move_cursor(CursorMove::Down),
-            _ if is_plain_char(&key, 'k') => self.textarea.move_cursor(CursorMove::Up),
-            _ if is_plain_char(&key, 'h') => self.textarea.move_cursor(CursorMove::Back),
-            _ if is_plain_char(&key, 'l') => self.textarea.move_cursor(CursorMove::Forward),
-            code if code == KeyCode::Char('<')
-                || (code == KeyCode::Char(',') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                if self.current_template_call_at_cursor().is_some() {
-                    self.adjust_template_call_repeat(-1);
-                } else {
-                    self.move_cursor_to_adjacent_bar(-1);
+        if let Some(action) = lookup_key_action(NORMAL_FALLBACK_BINDINGS, &key) {
+            match action {
+                NormalFallbackAction::Transpose(semitones) => self.apply_transpose(semitones),
+                NormalFallbackAction::AdjustTemplateCallTimeScale(delta) => {
+                    self.adjust_template_call_time_scale(delta);
+                }
+                NormalFallbackAction::MoveCursor(motion) => self.move_cursor(motion),
+                NormalFallbackAction::MoveAdjacentBarOrRepeat(delta) => {
+                    if self.current_template_call_at_cursor().is_some() {
+                        self.adjust_template_call_repeat(delta);
+                    } else {
+                        self.move_cursor_to_adjacent_bar(delta);
+                    }
+                }
+                NormalFallbackAction::MoveAdjacentUnit(delta) => {
+                    self.move_cursor_to_adjacent_unit(delta);
+                }
+                NormalFallbackAction::PassThroughTextArea => {
+                    self.textarea.input(key);
                 }
             }
-            code if code == KeyCode::Char('>')
-                || (code == KeyCode::Char('.') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                if self.current_template_call_at_cursor().is_some() {
-                    self.adjust_template_call_repeat(1);
-                } else {
-                    self.move_cursor_to_adjacent_bar(1);
-                }
-            }
-            KeyCode::Char(',') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.move_cursor_to_adjacent_unit(-1);
-            }
-            KeyCode::Char('.') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.move_cursor_to_adjacent_unit(1);
-            }
-            _ => {}
         }
         Ok(())
     }
@@ -686,40 +782,16 @@ impl StudioApp {
             return self.execute_key_action(action);
         }
 
-        match key.code {
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.apply_transpose(1);
+        if let Some(action) = lookup_key_action(SELECT_FALLBACK_BINDINGS, &key) {
+            match action {
+                SelectFallbackAction::Transpose(semitones) => self.apply_transpose(semitones),
+                SelectFallbackAction::AdjustTemplateCallTimeScale(delta) => {
+                    self.adjust_template_call_time_scale(delta);
+                }
+                SelectFallbackAction::AdjustTemplateCallRepeat(delta) => {
+                    self.adjust_template_call_repeat(delta);
+                }
             }
-            KeyCode::Char('-') => {
-                self.apply_transpose(-1);
-            }
-            KeyCode::Char(']') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.apply_transpose(12);
-            }
-            KeyCode::Char('[') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.apply_transpose(-12);
-            }
-            code if code == KeyCode::Char('<')
-                || (code == KeyCode::Char(',') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_repeat(-1);
-            }
-            code if code == KeyCode::Char('>')
-                || (code == KeyCode::Char('.') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_repeat(1);
-            }
-            code if code == KeyCode::Char('{')
-                || (code == KeyCode::Char('[') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_time_scale(-1);
-            }
-            code if code == KeyCode::Char('}')
-                || (code == KeyCode::Char(']') && key.modifiers.contains(KeyModifiers::SHIFT)) =>
-            {
-                self.adjust_template_call_time_scale(1);
-            }
-            _ => {}
         }
         Ok(())
     }
@@ -855,7 +927,7 @@ impl StudioApp {
     }
 
     fn handle_insert_key(&mut self, key: KeyEvent) -> Result<()> {
-        if key.code == KeyCode::Esc {
+        if is_escape_key(&key) {
             self.mode = StudioMode::Normal;
             self.compile_and_update_current_source()?;
             self.status_message = format!("Normal mode: {}", self.cursor_label());
@@ -875,41 +947,24 @@ impl StudioApp {
     fn sync_playback_state(&mut self) {
         self.is_playing = self.player.playback_state() == PlaybackState::Playing;
     }
+
+    fn move_cursor(&mut self, motion: CursorMotion) {
+        let motion = match motion {
+            CursorMotion::Up => CursorMove::Up,
+            CursorMotion::Down => CursorMove::Down,
+            CursorMotion::Back => CursorMove::Back,
+            CursorMotion::Forward => CursorMove::Forward,
+        };
+        self.textarea.move_cursor(motion);
+    }
 }
 
-pub(super) fn is_plain_char(key: &KeyEvent, ch: char) -> bool {
-    key_spec_matches(KeySpec::PlainChar(ch), key)
+fn is_escape_key(key: &KeyEvent) -> bool {
+    key_stroke_matches(KeyStroke::Code(KeyCode::Esc), key)
 }
 
 fn is_help_key(key: &KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Char('?'))
-        || (matches!(key.code, KeyCode::Char('/')) && key.modifiers.contains(KeyModifiers::SHIFT))
-}
-
-fn lookup_key_action<T: Copy>(bindings: &[KeyBinding<T>], key: &KeyEvent) -> Option<T> {
-    bindings
-        .iter()
-        .find(|binding| key_spec_matches(binding.spec, key))
-        .map(|binding| binding.action)
-}
-
-fn key_spec_matches(spec: KeySpec, key: &KeyEvent) -> bool {
-    match spec {
-        KeySpec::PlainChar(ch) => {
-            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
-                && !key.modifiers.contains(KeyModifiers::SHIFT)
-        }
-        KeySpec::ShiftChar(ch) => {
-            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
-                && key.modifiers.contains(KeyModifiers::SHIFT)
-        }
-        KeySpec::CtrlChar(ch) => {
-            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
-                && key.modifiers.contains(KeyModifiers::CONTROL)
-        }
-        KeySpec::Code(code) => key.code == code,
-        KeySpec::ShiftCode(code) => key.code == code && key.modifiers.contains(KeyModifiers::SHIFT),
-    }
+    key_stroke_matches(KeyStroke::Symbol('?'), key)
 }
 
 fn configure_textarea_style(textarea: &mut TextArea<'static>) {

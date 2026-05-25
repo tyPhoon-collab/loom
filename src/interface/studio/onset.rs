@@ -1,9 +1,12 @@
 use super::input::{NoteInputMode, PendingInput, ONSET_HELP};
+use super::keystroke::{
+    key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
+};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
     lane_body_token_spans_in_line, lane_head_token, replace_char_range, UnitSpan,
 };
-use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
+use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 
@@ -24,27 +27,27 @@ enum OnsetKeyAction {
 
 const ONSET_KEY_BINDINGS: &[KeyBinding<OnsetKeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Backspace),
+        stroke: KeyStroke::Code(KeyCode::Backspace),
         action: OnsetKeyAction::UndoContinuous,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: OnsetKeyAction::Cancel,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('x'),
+        stroke: KeyStroke::Char('x'),
         action: OnsetKeyAction::PlaceNoteOn,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('.')),
+        stroke: KeyStroke::Symbol('.'),
         action: OnsetKeyAction::PlaceRest,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('-')),
+        stroke: KeyStroke::Symbol('-'),
         action: OnsetKeyAction::PlaceSustain,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('t'),
+        stroke: KeyStroke::Char('t'),
         action: OnsetKeyAction::Toggle,
     },
 ];
@@ -53,22 +56,26 @@ impl StudioApp {
     pub(super) fn handle_onset_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Onset(mode);
 
-        match key.code {
-            KeyCode::Char(' ') if matches!(mode, NoteInputMode::Continuous) => {
+        match normalized_key_stroke(&key) {
+            Some(KeyStroke::Char(' ')) if matches!(mode, NoteInputMode::Continuous) => {
                 self.skip_current_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::Tab if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::Tab)) if matches!(mode, NoteInputMode::Continuous) => {
                 self.subdivide_current_unit()?;
                 self.resume_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::BackTab if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::BackTab))
+                if matches!(mode, NoteInputMode::Continuous) =>
+            {
                 self.shrink_current_editable_group()?;
                 self.resume_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::Backspace))
+                if matches!(mode, NoteInputMode::Continuous) =>
+            {
                 self.handle_continuous_input_undo(pending)?;
                 return Ok(());
             }
@@ -103,23 +110,33 @@ impl StudioApp {
     }
 
     pub(super) fn handle_select_onset_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
+            self.status_message = "Onset edit cancelled".into();
+            return Ok(());
+        }
+
+        let Some(action) = lookup_key_action(ONSET_KEY_BINDINGS, &key) else {
+            self.status_message = format!("Unknown onset command. {}", ONSET_HELP);
+            return Ok(());
+        };
+
+        match action {
+            OnsetKeyAction::Cancel => {
                 self.status_message = "Onset edit cancelled".into();
             }
-            KeyCode::Char('x') => {
+            OnsetKeyAction::PlaceNoteOn => {
                 self.replace_selected_onset_tokens('^')?;
             }
-            KeyCode::Char('.') => {
+            OnsetKeyAction::PlaceRest => {
                 self.replace_selected_onset_tokens('.')?;
             }
-            KeyCode::Char('-') => {
+            OnsetKeyAction::PlaceSustain => {
                 self.replace_selected_onset_tokens('-')?;
             }
-            KeyCode::Char('t') => {
+            OnsetKeyAction::Toggle => {
                 self.toggle_selected_onset_tokens()?;
             }
-            _ => {
+            OnsetKeyAction::UndoContinuous => {
                 self.status_message = format!("Unknown onset command. {}", ONSET_HELP);
             }
         }

@@ -16,6 +16,9 @@ loom はマークダウンライクなテキストベース作曲用の DSL で�
 - 実装に合わせて以下を行う
     - Footer のヘルプを合わせる
     - docs/guide/studio.md の記述を合わせる
+- 入力は KeyStroke で抽象化する
+    - 端末差を吸収し、ロジックに集中するため
+    - KeyStroke と KeyAction を紐づける
 
 ## 公開ドキュメント
 

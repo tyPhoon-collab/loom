@@ -1,10 +1,13 @@
 use super::input::{PendingInput, ADD_HELP};
+use super::keystroke::{
+    key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
+};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
-use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp, StudioMode};
+use super::{StudioApp, StudioMode};
 use crate::dsl::token::TrackInitLabel;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
@@ -34,63 +37,63 @@ enum AddKeyAction {
 
 const ADD_KEY_BINDINGS: &[KeyBinding<AddKeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: AddKeyAction::Cancel,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('s'),
+        stroke: KeyStroke::Char('s'),
         action: AddKeyAction::AddSeqLine,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('l'),
+        stroke: KeyStroke::Char('l'),
         action: AddKeyAction::AddNoteHeadLine,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('t'),
+        stroke: KeyStroke::Char('t'),
         action: AddKeyAction::AddTrack,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('h'),
+        stroke: KeyStroke::Char('h'),
         action: AddKeyAction::AddSeparator,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('d'),
+        stroke: KeyStroke::Char('d'),
         action: AddKeyAction::AddDefaultDrumLanes,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('v'),
+        stroke: KeyStroke::Char('v'),
         action: AddKeyAction::AddVelocityModifier,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('p'),
+        stroke: KeyStroke::Char('p'),
         action: AddKeyAction::AddPitchModifier,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('m'),
+        stroke: KeyStroke::Char('m'),
         action: AddKeyAction::BeginTemplateMacro,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('i'),
+        stroke: KeyStroke::Char('i'),
         action: AddKeyAction::BeginTrackInitAdd,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('t'),
+        stroke: KeyStroke::ShiftChar('t'),
         action: AddKeyAction::AddTemplateDefinition,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('b'),
+        stroke: KeyStroke::Char('b'),
         action: AddKeyAction::AddBar,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('n'),
+        stroke: KeyStroke::Char('n'),
         action: AddKeyAction::AddNearbyNote,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('.')),
+        stroke: KeyStroke::Symbol('.'),
         action: AddKeyAction::AddRest,
     },
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('-')),
+        stroke: KeyStroke::Symbol('-'),
         action: AddKeyAction::AddSustain,
     },
 ];
@@ -435,9 +438,12 @@ impl TrackInitKeySpec {
 }
 
 fn parse_track_init_key(key: KeyEvent) -> Option<TrackInitKeySpec> {
-    match key.code {
-        KeyCode::Esc => Some(TrackInitKeySpec::Cancel),
-        KeyCode::Char(ch) => match ch.to_ascii_lowercase() {
+    if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
+        return Some(TrackInitKeySpec::Cancel);
+    }
+
+    match normalized_key_stroke(&key) {
+        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => match ch {
             'p' => Some(TrackInitKeySpec::Pc),
             'b' => Some(TrackInitKeySpec::Bank),
             'c' => Some(TrackInitKeySpec::Cc),

@@ -1,7 +1,8 @@
 use super::input::PendingInput;
+use super::keystroke::{lookup_key_action, KeyBinding, KeyStroke};
 use super::selection::{bar_spans_in_line, char_range, StudioSelection};
 use super::settings::parse_track_header_channel;
-use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
+use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use ratatui_textarea::CursorMove;
@@ -16,19 +17,19 @@ enum TemplateMacroKeyAction {
 
 const TEMPLATE_MACRO_KEY_BINDINGS: &[KeyBinding<TemplateMacroKeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: TemplateMacroKeyAction::Cancel,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('a'),
+        stroke: KeyStroke::Char('a'),
         action: TemplateMacroKeyAction::InsertArp,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('r'),
+        stroke: KeyStroke::Char('r'),
         action: TemplateMacroKeyAction::InsertRev,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('s'),
+        stroke: KeyStroke::Char('s'),
         action: TemplateMacroKeyAction::InsertStrum,
     },
 ];

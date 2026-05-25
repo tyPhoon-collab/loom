@@ -1,4 +1,5 @@
 use super::input::{NoteInputMode, PendingInput, NOTE_HELP, PREVIEW_NOTE_HELP};
+use super::keystroke::{key_stroke_matches, normalized_key_stroke, KeyStroke};
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
@@ -137,18 +138,18 @@ impl StudioApp {
             return Ok(());
         }
 
-        match key.code {
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+        match note_keyboard_action(&self.note_keyboard, &key) {
+            Some(NoteKeyboardAction::OctaveDown) => {
                 self.adjust_note_keyboard_octave(-1);
                 self.begin_pending_input(pending);
                 return Ok(());
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+            Some(NoteKeyboardAction::OctaveUp) => {
                 self.adjust_note_keyboard_octave(1);
                 self.begin_pending_input(pending);
                 return Ok(());
             }
-            _ => {}
+            None => {}
         }
 
         let Some(ch) = preview_key_char(&key) else {
@@ -215,40 +216,49 @@ impl StudioApp {
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Note(mode);
 
-        match key.code {
-            KeyCode::Char(' ') if matches!(mode, NoteInputMode::Continuous) => {
+        match normalized_key_stroke(&key) {
+            Some(KeyStroke::Char(' ')) if matches!(mode, NoteInputMode::Continuous) => {
                 self.skip_current_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::Tab if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::Tab)) if matches!(mode, NoteInputMode::Continuous) => {
                 self.subdivide_current_unit()?;
                 self.resume_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::BackTab if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::BackTab))
+                if matches!(mode, NoteInputMode::Continuous) =>
+            {
                 self.shrink_current_editable_group()?;
                 self.resume_continuous_input(pending);
                 return Ok(());
             }
-            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
+            Some(KeyStroke::Code(KeyCode::Backspace))
+                if matches!(mode, NoteInputMode::Continuous) =>
+            {
                 self.handle_continuous_input_undo(pending)?;
                 return Ok(());
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+            Some(KeyStroke::Char(_)) | Some(KeyStroke::ShiftChar(_)) => {}
+            _ => {}
+        }
+
+        match note_keyboard_action(&self.note_keyboard, &key) {
+            Some(NoteKeyboardAction::OctaveDown) => {
                 self.adjust_note_keyboard_octave(-1);
                 if pending.is_continuous() {
                     self.resume_continuous_input(pending);
                 }
                 return Ok(());
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+            Some(NoteKeyboardAction::OctaveUp) => {
                 self.adjust_note_keyboard_octave(1);
                 if pending.is_continuous() {
                     self.resume_continuous_input(pending);
                 }
                 return Ok(());
             }
-            _ => {}
+            None => {}
         }
 
         match self.note_key_input(key) {
@@ -276,16 +286,16 @@ impl StudioApp {
     }
 
     pub(super) fn handle_select_note_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_down(ch) => {
+        match note_keyboard_action(&self.note_keyboard, &key) {
+            Some(NoteKeyboardAction::OctaveDown) => {
                 self.adjust_note_keyboard_octave(-1);
                 return Ok(());
             }
-            KeyCode::Char(ch) if self.note_keyboard.is_octave_up(ch) => {
+            Some(NoteKeyboardAction::OctaveUp) => {
                 self.adjust_note_keyboard_octave(1);
                 return Ok(());
             }
-            _ => {}
+            None => {}
         }
 
         match self.note_key_input(key) {
@@ -314,9 +324,15 @@ impl StudioApp {
 }
 
 fn note_key_input_for_key(keyboard: &NoteKeyboard, octave: i32, key: KeyEvent) -> NoteKeyInput {
-    match key.code {
-        KeyCode::Esc => NoteKeyInput::Cancel,
-        KeyCode::Char(ch) => keyboard
+    if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
+        return NoteKeyInput::Cancel;
+    }
+
+    match normalized_key_stroke(&key) {
+        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => keyboard
+            .token(ch, octave)
+            .map_or(NoteKeyInput::Unknown, NoteKeyInput::Token),
+        Some(KeyStroke::Symbol(ch)) => keyboard
             .token(ch, octave)
             .map_or(NoteKeyInput::Unknown, NoteKeyInput::Token),
         _ => NoteKeyInput::Unknown,
@@ -334,8 +350,30 @@ fn preview_action(input: NoteKeyInput) -> Option<PreviewAction> {
 }
 
 fn preview_key_char(key: &KeyEvent) -> Option<char> {
-    match key.code {
-        KeyCode::Char(ch) => Some(ch.to_ascii_lowercase()),
+    match normalized_key_stroke(key) {
+        Some(KeyStroke::Char(ch))
+        | Some(KeyStroke::ShiftChar(ch))
+        | Some(KeyStroke::Symbol(ch)) => Some(ch),
+        _ => None,
+    }
+}
+
+enum NoteKeyboardAction {
+    OctaveDown,
+    OctaveUp,
+}
+
+fn note_keyboard_action(keyboard: &NoteKeyboard, key: &KeyEvent) -> Option<NoteKeyboardAction> {
+    match normalized_key_stroke(key) {
+        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => {
+            if keyboard.is_octave_down(ch) {
+                Some(NoteKeyboardAction::OctaveDown)
+            } else if keyboard.is_octave_up(ch) {
+                Some(NoteKeyboardAction::OctaveUp)
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

@@ -1,9 +1,12 @@
 use super::input::PendingInput;
+use super::keystroke::{
+    key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
+};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, is_seq_line, lane_head_token, replace_char_range,
 };
 use super::settings::{format_track_header, parse_track_header};
-use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
+use super::StudioApp;
 use crate::dsl::token::TrackInitLabel;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
@@ -34,66 +37,66 @@ enum DeleteStructureKeyAction {
 
 const GOTO_KEY_BINDINGS: &[KeyBinding<GotoKeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: GotoKeyAction::Cancel,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('t'),
+        stroke: KeyStroke::Char('t'),
         action: GotoKeyAction::NextTrack,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('t'),
+        stroke: KeyStroke::ShiftChar('t'),
         action: GotoKeyAction::PreviousTrack,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('d'),
+        stroke: KeyStroke::Char('d'),
         action: GotoKeyAction::GotoTemplateDefinition,
     },
 ];
 
 const DELETE_STRUCTURE_KEY_BINDINGS: &[KeyBinding<DeleteStructureKeyAction>] = &[
     KeyBinding {
-        spec: KeySpec::Code(KeyCode::Esc),
+        stroke: KeyStroke::Code(KeyCode::Esc),
         action: DeleteStructureKeyAction::Cancel,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('s'),
+        stroke: KeyStroke::Char('s'),
         action: DeleteStructureKeyAction::DeleteSeqLine,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('l'),
+        stroke: KeyStroke::Char('l'),
         action: DeleteStructureKeyAction::DeleteNoteHeadLine,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('t'),
+        stroke: KeyStroke::Char('t'),
         action: DeleteStructureKeyAction::DeleteTrack,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('h'),
+        stroke: KeyStroke::Char('h'),
         action: DeleteStructureKeyAction::DeleteSeparator,
     },
     KeyBinding {
-        spec: KeySpec::ShiftChar('t'),
+        stroke: KeyStroke::ShiftChar('t'),
         action: DeleteStructureKeyAction::DeleteTemplateDefinition,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('b'),
+        stroke: KeyStroke::Char('b'),
         action: DeleteStructureKeyAction::DeleteBar,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('v'),
+        stroke: KeyStroke::Char('v'),
         action: DeleteStructureKeyAction::DeleteVelocityModifier,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('p'),
+        stroke: KeyStroke::Char('p'),
         action: DeleteStructureKeyAction::DeletePitchModifier,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('m'),
+        stroke: KeyStroke::Char('m'),
         action: DeleteStructureKeyAction::BeginDeleteTemplateMacro,
     },
     KeyBinding {
-        spec: KeySpec::PlainChar('i'),
+        stroke: KeyStroke::Char('i'),
         action: DeleteStructureKeyAction::BeginTrackInitDelete,
     },
 ];
@@ -517,9 +520,12 @@ impl TrackInitKeySpec {
 }
 
 fn parse_track_init_key(key: KeyEvent) -> Option<TrackInitKeySpec> {
-    match key.code {
-        KeyCode::Esc => Some(TrackInitKeySpec::Cancel),
-        KeyCode::Char(ch) => match ch.to_ascii_lowercase() {
+    if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
+        return Some(TrackInitKeySpec::Cancel);
+    }
+
+    match normalized_key_stroke(&key) {
+        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => match ch {
             'p' => Some(TrackInitKeySpec::Pc),
             'b' => Some(TrackInitKeySpec::Bank),
             'c' => Some(TrackInitKeySpec::Cc),
