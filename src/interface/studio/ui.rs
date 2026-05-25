@@ -1,5 +1,4 @@
 use super::input::PendingInput;
-use super::selection::StudioSelection;
 use super::settings::parse_track_header;
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
@@ -10,33 +9,43 @@ use ratatui::{
 
 const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save  f format  q quit";
 const FOOTER_NORMAL_HELP: &str =
-    "Normal: a add  g goto  P preview  n/N note  o/O onset  v/V/b/B select";
+    "Normal: n/N note  o/O onset  v/V/b/B select  x delete-unit  s/S grid";
+const FOOTER_NORMAL_PREFIX_HELP: &str = "Prefix: a add  g goto  P preview  D delete";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
 const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x delete  d duplicate";
-const FOOTER_NORMAL_TRACK_CONTEXT: &str =
-    "Context: m mute  M solo  X clear-all  a i init-add  D s/l/t/h/T/b/v/p/m/i delete";
-const FOOTER_NORMAL_TEMPLATE_CONTEXT: &str =
-    "Context: g d goto-template  a m add-macro  +/-/[] transpose  </> repeat  {} time-scale  ,/. unit";
-const FOOTER_NORMAL_EDIT_CONTEXT: &str =
-    "Context: x delete-unit  s/S subdivide-shrink  ,/. unit  </> bar";
-const FOOTER_SELECT_BAR_CONTEXT: &str = "Context: Enter loop-range  T template  +/- transpose";
-const FOOTER_SELECT_LINE_CONTEXT: &str = "Context: +/- transpose  vertical selection";
-const FOOTER_SELECT_TOKEN_CONTEXT: &str = "Context: s/S group edit  +/- transpose";
-const FOOTER_SELECT_TEMPLATE_CONTEXT: &str =
-    "Context: x delete  d duplicate  g d goto-template  +/-/[] transpose  </> repeat  {} time-scale";
-const FOOTER_SELECT_EMPTY_CONTEXT: &str = "Context: Esc normal";
+const FOOTER_SELECT_DETAIL_HELP: &str =
+    "Select+: s/S group  +/-/[] transpose  Enter loop-range  T template";
 
 const OVERLAY_GLOBAL_LINES: &[&str] = &[
     "? toggle help overlay",
     "space play/pause  r restart  w save  f format  q quit  Q force quit",
 ];
-const OVERLAY_NORMAL_LINES: &[&str] = &[
-    "i insert  a add  g goto  P preview  n/N note  o/O onset",
-    "v/V/b/B select  x delete-unit  s subdivide  S shrink",
-    ",/. unit-nav  </> bar-nav  +/-/[] transpose",
-    "m mute-track  M solo-track  X clear-all-track-flags  a i init-add  D s/l/t/h/T/b/v/p/m/i delete",
-    "template call: g d goto-definition  a m then a/r/s adds arp/rev/strum  +/-/[] transpose  </> repeat  {} time-scale",
-    "L toggle-loop  Ctrl-L clear-loop",
+const OVERLAY_NORMAL_TRANSPORT_LINES: &[&str] =
+    &["space play/pause  r restart  w save  f format  q quit  Q force quit"];
+const OVERLAY_NORMAL_NAVIGATION_LINES: &[&str] = &["hjkl/arrows move  ,/. unit-nav  </> bar-nav"];
+const OVERLAY_NORMAL_ENTRY_LINES: &[&str] = &[
+    "i insert  P preview  n/N note  o/O onset",
+    "x delete-unit  s subdivide  S shrink  +/-/[] transpose",
+];
+const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line-bars"];
+const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
+    &["a add  D delete  g goto  L toggle-loop  Ctrl-L clear-loop"];
+const OVERLAY_ADD_LINES: &[&str] = &[
+    "s seq  l lane  t track  h separator  T template  b bar",
+    "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
+];
+const OVERLAY_DELETE_LINES: &[&str] = &[
+    "s seq  l lane  t track  h separator  T template  b bar",
+    "v velocity  p pitch  i init  m macro",
+];
+const OVERLAY_INIT_LINES: &[&str] = &[
+    "p pc  b bank  c cc  n pan",
+    "v volume  e expression  m mod  s sustain",
+];
+const OVERLAY_TEMPLATE_CALL_LINES: &[&str] = &[
+    "g d goto-definition",
+    "a m then a/r/s adds arp/rev/strum",
+    "+/-/[] transpose  </> repeat  {} time-scale",
 ];
 const OVERLAY_INSERT_LINES: &[&str] = &[
     "type to edit source directly",
@@ -60,7 +69,7 @@ impl StudioApp {
                 [
                     Constraint::Min(8),
                     Constraint::Length(7),
-                    Constraint::Length(4),
+                    Constraint::Length(6),
                 ]
                 .as_ref(),
             )
@@ -134,51 +143,18 @@ impl StudioApp {
 
     fn footer_help_text(&self) -> String {
         let detail = match self.input_state.pending() {
-            Some(pending) => format!("Pending: {}", pending.prompt(self.note_keyboard_octave)),
+            Some(pending) => format!("Pending:\n{}", pending.prompt(self.note_keyboard_octave)),
             None => match self.mode {
                 StudioMode::Normal => {
-                    format!("{}  {}", FOOTER_NORMAL_HELP, self.normal_context_help())
+                    format!("{}\n{}", FOOTER_NORMAL_HELP, FOOTER_NORMAL_PREFIX_HELP)
                 }
                 StudioMode::Insert => FOOTER_INSERT_HELP.to_string(),
                 StudioMode::Select => {
-                    format!("{}  {}", FOOTER_SELECT_HELP, self.select_context_help())
+                    format!("{}\n{}", FOOTER_SELECT_HELP, FOOTER_SELECT_DETAIL_HELP)
                 }
             },
         };
         format!("{}\n{}", FOOTER_GLOBAL_HELP, detail)
-    }
-
-    fn normal_context_help(&self) -> &'static str {
-        let cursor = self.textarea.cursor();
-        if self
-            .textarea
-            .lines()
-            .get(cursor.0)
-            .and_then(|line| parse_track_header(line))
-            .is_some()
-        {
-            FOOTER_NORMAL_TRACK_CONTEXT
-        } else if self.current_template_call_at_cursor().is_some() {
-            FOOTER_NORMAL_TEMPLATE_CONTEXT
-        } else {
-            FOOTER_NORMAL_EDIT_CONTEXT
-        }
-    }
-
-    fn select_context_help(&self) -> &'static str {
-        match self.selection {
-            Some(StudioSelection::Bar { .. } | StudioSelection::BarRange { .. }) => {
-                FOOTER_SELECT_BAR_CONTEXT
-            }
-            Some(StudioSelection::LineRange { .. }) => FOOTER_SELECT_LINE_CONTEXT,
-            Some(
-                StudioSelection::TemplateCall { .. } | StudioSelection::TemplateCallRange { .. },
-            ) => FOOTER_SELECT_TEMPLATE_CONTEXT,
-            Some(StudioSelection::Unit { .. } | StudioSelection::UnitRange { .. }) => {
-                FOOTER_SELECT_TOKEN_CONTEXT
-            }
-            None => FOOTER_SELECT_EMPTY_CONTEXT,
-        }
     }
 
     fn render_help_overlay(&self, f: &mut ratatui::Frame) {
@@ -201,7 +177,7 @@ impl StudioApp {
         if let Some(pending) = self.input_state.pending() {
             push_blank_line(&mut sections);
             sections.push("Pending".to_string());
-            sections.push(format!("  {}", pending.help_text()));
+            sections.extend(indent_lines(pending.help_text()));
             if matches!(pending, PendingInput::PreviewNote | PendingInput::Note(_)) {
                 sections.push(format!("  current octave {}", self.note_keyboard_octave));
             }
@@ -211,7 +187,32 @@ impl StudioApp {
         }
 
         match self.mode {
-            StudioMode::Normal => push_help_section(&mut sections, "Normal", OVERLAY_NORMAL_LINES),
+            StudioMode::Normal => {
+                push_help_section(&mut sections, "Transport", OVERLAY_NORMAL_TRANSPORT_LINES);
+                push_help_section(&mut sections, "Navigation", OVERLAY_NORMAL_NAVIGATION_LINES);
+                push_help_section(&mut sections, "Entry", OVERLAY_NORMAL_ENTRY_LINES);
+                push_help_section(&mut sections, "Selection", OVERLAY_NORMAL_SELECTION_LINES);
+                push_help_section(&mut sections, "Prefix", OVERLAY_NORMAL_PREFIX_LINES);
+                push_help_section(&mut sections, "Add", OVERLAY_ADD_LINES);
+                push_help_section(&mut sections, "Delete", OVERLAY_DELETE_LINES);
+                push_help_section(&mut sections, "Init", OVERLAY_INIT_LINES);
+                if self.current_template_call_at_cursor().is_some() {
+                    push_help_section(&mut sections, "Template Call", OVERLAY_TEMPLATE_CALL_LINES);
+                }
+                if self
+                    .textarea
+                    .lines()
+                    .get(self.textarea.cursor().0)
+                    .and_then(|line| parse_track_header(line))
+                    .is_some()
+                {
+                    push_help_section(
+                        &mut sections,
+                        "Track Header",
+                        &["m mute-track  M solo-track  X clear-all-track-flags"],
+                    );
+                }
+            }
             StudioMode::Insert => push_help_section(&mut sections, "Insert", OVERLAY_INSERT_LINES),
             StudioMode::Select => push_help_section(&mut sections, "Select", OVERLAY_SELECT_LINES),
         }
@@ -246,6 +247,10 @@ fn push_help_section(lines: &mut Vec<String>, title: &str, section_lines: &[&str
     push_blank_line(lines);
     lines.push(title.to_string());
     lines.extend(section_lines.iter().map(|line| format!("  {}", line)));
+}
+
+fn indent_lines(text: &str) -> Vec<String> {
+    text.lines().map(|line| format!("  {}", line)).collect()
 }
 
 fn centered_rect(horizontal_percent: u16, vertical_percent: u16, area: Rect) -> Rect {

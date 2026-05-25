@@ -53,7 +53,6 @@ enum CompileStatus {
 
 #[derive(Clone, Copy, Debug)]
 enum KeyAction {
-    ShowHelp(&'static str),
     Quit,
     ForceQuit,
     EnterInsertMode,
@@ -106,10 +105,6 @@ struct KeyBinding<T> {
 }
 
 const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
-    KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('?')),
-        action: KeyAction::ShowHelp("Normal help"),
-    },
     KeyBinding {
         spec: KeySpec::PlainChar('q'),
         action: KeyAction::Quit,
@@ -232,10 +227,6 @@ const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
         spec: KeySpec::Code(KeyCode::Esc),
         action: KeyAction::ExitSelectMode,
-    },
-    KeyBinding {
-        spec: KeySpec::Code(KeyCode::Char('?')),
-        action: KeyAction::ShowHelp("Select help"),
     },
     KeyBinding {
         spec: KeySpec::PlainChar('n'),
@@ -473,23 +464,32 @@ impl StudioApp {
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         if self.show_help_overlay {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('?') => {
-                    self.show_help_overlay = false;
-                    self.status_message = format!(
-                        "{} help closed",
-                        match self.mode {
-                            StudioMode::Normal => "Normal",
-                            StudioMode::Insert => "Insert",
-                            StudioMode::Select => "Select",
-                        }
-                    );
-                    return Ok(());
-                }
-                _ => {
-                    self.show_help_overlay = false;
-                }
+            if key.code == KeyCode::Esc || is_help_key(&key) {
+                self.show_help_overlay = false;
+                self.status_message = format!(
+                    "{} help closed",
+                    match self.mode {
+                        StudioMode::Normal => "Normal",
+                        StudioMode::Insert => "Insert",
+                        StudioMode::Select => "Select",
+                    }
+                );
+                return Ok(());
             }
+            self.show_help_overlay = false;
+        }
+
+        if is_help_key(&key) {
+            self.show_help_overlay = true;
+            self.status_message = format!(
+                "{} help",
+                match self.mode {
+                    StudioMode::Normal => "Normal",
+                    StudioMode::Insert => "Insert",
+                    StudioMode::Select => "Select",
+                }
+            );
+            return Ok(());
         }
 
         match self.mode {
@@ -726,10 +726,6 @@ impl StudioApp {
 
     fn execute_key_action(&mut self, action: KeyAction) -> Result<()> {
         match action {
-            KeyAction::ShowHelp(message) => {
-                self.show_help_overlay = true;
-                self.status_message = message.into();
-            }
             KeyAction::Quit => {
                 if self.dirty {
                     self.status_message = "Unsaved changes. Press w to save or Q to quit.".into();
@@ -859,12 +855,6 @@ impl StudioApp {
     }
 
     fn handle_insert_key(&mut self, key: KeyEvent) -> Result<()> {
-        if key.code == KeyCode::Char('?') {
-            self.show_help_overlay = true;
-            self.status_message = "Insert help".into();
-            return Ok(());
-        }
-
         if key.code == KeyCode::Esc {
             self.mode = StudioMode::Normal;
             self.compile_and_update_current_source()?;
@@ -889,6 +879,11 @@ impl StudioApp {
 
 pub(super) fn is_plain_char(key: &KeyEvent, ch: char) -> bool {
     key_spec_matches(KeySpec::PlainChar(ch), key)
+}
+
+fn is_help_key(key: &KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Char('?'))
+        || (matches!(key.code, KeyCode::Char('/')) && key.modifiers.contains(KeyModifiers::SHIFT))
 }
 
 fn lookup_key_action<T: Copy>(bindings: &[KeyBinding<T>], key: &KeyEvent) -> Option<T> {

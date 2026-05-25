@@ -1,9 +1,9 @@
 pub(super) const ADD_HELP: &str =
-    "Add: s seq | l note-head | t track | h separator | T template | b bar | d drums | v velocity-mod | p pitch-mod | m template-macro | i init | n note | . rest | - sustain";
+    "Add\n  s seq  l lane  t track  h separator  T template  b bar\n  d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain";
 pub(super) const GOTO_HELP: &str =
     "Goto: t next track | T previous track | d template definition | Esc cancel";
 pub(super) const DELETE_HELP: &str =
-    "Delete: s seq | l note-head | t track | h separator | T template | b bar | v velocity-mod | p pitch-mod | m template-macro | i init | Esc cancel";
+    "Delete\n  s seq  l lane  t track  h separator  T template  b bar\n  v velocity  p pitch  i init  m macro";
 pub(super) const NOTE_HELP: &str =
     "Note: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
@@ -15,9 +15,9 @@ pub(super) const CONTINUOUS_ONSET_HELP: &str =
     "Onset*: x note-on | Space skip | . rest | - sustain | t toggle | Tab subdivide | S-Tab shrink | Backspace undo | Esc cancel";
 pub(super) const TEMPLATE_MACRO_HELP: &str = "Template macro: a arp | r rev | s strum | Esc cancel";
 pub(super) const TRACK_INIT_ADD_HELP: &str =
-    "Init add: p pc | b bank | c cc | n pan | v volume | e expression | m mod | s sustain | Esc cancel";
+    "Init add\n  p pc  b bank  c cc  n pan\n  v volume  e expression  m mod  s sustain";
 pub(super) const TRACK_INIT_DELETE_HELP: &str =
-    "Init delete: p pc | b bank | c cc | n pan | v volume | e expression | m mod | s sustain | Esc cancel";
+    "Init delete\n  p pc  b bank  c cc  n pan\n  v volume  e expression  m mod  s sustain";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum NoteInputMode {
