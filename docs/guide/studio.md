@@ -136,9 +136,10 @@ Note entry is the fastest way to place notes in `seq` lines.
 - `P` enters preview-only audition using the same keyboard mapping without editing source
 - `n` places one unit
 - `N` keeps advancing to the next unit
-- during `N`, `Tab` subdivides the current unit and `Shift-Tab` shrinks the current bracket group
+- during `N`, `Space` skips to the next unit without writing, `Tab` subdivides the current unit, and `Shift-Tab` shrinks the current bracket group
+- during `O`, `Space` skips to the next unit without writing, `Tab` subdivides the current unit, and `Shift-Tab` shrinks the current bracket group
 - `Esc` exits note entry
-- `Backspace` undoes the last step in continuous note entry
+- `Backspace` undoes the last step in continuous `N` / `O` entry
 - during `P`, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
 - during `P`, octave changes still work and `.` / `-` stay silent
 
@@ -202,6 +203,7 @@ Onset editing for note-head and drum-lane rhythm bodies:
 - `o -` sustain
 - `o t` toggle between note-on and rest
 - `O` repeats the same workflow continuously
+- during `O`, `Space` skips ahead, `Tab` subdivides, `Shift-Tab` shrinks, and `Backspace` undoes the last step
 
 ## Track Operations
 

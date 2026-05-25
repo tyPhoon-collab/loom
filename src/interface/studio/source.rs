@@ -96,7 +96,6 @@ impl StudioApp {
 
         if let Some(token) = self.unit_at_or_after_cursor(desired_cursor.0, desired_cursor.1) {
             self.focus_unit_cursor(&token);
-            self.last_continuous_edit_cursor = Some((token.row, token.start_col));
         } else {
             let row = desired_cursor
                 .0
@@ -104,7 +103,6 @@ impl StudioApp {
             let col = desired_cursor.1.min(self.line_len(row));
             self.textarea
                 .move_cursor(CursorMove::Jump(row as u16, col as u16));
-            self.last_continuous_edit_cursor = Some((row, col));
         }
 
         Ok(true)

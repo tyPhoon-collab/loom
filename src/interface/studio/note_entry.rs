@@ -216,6 +216,10 @@ impl StudioApp {
         let pending = PendingInput::Note(mode);
 
         match key.code {
+            KeyCode::Char(' ') if matches!(mode, NoteInputMode::Continuous) => {
+                self.skip_current_continuous_input(pending);
+                return Ok(());
+            }
             KeyCode::Tab if matches!(mode, NoteInputMode::Continuous) => {
                 self.subdivide_current_unit()?;
                 self.resume_continuous_input(pending);
@@ -305,14 +309,17 @@ impl StudioApp {
     }
 
     fn note_key_input(&self, key: KeyEvent) -> NoteKeyInput {
-        match key.code {
-            KeyCode::Esc => NoteKeyInput::Cancel,
-            KeyCode::Char(ch) => self
-                .note_keyboard
-                .token(ch, self.note_keyboard_octave)
-                .map_or(NoteKeyInput::Unknown, NoteKeyInput::Token),
-            _ => NoteKeyInput::Unknown,
-        }
+        note_key_input_for_key(&self.note_keyboard, self.note_keyboard_octave, key)
+    }
+}
+
+fn note_key_input_for_key(keyboard: &NoteKeyboard, octave: i32, key: KeyEvent) -> NoteKeyInput {
+    match key.code {
+        KeyCode::Esc => NoteKeyInput::Cancel,
+        KeyCode::Char(ch) => keyboard
+            .token(ch, octave)
+            .map_or(NoteKeyInput::Unknown, NoteKeyInput::Token),
+        _ => NoteKeyInput::Unknown,
     }
 }
 
@@ -379,8 +386,8 @@ fn is_note_name(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_note_binding, preview_action, preview_key_char, NoteKeyInput, NoteKeyboard,
-        PreviewAction, MAX_KEYBOARD_OCTAVE,
+        note_key_input_for_key, parse_note_binding, preview_action, preview_key_char, NoteKeyInput,
+        NoteKeyboard, PreviewAction, MAX_KEYBOARD_OCTAVE,
     };
     use crate::config::NoteKeyboardConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -407,6 +414,23 @@ mod tests {
         let keyboard = NoteKeyboard::default();
 
         assert_eq!(keyboard.token('A', 3).as_deref(), Some("C3"));
+    }
+
+    #[test]
+    fn keyboard_note_does_not_treat_space_as_note_input() {
+        let keyboard = NoteKeyboard::default();
+        let input = note_key_input_for_key(
+            &keyboard,
+            4,
+            KeyEvent {
+                code: KeyCode::Char(' '),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            },
+        );
+
+        assert!(matches!(input, NoteKeyInput::Unknown));
     }
 
     #[test]

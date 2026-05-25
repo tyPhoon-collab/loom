@@ -355,7 +355,7 @@ pub struct StudioApp {
     textarea_viewport: selection_view::TextAreaViewport,
     selection: Option<StudioSelection>,
     source_undo_stack: Vec<SourceUndoEntry>,
-    last_continuous_edit_cursor: Option<(usize, usize)>,
+    continuous_input_history: Vec<ContinuousInputStep>,
     active_preview_keys: HashMap<char, ActivePreviewNote>,
     player: LivePlayer,
 }
@@ -364,6 +364,12 @@ pub struct StudioApp {
 struct SourceUndoEntry {
     source: String,
     cursor: (usize, usize),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ContinuousInputStep {
+    Edit((usize, usize)),
+    Skip((usize, usize)),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -418,7 +424,7 @@ impl StudioApp {
             textarea_viewport: selection_view::TextAreaViewport::default(),
             selection: None,
             source_undo_stack: Vec::new(),
-            last_continuous_edit_cursor: None,
+            continuous_input_history: Vec::new(),
             active_preview_keys: HashMap::new(),
             player,
         };
@@ -494,6 +500,9 @@ impl StudioApp {
     }
 
     fn begin_pending_input(&mut self, pending: PendingInput) {
+        if pending.is_continuous() {
+            self.continuous_input_history.clear();
+        }
         self.input_state.begin(pending);
         self.status_message = pending.prompt(self.note_keyboard_octave);
     }
@@ -506,9 +515,17 @@ impl StudioApp {
         self.status_message = pending.prompt(self.note_keyboard_octave);
     }
 
+    fn record_continuous_step(&mut self, step: ContinuousInputStep) {
+        const MAX_CONTINUOUS_INPUT_HISTORY: usize = 128;
+        self.continuous_input_history.push(step);
+        if self.continuous_input_history.len() > MAX_CONTINUOUS_INPUT_HISTORY {
+            self.continuous_input_history.remove(0);
+        }
+    }
+
     fn record_continuous_edit_cursor(&mut self) {
         let cursor = self.textarea.cursor();
-        self.last_continuous_edit_cursor = Some((cursor.0, cursor.1));
+        self.record_continuous_step(ContinuousInputStep::Edit((cursor.0, cursor.1)));
     }
 
     fn advance_after_continuous_edit(&mut self, pending: PendingInput) {
@@ -523,16 +540,41 @@ impl StudioApp {
         self.resume_continuous_input(pending);
     }
 
+    fn skip_current_continuous_input(&mut self, pending: PendingInput) {
+        if !pending.is_continuous() {
+            return;
+        }
+        let cursor = self.textarea.cursor();
+        self.record_continuous_step(ContinuousInputStep::Skip((cursor.0, cursor.1)));
+        if let Some(next) = self.adjacent_unit(1, cursor.0, cursor.1) {
+            self.focus_unit_cursor(&next);
+        }
+        self.resume_continuous_input(pending);
+    }
+
     fn handle_continuous_input_undo(&mut self, pending: PendingInput) -> Result<bool> {
         if !pending.is_continuous() {
             return Ok(false);
         }
 
-        let target = self.last_continuous_edit_cursor.unwrap_or_else(|| {
-            let cursor = self.textarea.cursor();
-            (cursor.0, cursor.1)
-        });
-        let undone = self.undo_last_source_edit_to(target)?;
+        let Some(step) = self.continuous_input_history.pop() else {
+            self.input_state.begin(pending);
+            self.status_message = "Nothing to undo".into();
+            return Ok(false);
+        };
+
+        let undone = match step {
+            ContinuousInputStep::Edit(target) => self.undo_last_source_edit_to(target)?,
+            ContinuousInputStep::Skip(target) => {
+                if let Some(token) = self.unit_at_or_after_cursor(target.0, target.1) {
+                    self.focus_unit_cursor(&token);
+                } else {
+                    self.textarea
+                        .move_cursor(CursorMove::Jump(target.0 as u16, target.1 as u16));
+                }
+                true
+            }
+        };
         self.input_state.begin(pending);
         self.status_message = if undone {
             pending.prompt(self.note_keyboard_octave)

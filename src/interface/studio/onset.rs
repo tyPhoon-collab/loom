@@ -53,6 +53,28 @@ impl StudioApp {
     pub(super) fn handle_onset_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Onset(mode);
 
+        match key.code {
+            KeyCode::Char(' ') if matches!(mode, NoteInputMode::Continuous) => {
+                self.skip_current_continuous_input(pending);
+                return Ok(());
+            }
+            KeyCode::Tab if matches!(mode, NoteInputMode::Continuous) => {
+                self.subdivide_current_unit()?;
+                self.resume_continuous_input(pending);
+                return Ok(());
+            }
+            KeyCode::BackTab if matches!(mode, NoteInputMode::Continuous) => {
+                self.shrink_current_editable_group()?;
+                self.resume_continuous_input(pending);
+                return Ok(());
+            }
+            KeyCode::Backspace if matches!(mode, NoteInputMode::Continuous) => {
+                self.handle_continuous_input_undo(pending)?;
+                return Ok(());
+            }
+            _ => {}
+        }
+
         let Some(action) = lookup_key_action(ONSET_KEY_BINDINGS, &key) else {
             self.status_message = pending.unknown_message();
             if pending.is_continuous() {
