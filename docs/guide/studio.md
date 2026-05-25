@@ -216,7 +216,15 @@ Studio can edit track header flags directly:
 | `m` | toggle current track mute flag `x` |
 | `M` | toggle current track solo flag `s` |
 | `X` | clear all track `s` / `x` flags |
+| `D s` | delete current `seq` line |
+| `D l` | delete current note-head or drum lane line |
 | `D t` | delete current track |
+| `D h` | delete current `---` separator line |
+| `D T` | delete current template definition block |
+| `D b` | delete current bar on the line |
+| `D v` | delete current velocity modifier line |
+| `D p` | delete current pitch modifier line |
+| `D m` | delete `arp` / `rev` / `strum` from the template call under cursor |
 
 Track header formatting is kept canonical:
 
