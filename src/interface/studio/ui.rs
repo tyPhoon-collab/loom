@@ -14,7 +14,7 @@ const FOOTER_NORMAL_HELP: &str =
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
 const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x delete  d duplicate";
 const FOOTER_NORMAL_TRACK_CONTEXT: &str =
-    "Context: m mute  M solo  X clear-all  D s/l/t/h/T/b/v/p/m delete";
+    "Context: m mute  M solo  X clear-all  a i init-add  D s/l/t/h/T/b/v/p/m/i delete";
 const FOOTER_NORMAL_TEMPLATE_CONTEXT: &str =
     "Context: g d goto-template  a m add-macro  +/-/[] transpose  </> repeat  {} time-scale  ,/. unit";
 const FOOTER_NORMAL_EDIT_CONTEXT: &str =
@@ -34,7 +34,7 @@ const OVERLAY_NORMAL_LINES: &[&str] = &[
     "i insert  a add  g goto  P preview  n/N note  o/O onset",
     "v/V/b/B select  x delete-unit  s subdivide  S shrink",
     ",/. unit-nav  </> bar-nav  +/-/[] transpose",
-    "m mute-track  M solo-track  X clear-all-track-flags  D s/l/t/h/T/b/v/p/m delete",
+    "m mute-track  M solo-track  X clear-all-track-flags  a i init-add  D s/l/t/h/T/b/v/p/m/i delete",
     "template call: g d goto-definition  a m then a/r/s adds arp/rev/strum  +/-/[] transpose  </> repeat  {} time-scale",
     "L toggle-loop  Ctrl-L clear-loop",
 ];

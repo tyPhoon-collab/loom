@@ -658,6 +658,8 @@ impl StudioApp {
             PendingInput::Goto => self.handle_goto_key(key),
             PendingInput::DeleteStructure => self.handle_delete_structure_key(key),
             PendingInput::TemplateMacro => self.handle_template_macro_key(key),
+            PendingInput::TrackInitAdd => self.handle_track_init_add_key(key),
+            PendingInput::TrackInitDelete => self.handle_track_init_delete_key(key),
             PendingInput::PreviewNote => self.handle_preview_note_key(key),
             PendingInput::Note(mode) => self.handle_note_key(mode, key),
             PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
@@ -673,9 +675,10 @@ impl StudioApp {
                 PendingInput::Goto | PendingInput::DeleteStructure => {
                     self.handle_pending_input(pending, key)
                 }
-                PendingInput::Add | PendingInput::TemplateMacro => {
-                    self.handle_pending_input(pending, key)
-                }
+                PendingInput::Add
+                | PendingInput::TemplateMacro
+                | PendingInput::TrackInitAdd
+                | PendingInput::TrackInitDelete => self.handle_pending_input(pending, key),
             };
         }
 

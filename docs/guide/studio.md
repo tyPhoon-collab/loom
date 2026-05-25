@@ -181,6 +181,7 @@ Useful add commands:
 | `a d` | add the default drum preset |
 | `a v` | add a velocity modifier line for the current pattern block |
 | `a p` | add a pitch modifier line for the current pattern block |
+| `a i` then `p` / `b` / `c` / `n` / `v` / `e` / `m` / `s` | add `## pc` / `bank` / `cc` / `pan` / `volume` / `expression` / `mod` / `sustain` |
 | `a m` then `a` / `r` / `s` | add `arp` / `rev` / `strum` to the template call under cursor |
 | `a n` | place a nearby or default note into the current `seq` slot |
 | `a .` | place rest in the current `seq` slot |
@@ -225,6 +226,7 @@ Studio can edit track header flags directly:
 | `D v` | delete current velocity modifier line |
 | `D p` | delete current pitch modifier line |
 | `D m` | delete `arp` / `rev` / `strum` from the template call under cursor |
+| `D i` then `p` / `b` / `c` / `n` / `v` / `e` / `m` / `s` | delete `## pc` / `bank` / `cc` / `pan` / `volume` / `expression` / `mod` / `sustain` |
 
 Track header formatting is kept canonical:
 

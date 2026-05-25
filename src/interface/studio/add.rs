@@ -4,7 +4,8 @@ use super::selection::{
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
-use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
+use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp, StudioMode};
+use crate::dsl::token::TrackInitLabel;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 
@@ -23,6 +24,7 @@ enum AddKeyAction {
     AddVelocityModifier,
     AddPitchModifier,
     BeginTemplateMacro,
+    BeginTrackInitAdd,
     AddTemplateDefinition,
     AddBar,
     AddNearbyNote,
@@ -66,6 +68,10 @@ const ADD_KEY_BINDINGS: &[KeyBinding<AddKeyAction>] = &[
     KeyBinding {
         spec: KeySpec::PlainChar('m'),
         action: AddKeyAction::BeginTemplateMacro,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('i'),
+        action: AddKeyAction::BeginTrackInitAdd,
     },
     KeyBinding {
         spec: KeySpec::ShiftChar('t'),
@@ -115,6 +121,9 @@ impl StudioApp {
                         "Template macro add needs the cursor on a template call".into();
                 }
             }
+            AddKeyAction::BeginTrackInitAdd => {
+                self.begin_pending_input(PendingInput::TrackInitAdd);
+            }
             AddKeyAction::AddTemplateDefinition => self.add_template_definition()?,
             AddKeyAction::AddBar => self.add_bar()?,
             AddKeyAction::AddNearbyNote => {
@@ -129,6 +138,20 @@ impl StudioApp {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn handle_track_init_add_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(spec) = parse_track_init_key(key) else {
+            self.status_message = PendingInput::TrackInitAdd.unknown_message();
+            return Ok(());
+        };
+
+        if matches!(spec, TrackInitKeySpec::Cancel) {
+            self.status_message = PendingInput::TrackInitAdd.cancel_message().into();
+            return Ok(());
+        }
+
+        self.add_track_init_line(spec.init_template())
     }
 
     pub(super) fn add_default_drum_lanes(&mut self) -> Result<()> {
@@ -305,6 +328,157 @@ impl StudioApp {
             .map(|note| note.token)
             .unwrap_or_else(|| "C4".to_string())
     }
+
+    fn add_track_init_line(&mut self, template: TrackInitTemplate) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let Some((header_row, insert_row)) = track_init_insert_row(&lines, cursor.0) else {
+            self.status_message = "Track init add needs the cursor inside a track".into();
+            return Ok(());
+        };
+
+        let line = template.line();
+        let cursor_col = template.value_col();
+        lines.insert(insert_row, line);
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row, cursor_col),
+            format!(
+                "Added track init {} on track line {}",
+                template.label,
+                header_row + 1
+            ),
+            None,
+        )?;
+        self.mode = StudioMode::Insert;
+        self.status_message = format!("Added track init {} | Insert mode", template.label);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TrackInitTemplate {
+    label: TrackInitLabel,
+    text: &'static str,
+    value_col: usize,
+}
+
+impl TrackInitTemplate {
+    fn line(self) -> String {
+        format!("## {}", self.text)
+    }
+
+    fn value_col(self) -> usize {
+        self.value_col
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrackInitKeySpec {
+    Cancel,
+    Pc,
+    Bank,
+    Cc,
+    Pan,
+    Volume,
+    Expression,
+    Mod,
+    Sustain,
+}
+
+impl TrackInitKeySpec {
+    fn init_template(self) -> TrackInitTemplate {
+        match self {
+            TrackInitKeySpec::Cancel => unreachable!(),
+            TrackInitKeySpec::Pc => TrackInitTemplate {
+                label: TrackInitLabel::Pc,
+                text: "pc 0",
+                value_col: 6,
+            },
+            TrackInitKeySpec::Bank => TrackInitTemplate {
+                label: TrackInitLabel::Bank,
+                text: "bank 0/0",
+                value_col: 8,
+            },
+            TrackInitKeySpec::Cc => TrackInitTemplate {
+                label: TrackInitLabel::Cc,
+                text: "cc 1 0",
+                value_col: 6,
+            },
+            TrackInitKeySpec::Pan => TrackInitTemplate {
+                label: TrackInitLabel::Pan,
+                text: "pan 64",
+                value_col: 7,
+            },
+            TrackInitKeySpec::Volume => TrackInitTemplate {
+                label: TrackInitLabel::Volume,
+                text: "volume 100",
+                value_col: 10,
+            },
+            TrackInitKeySpec::Expression => TrackInitTemplate {
+                label: TrackInitLabel::Expression,
+                text: "expression 100",
+                value_col: 14,
+            },
+            TrackInitKeySpec::Mod => TrackInitTemplate {
+                label: TrackInitLabel::Mod,
+                text: "mod 0",
+                value_col: 7,
+            },
+            TrackInitKeySpec::Sustain => TrackInitTemplate {
+                label: TrackInitLabel::Sustain,
+                text: "sustain 0",
+                value_col: 11,
+            },
+        }
+    }
+}
+
+fn parse_track_init_key(key: KeyEvent) -> Option<TrackInitKeySpec> {
+    match key.code {
+        KeyCode::Esc => Some(TrackInitKeySpec::Cancel),
+        KeyCode::Char(ch) => match ch.to_ascii_lowercase() {
+            'p' => Some(TrackInitKeySpec::Pc),
+            'b' => Some(TrackInitKeySpec::Bank),
+            'c' => Some(TrackInitKeySpec::Cc),
+            'n' => Some(TrackInitKeySpec::Pan),
+            'v' => Some(TrackInitKeySpec::Volume),
+            'e' => Some(TrackInitKeySpec::Expression),
+            'm' => Some(TrackInitKeySpec::Mod),
+            's' => Some(TrackInitKeySpec::Sustain),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn track_init_insert_row(lines: &[String], cursor_row: usize) -> Option<(usize, usize)> {
+    let header_row = current_track_header_row(lines, cursor_row)?;
+    let mut insert_row = header_row + 1;
+    while insert_row < lines.len() && is_track_init_line(&lines[insert_row]) {
+        insert_row += 1;
+    }
+    Some((header_row, insert_row))
+}
+
+fn current_track_header_row(lines: &[String], cursor_row: usize) -> Option<usize> {
+    (0..=cursor_row)
+        .rev()
+        .find(|&row| {
+            lines
+                .get(row)
+                .and_then(|line| parse_track_header(line))
+                .is_some()
+        })
+        .or_else(|| {
+            lines
+                .iter()
+                .position(|line| parse_track_header(line).is_some())
+        })
+}
+
+fn is_track_init_line(line: &str) -> bool {
+    line.trim_start().starts_with("## ")
 }
 
 fn insert_row_after_cursor(lines: &[String], cursor_row: usize) -> usize {
@@ -503,9 +677,11 @@ fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usi
 #[cfg(test)]
 mod tests {
     use super::{
-        add_rest_bar_to_line, insert_separator_at_row, next_empty_template_name, next_track_header,
-        place_seq_token_at_slot,
+        add_rest_bar_to_line, current_track_header_row, insert_separator_at_row,
+        next_empty_template_name, next_track_header, parse_track_init_key, place_seq_token_at_slot,
+        track_init_insert_row, TrackInitKeySpec,
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     #[test]
     pub(super) fn add_rest_bar_appends_grid_bar() {
@@ -563,5 +739,55 @@ mod tests {
             "# @piano".to_string(),
         ];
         assert_eq!(next_empty_template_name(&lines, 1), "piano1");
+    }
+
+    #[test]
+    fn current_track_header_row_finds_enclosing_track() {
+        let lines = vec![
+            "# Piano: 1".to_string(),
+            "## pc 4".to_string(),
+            "seq | C4 |".to_string(),
+            "# Bass: 2".to_string(),
+        ];
+        assert_eq!(current_track_header_row(&lines, 2), Some(0));
+        assert_eq!(current_track_header_row(&lines, 3), Some(3));
+    }
+
+    #[test]
+    fn track_init_insert_row_skips_existing_init_lines() {
+        let lines = vec![
+            "# Piano: 1".to_string(),
+            "## bank 0/32".to_string(),
+            "## pc 40".to_string(),
+            "seq | C4 |".to_string(),
+        ];
+        assert_eq!(track_init_insert_row(&lines, 3), Some((0, 3)));
+    }
+
+    #[test]
+    fn parse_track_init_key_maps_supported_bindings() {
+        let key = |code, modifiers| KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+
+        assert_eq!(
+            parse_track_init_key(key(KeyCode::Char('p'), KeyModifiers::NONE)),
+            Some(TrackInitKeySpec::Pc)
+        );
+        assert_eq!(
+            parse_track_init_key(key(KeyCode::Char('n'), KeyModifiers::NONE)),
+            Some(TrackInitKeySpec::Pan)
+        );
+        assert_eq!(
+            parse_track_init_key(key(KeyCode::Char('s'), KeyModifiers::NONE)),
+            Some(TrackInitKeySpec::Sustain)
+        );
+        assert_eq!(
+            parse_track_init_key(key(KeyCode::Char('v'), KeyModifiers::NONE)),
+            Some(TrackInitKeySpec::Volume)
+        );
     }
 }
