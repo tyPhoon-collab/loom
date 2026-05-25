@@ -51,6 +51,290 @@ enum CompileStatus {
     Error(String),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum KeyAction {
+    ShowHelp(&'static str),
+    Quit,
+    ForceQuit,
+    EnterInsertMode,
+    BeginPending(PendingInput),
+    ClearPreviewAndBegin(PendingInput),
+    SubdivideCurrentUnit,
+    ShrinkCurrentEditableGroup,
+    DeleteCurrentUnit,
+    ToggleCurrentTrackMute,
+    ToggleCurrentTrackSolo,
+    ClearCurrentTrackFlags,
+    EnterNoteSelectMode,
+    EnterLineSelectMode,
+    EnterBarSelectMode,
+    EnterLineBarSelectMode,
+    ClearLoopSettings,
+    ToggleLoop,
+    Save,
+    FormatCurrentSource,
+    TogglePlayback,
+    RestartPlayback,
+    Undo,
+    Redo,
+    ExitSelectMode,
+    DeleteSelection,
+    SubdivideSelectedUnits,
+    ShrinkSelectedEditableGroups,
+    DuplicateSelection,
+    ExtractSelectedBarsToTemplate,
+    ApplySelectedLoopRange,
+    ExpandSelectVertical(i32),
+    ExpandSelectHorizontal(i32),
+    MoveSelectionVertical(i32),
+    MoveSelectionHorizontal(i32),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum KeySpec {
+    PlainChar(char),
+    ShiftChar(char),
+    CtrlChar(char),
+    Code(KeyCode),
+    ShiftCode(KeyCode),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct KeyBinding<T> {
+    spec: KeySpec,
+    action: T,
+}
+
+const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('?')),
+        action: KeyAction::ShowHelp("Normal help"),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('q'),
+        action: KeyAction::Quit,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('q'),
+        action: KeyAction::ForceQuit,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('i'),
+        action: KeyAction::EnterInsertMode,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('a'),
+        action: KeyAction::BeginPending(PendingInput::Add),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('g'),
+        action: KeyAction::BeginPending(PendingInput::Goto),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('p'),
+        action: KeyAction::ClearPreviewAndBegin(PendingInput::PreviewNote),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('n'),
+        action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Single)),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('n'),
+        action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Continuous)),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('o'),
+        action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Single)),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('o'),
+        action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Continuous)),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('s'),
+        action: KeyAction::SubdivideCurrentUnit,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('s'),
+        action: KeyAction::ShrinkCurrentEditableGroup,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('x'),
+        action: KeyAction::DeleteCurrentUnit,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('d'),
+        action: KeyAction::BeginPending(PendingInput::DeleteStructure),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('m'),
+        action: KeyAction::ToggleCurrentTrackMute,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('m'),
+        action: KeyAction::ToggleCurrentTrackSolo,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('x'),
+        action: KeyAction::ClearCurrentTrackFlags,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('v'),
+        action: KeyAction::EnterNoteSelectMode,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('v'),
+        action: KeyAction::EnterLineSelectMode,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('b'),
+        action: KeyAction::EnterBarSelectMode,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('b'),
+        action: KeyAction::EnterLineBarSelectMode,
+    },
+    KeyBinding {
+        spec: KeySpec::CtrlChar('l'),
+        action: KeyAction::ClearLoopSettings,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('l'),
+        action: KeyAction::ToggleLoop,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('w'),
+        action: KeyAction::Save,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('f'),
+        action: KeyAction::FormatCurrentSource,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char(' ')),
+        action: KeyAction::TogglePlayback,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('r'),
+        action: KeyAction::RestartPlayback,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('u'),
+        action: KeyAction::Undo,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('r'),
+        action: KeyAction::Redo,
+    },
+];
+
+const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: KeyAction::ExitSelectMode,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('?')),
+        action: KeyAction::ShowHelp("Select help"),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('n'),
+        action: KeyAction::BeginPending(PendingInput::Note(NoteInputMode::Single)),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('o'),
+        action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Single)),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('x'),
+        action: KeyAction::DeleteSelection,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('s'),
+        action: KeyAction::SubdivideSelectedUnits,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('s'),
+        action: KeyAction::ShrinkSelectedEditableGroups,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('d'),
+        action: KeyAction::DuplicateSelection,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('t'),
+        action: KeyAction::ExtractSelectedBarsToTemplate,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Enter),
+        action: KeyAction::ApplySelectedLoopRange,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftCode(KeyCode::Up),
+        action: KeyAction::ExpandSelectVertical(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftCode(KeyCode::Down),
+        action: KeyAction::ExpandSelectVertical(1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftCode(KeyCode::Left),
+        action: KeyAction::ExpandSelectHorizontal(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftCode(KeyCode::Right),
+        action: KeyAction::ExpandSelectHorizontal(1),
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Up),
+        action: KeyAction::MoveSelectionVertical(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Down),
+        action: KeyAction::MoveSelectionVertical(1),
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Left),
+        action: KeyAction::MoveSelectionHorizontal(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Right),
+        action: KeyAction::MoveSelectionHorizontal(1),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('k'),
+        action: KeyAction::MoveSelectionVertical(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('j'),
+        action: KeyAction::MoveSelectionVertical(1),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('h'),
+        action: KeyAction::MoveSelectionHorizontal(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('l'),
+        action: KeyAction::MoveSelectionHorizontal(1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('k'),
+        action: KeyAction::ExpandSelectVertical(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('j'),
+        action: KeyAction::ExpandSelectVertical(1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('h'),
+        action: KeyAction::ExpandSelectHorizontal(-1),
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('l'),
+        action: KeyAction::ExpandSelectHorizontal(1),
+    },
+];
+
 pub struct StudioApp {
     should_quit: bool,
     path: PathBuf,
@@ -263,136 +547,11 @@ impl StudioApp {
             return self.handle_pending_input(pending, key);
         }
 
+        if let Some(action) = lookup_key_action(NORMAL_KEY_BINDINGS, &key) {
+            return self.execute_key_action(action);
+        }
+
         match key.code {
-            KeyCode::Char('?') => {
-                self.show_help_overlay = true;
-                self.status_message = "Normal help".into();
-            }
-            _ if is_plain_char(&key, 'q') => {
-                if self.dirty {
-                    self.status_message = "Unsaved changes. Press w to save or Q to quit.".into();
-                } else {
-                    self.should_quit = true;
-                }
-            }
-            _ if is_shift_char(&key, 'q') => {
-                self.should_quit = true;
-            }
-            _ if is_plain_char(&key, 'i') => {
-                self.mode = StudioMode::Insert;
-                self.status_message = "Insert mode".into();
-            }
-            _ if is_plain_char(&key, 'a') => {
-                self.begin_pending_input(PendingInput::Add);
-            }
-            _ if is_plain_char(&key, 'g') => {
-                self.begin_pending_input(PendingInput::Goto);
-            }
-            _ if is_shift_char(&key, 'p') => {
-                self.clear_active_preview_notes();
-                self.begin_pending_input(PendingInput::PreviewNote);
-            }
-            _ if is_plain_char(&key, 'n') => {
-                self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
-            }
-            _ if is_shift_char(&key, 'n') => {
-                self.begin_pending_input(PendingInput::Note(NoteInputMode::Continuous));
-            }
-            _ if is_plain_char(&key, 'o') => {
-                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
-            }
-            _ if is_shift_char(&key, 'o') => {
-                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Continuous));
-            }
-            _ if is_plain_char(&key, 's') => {
-                self.subdivide_current_unit()?;
-            }
-            _ if is_shift_char(&key, 's') => {
-                self.shrink_current_editable_group()?;
-            }
-            _ if is_plain_char(&key, 'x') => {
-                self.delete_current_unit()?;
-            }
-            _ if is_shift_char(&key, 'd') => {
-                self.begin_pending_input(PendingInput::DeleteStructure);
-            }
-            _ if is_plain_char(&key, 'm') => {
-                self.toggle_current_track_mute()?;
-            }
-            _ if is_shift_char(&key, 'm') => {
-                self.toggle_current_track_solo()?;
-            }
-            _ if is_shift_char(&key, 'x') => {
-                self.clear_current_track_flags()?;
-            }
-            _ if is_plain_char(&key, 'v') => {
-                self.enter_note_select_mode();
-            }
-            _ if is_shift_char(&key, 'v') => {
-                self.enter_line_select_mode();
-            }
-            _ if is_plain_char(&key, 'b') => {
-                self.enter_bar_select_mode();
-            }
-            _ if is_shift_char(&key, 'b') => {
-                self.enter_line_bar_select_mode();
-            }
-            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.clear_loop_settings()?;
-            }
-            _ if is_shift_char(&key, 'l') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.clear_loop_settings()?;
-                } else {
-                    self.toggle_loop()?;
-                }
-            }
-            _ if is_plain_char(&key, 'w') => {
-                self.save()?;
-            }
-            _ if is_plain_char(&key, 'f') => {
-                self.format_current_source()?;
-            }
-            KeyCode::Char(' ') => {
-                if self.is_playing {
-                    self.player.pause();
-                    self.is_playing = false;
-                    self.status_message = "Paused".into();
-                } else {
-                    self.player.play();
-                    self.is_playing = true;
-                    self.status_message = "Playing".into();
-                }
-            }
-            _ if is_plain_char(&key, 'r') => {
-                self.player.restart();
-                if !self.is_playing {
-                    self.player.play();
-                    self.is_playing = true;
-                }
-                self.status_message = "Restarted from beginning".into();
-            }
-            _ if is_plain_char(&key, 'u') => {
-                if self.textarea.undo() {
-                    self.dirty = true;
-                    self.compile_and_update_current_source()?;
-                } else if let Some(entry) = self.source_undo_stack.pop() {
-                    self.replace_source(entry.source);
-                    self.textarea.move_cursor(CursorMove::Jump(
-                        entry.cursor.0 as u16,
-                        entry.cursor.1 as u16,
-                    ));
-                    self.dirty = true;
-                    self.compile_and_update_current_source()?;
-                    self.status_message = "Undid transform".into();
-                }
-            }
-            _ if is_shift_char(&key, 'r') => {
-                if self.textarea.redo() {
-                    self.dirty = true;
-                    self.compile_and_update_current_source()?;
-                }
-            }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);
             }
@@ -478,20 +637,11 @@ impl StudioApp {
             };
         }
 
+        if let Some(action) = lookup_key_action(SELECT_KEY_BINDINGS, &key) {
+            return self.execute_key_action(action);
+        }
+
         match key.code {
-            KeyCode::Esc => {
-                self.exit_select_mode();
-            }
-            KeyCode::Char('?') => {
-                self.show_help_overlay = true;
-                self.status_message = "Select help".into();
-            }
-            _ if is_plain_char(&key, 'n') => {
-                self.begin_pending_input(PendingInput::Note(NoteInputMode::Single));
-            }
-            _ if is_plain_char(&key, 'o') => {
-                self.begin_pending_input(PendingInput::Onset(NoteInputMode::Single));
-            }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.apply_transpose(1);
             }
@@ -524,61 +674,101 @@ impl StudioApp {
             {
                 self.adjust_template_call_time_scale(1);
             }
-            _ if is_plain_char(&key, 'x') => {
-                self.delete_selection()?;
-            }
-            _ if is_plain_char(&key, 's') => {
-                self.subdivide_selected_units()?;
-            }
-            _ if is_shift_char(&key, 's') => {
-                self.shrink_selected_editable_groups()?;
-            }
-            _ if is_plain_char(&key, 'd') => {
-                self.duplicate_selection()?;
-            }
-            _ if is_shift_char(&key, 't') => {
-                self.extract_selected_bars_to_template()?;
-            }
-            KeyCode::Enter => {
-                self.apply_selected_loop_range()?;
-            }
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_select_vertical(-1)
-            }
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_select_vertical(1)
-            }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_select_horizontal(-1)
-            }
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.expand_select_horizontal(1)
-            }
-            KeyCode::Up | KeyCode::Char('k')
-                if is_plain_char(&key, 'k') || matches!(key.code, KeyCode::Up) =>
-            {
-                self.move_selection_vertical(-1)
-            }
-            KeyCode::Down | KeyCode::Char('j')
-                if is_plain_char(&key, 'j') || matches!(key.code, KeyCode::Down) =>
-            {
-                self.move_selection_vertical(1)
-            }
-            KeyCode::Left | KeyCode::Char('h')
-                if is_plain_char(&key, 'h') || matches!(key.code, KeyCode::Left) =>
-            {
-                self.move_select_horizontal(-1)
-            }
-            KeyCode::Right | KeyCode::Char('l')
-                if is_plain_char(&key, 'l') || matches!(key.code, KeyCode::Right) =>
-            {
-                self.move_select_horizontal(1)
-            }
-            _ if is_shift_char(&key, 'k') => self.expand_select_vertical(-1),
-            _ if is_shift_char(&key, 'j') => self.expand_select_vertical(1),
-            _ if is_shift_char(&key, 'h') => self.expand_select_horizontal(-1),
-            _ if is_shift_char(&key, 'l') => self.expand_select_horizontal(1),
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn execute_key_action(&mut self, action: KeyAction) -> Result<()> {
+        match action {
+            KeyAction::ShowHelp(message) => {
+                self.show_help_overlay = true;
+                self.status_message = message.into();
+            }
+            KeyAction::Quit => {
+                if self.dirty {
+                    self.status_message = "Unsaved changes. Press w to save or Q to quit.".into();
+                } else {
+                    self.should_quit = true;
+                }
+            }
+            KeyAction::ForceQuit => {
+                self.should_quit = true;
+            }
+            KeyAction::EnterInsertMode => {
+                self.mode = StudioMode::Insert;
+                self.status_message = "Insert mode".into();
+            }
+            KeyAction::BeginPending(pending) => self.begin_pending_input(pending),
+            KeyAction::ClearPreviewAndBegin(pending) => {
+                self.clear_active_preview_notes();
+                self.begin_pending_input(pending);
+            }
+            KeyAction::SubdivideCurrentUnit => self.subdivide_current_unit()?,
+            KeyAction::ShrinkCurrentEditableGroup => self.shrink_current_editable_group()?,
+            KeyAction::DeleteCurrentUnit => self.delete_current_unit()?,
+            KeyAction::ToggleCurrentTrackMute => self.toggle_current_track_mute()?,
+            KeyAction::ToggleCurrentTrackSolo => self.toggle_current_track_solo()?,
+            KeyAction::ClearCurrentTrackFlags => self.clear_current_track_flags()?,
+            KeyAction::EnterNoteSelectMode => self.enter_note_select_mode(),
+            KeyAction::EnterLineSelectMode => self.enter_line_select_mode(),
+            KeyAction::EnterBarSelectMode => self.enter_bar_select_mode(),
+            KeyAction::EnterLineBarSelectMode => self.enter_line_bar_select_mode(),
+            KeyAction::ClearLoopSettings => self.clear_loop_settings()?,
+            KeyAction::ToggleLoop => self.toggle_loop()?,
+            KeyAction::Save => self.save()?,
+            KeyAction::FormatCurrentSource => self.format_current_source()?,
+            KeyAction::TogglePlayback => {
+                if self.is_playing {
+                    self.player.pause();
+                    self.is_playing = false;
+                    self.status_message = "Paused".into();
+                } else {
+                    self.player.play();
+                    self.is_playing = true;
+                    self.status_message = "Playing".into();
+                }
+            }
+            KeyAction::RestartPlayback => {
+                self.player.restart();
+                if !self.is_playing {
+                    self.player.play();
+                    self.is_playing = true;
+                }
+                self.status_message = "Restarted from beginning".into();
+            }
+            KeyAction::Undo => {
+                if self.textarea.undo() {
+                    self.dirty = true;
+                    self.compile_and_update_current_source()?;
+                } else if let Some(entry) = self.source_undo_stack.pop() {
+                    self.replace_source(entry.source);
+                    self.textarea.move_cursor(CursorMove::Jump(
+                        entry.cursor.0 as u16,
+                        entry.cursor.1 as u16,
+                    ));
+                    self.dirty = true;
+                    self.compile_and_update_current_source()?;
+                    self.status_message = "Undid transform".into();
+                }
+            }
+            KeyAction::Redo => {
+                if self.textarea.redo() {
+                    self.dirty = true;
+                    self.compile_and_update_current_source()?;
+                }
+            }
+            KeyAction::ExitSelectMode => self.exit_select_mode(),
+            KeyAction::DeleteSelection => self.delete_selection()?,
+            KeyAction::SubdivideSelectedUnits => self.subdivide_selected_units()?,
+            KeyAction::ShrinkSelectedEditableGroups => self.shrink_selected_editable_groups()?,
+            KeyAction::DuplicateSelection => self.duplicate_selection()?,
+            KeyAction::ExtractSelectedBarsToTemplate => self.extract_selected_bars_to_template()?,
+            KeyAction::ApplySelectedLoopRange => self.apply_selected_loop_range()?,
+            KeyAction::ExpandSelectVertical(delta) => self.expand_select_vertical(delta),
+            KeyAction::ExpandSelectHorizontal(delta) => self.expand_select_horizontal(delta),
+            KeyAction::MoveSelectionVertical(delta) => self.move_selection_vertical(delta),
+            KeyAction::MoveSelectionHorizontal(delta) => self.move_select_horizontal(delta),
         }
         Ok(())
     }
@@ -653,13 +843,33 @@ impl StudioApp {
 }
 
 pub(super) fn is_plain_char(key: &KeyEvent, ch: char) -> bool {
-    matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
-        && !key.modifiers.contains(KeyModifiers::SHIFT)
+    key_spec_matches(KeySpec::PlainChar(ch), key)
 }
 
-pub(super) fn is_shift_char(key: &KeyEvent, ch: char) -> bool {
-    matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
-        && key.modifiers.contains(KeyModifiers::SHIFT)
+fn lookup_key_action<T: Copy>(bindings: &[KeyBinding<T>], key: &KeyEvent) -> Option<T> {
+    bindings
+        .iter()
+        .find(|binding| key_spec_matches(binding.spec, key))
+        .map(|binding| binding.action)
+}
+
+fn key_spec_matches(spec: KeySpec, key: &KeyEvent) -> bool {
+    match spec {
+        KeySpec::PlainChar(ch) => {
+            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
+                && !key.modifiers.contains(KeyModifiers::SHIFT)
+        }
+        KeySpec::ShiftChar(ch) => {
+            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+        }
+        KeySpec::CtrlChar(ch) => {
+            matches!(key.code, KeyCode::Char(code) if code.eq_ignore_ascii_case(&ch))
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+        }
+        KeySpec::Code(code) => key.code == code,
+        KeySpec::ShiftCode(code) => key.code == code && key.modifiers.contains(KeyModifiers::SHIFT),
+    }
 }
 
 fn configure_textarea_style(textarea: &mut TextArea<'static>) {

@@ -1,10 +1,37 @@
 use super::input::PendingInput;
 use super::selection::{bar_spans_in_line, char_range, StudioSelection};
 use super::settings::parse_track_header_channel;
-use super::StudioApp;
+use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use ratatui_textarea::CursorMove;
+
+#[derive(Clone, Copy, Debug)]
+enum TemplateMacroKeyAction {
+    Cancel,
+    InsertArp,
+    InsertRev,
+    InsertStrum,
+}
+
+const TEMPLATE_MACRO_KEY_BINDINGS: &[KeyBinding<TemplateMacroKeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: TemplateMacroKeyAction::Cancel,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('a'),
+        action: TemplateMacroKeyAction::InsertArp,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('r'),
+        action: TemplateMacroKeyAction::InsertRev,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('s'),
+        action: TemplateMacroKeyAction::InsertStrum,
+    },
+];
 
 impl StudioApp {
     pub(super) fn current_template_call_at_cursor(&self) -> Option<TemplateCallSpan> {
@@ -16,22 +43,18 @@ impl StudioApp {
     }
 
     pub(super) fn handle_template_macro_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        let Some(action) = lookup_key_action(TEMPLATE_MACRO_KEY_BINDINGS, &key) else {
+            self.status_message = PendingInput::TemplateMacro.unknown_message();
+            return Ok(());
+        };
+
+        match action {
+            TemplateMacroKeyAction::Cancel => {
                 self.status_message = PendingInput::TemplateMacro.cancel_message().into();
             }
-            KeyCode::Char('a') => {
-                self.insert_template_macro("arp")?;
-            }
-            KeyCode::Char('r') => {
-                self.insert_template_macro("rev")?;
-            }
-            KeyCode::Char('s') => {
-                self.insert_template_macro("strum")?;
-            }
-            _ => {
-                self.status_message = PendingInput::TemplateMacro.unknown_message();
-            }
+            TemplateMacroKeyAction::InsertArp => self.insert_template_macro("arp")?,
+            TemplateMacroKeyAction::InsertRev => self.insert_template_macro("rev")?,
+            TemplateMacroKeyAction::InsertStrum => self.insert_template_macro("strum")?,
         }
         Ok(())
     }

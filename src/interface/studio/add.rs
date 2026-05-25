@@ -4,7 +4,7 @@ use super::selection::{
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
-use super::{is_plain_char, is_shift_char, StudioApp};
+use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 
@@ -12,34 +12,102 @@ struct PlacedSlot {
     index_on_line: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum AddKeyAction {
+    Cancel,
+    AddSeqLine,
+    AddNoteHeadLine,
+    AddTrack,
+    AddSeparator,
+    AddDefaultDrumLanes,
+    AddVelocityModifier,
+    AddPitchModifier,
+    BeginTemplateMacro,
+    AddTemplateDefinition,
+    AddBar,
+    AddNearbyNote,
+    AddRest,
+    AddSustain,
+}
+
+const ADD_KEY_BINDINGS: &[KeyBinding<AddKeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: AddKeyAction::Cancel,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('s'),
+        action: AddKeyAction::AddSeqLine,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('l'),
+        action: AddKeyAction::AddNoteHeadLine,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('t'),
+        action: AddKeyAction::AddTrack,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('h'),
+        action: AddKeyAction::AddSeparator,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('d'),
+        action: AddKeyAction::AddDefaultDrumLanes,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('v'),
+        action: AddKeyAction::AddVelocityModifier,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('p'),
+        action: AddKeyAction::AddPitchModifier,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('m'),
+        action: AddKeyAction::BeginTemplateMacro,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('t'),
+        action: AddKeyAction::AddTemplateDefinition,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('b'),
+        action: AddKeyAction::AddBar,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('n'),
+        action: AddKeyAction::AddNearbyNote,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('.')),
+        action: AddKeyAction::AddRest,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('-')),
+        action: AddKeyAction::AddSustain,
+    },
+];
+
 impl StudioApp {
     pub(super) fn handle_add_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        let Some(action) = lookup_key_action(ADD_KEY_BINDINGS, &key) else {
+            self.status_message = format!("Unknown add command. {}", ADD_HELP);
+            return Ok(());
+        };
+
+        match action {
+            AddKeyAction::Cancel => {
                 self.status_message = "Add cancelled".into();
             }
-            _ if is_plain_char(&key, 's') => {
-                self.add_seq_line()?;
-            }
-            _ if is_plain_char(&key, 'l') => {
-                self.add_note_head_line()?;
-            }
-            _ if is_plain_char(&key, 't') => {
-                self.add_track()?;
-            }
-            _ if is_plain_char(&key, 'h') => {
-                self.add_separator()?;
-            }
-            _ if is_plain_char(&key, 'd') => {
-                self.add_default_drum_lanes()?;
-            }
-            _ if is_plain_char(&key, 'v') => {
-                self.add_modifier_line("v")?;
-            }
-            _ if is_plain_char(&key, 'p') => {
-                self.add_modifier_line("p")?;
-            }
-            _ if is_plain_char(&key, 'm') => {
+            AddKeyAction::AddSeqLine => self.add_seq_line()?,
+            AddKeyAction::AddNoteHeadLine => self.add_note_head_line()?,
+            AddKeyAction::AddTrack => self.add_track()?,
+            AddKeyAction::AddSeparator => self.add_separator()?,
+            AddKeyAction::AddDefaultDrumLanes => self.add_default_drum_lanes()?,
+            AddKeyAction::AddVelocityModifier => self.add_modifier_line("v")?,
+            AddKeyAction::AddPitchModifier => self.add_modifier_line("p")?,
+            AddKeyAction::BeginTemplateMacro => {
                 if self.current_template_call_at_cursor().is_some() {
                     self.begin_pending_input(PendingInput::TemplateMacro);
                 } else {
@@ -47,24 +115,17 @@ impl StudioApp {
                         "Template macro add needs the cursor on a template call".into();
                 }
             }
-            _ if is_shift_char(&key, 't') => {
-                self.add_template_definition()?;
-            }
-            _ if is_plain_char(&key, 'b') => {
-                self.add_bar()?;
-            }
-            _ if is_plain_char(&key, 'n') => {
+            AddKeyAction::AddTemplateDefinition => self.add_template_definition()?,
+            AddKeyAction::AddBar => self.add_bar()?,
+            AddKeyAction::AddNearbyNote => {
                 let token = self.note_token_for_add();
                 self.place_token_at_current_slot(&token)?;
             }
-            KeyCode::Char('.') => {
+            AddKeyAction::AddRest => {
                 self.place_token_at_current_slot(".")?;
             }
-            KeyCode::Char('-') => {
+            AddKeyAction::AddSustain => {
                 self.place_token_at_current_slot("-")?;
-            }
-            _ => {
-                self.status_message = format!("Unknown add command. {}", ADD_HELP);
             }
         }
         Ok(())

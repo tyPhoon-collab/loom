@@ -3,7 +3,7 @@ use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_lane_body_token,
     lane_body_token_spans_in_line, lane_head_token, replace_char_range, UnitSpan,
 };
-use super::StudioApp;
+use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 
@@ -12,35 +12,70 @@ struct PlacedOnset {
     token: char,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum OnsetKeyAction {
+    UndoContinuous,
+    Cancel,
+    PlaceNoteOn,
+    PlaceRest,
+    PlaceSustain,
+    Toggle,
+}
+
+const ONSET_KEY_BINDINGS: &[KeyBinding<OnsetKeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Backspace),
+        action: OnsetKeyAction::UndoContinuous,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: OnsetKeyAction::Cancel,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('x'),
+        action: OnsetKeyAction::PlaceNoteOn,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('.')),
+        action: OnsetKeyAction::PlaceRest,
+    },
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Char('-')),
+        action: OnsetKeyAction::PlaceSustain,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('t'),
+        action: OnsetKeyAction::Toggle,
+    },
+];
+
 impl StudioApp {
     pub(super) fn handle_onset_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
         let pending = PendingInput::Onset(mode);
 
-        match key.code {
-            KeyCode::Backspace if pending.is_continuous() => {
-                self.handle_continuous_input_undo(pending)?;
+        let Some(action) = lookup_key_action(ONSET_KEY_BINDINGS, &key) else {
+            self.status_message = pending.unknown_message();
+            if pending.is_continuous() {
+                self.resume_continuous_input(pending);
             }
-            KeyCode::Esc => {
-                self.status_message = pending.cancel_message().into();
-            }
-            KeyCode::Char('x') => {
-                self.apply_onset_entry(pending, '^')?;
-            }
-            KeyCode::Char('.') => {
-                self.apply_onset_entry(pending, '.')?;
-            }
-            KeyCode::Char('-') => {
-                self.apply_onset_entry(pending, '-')?;
-            }
-            KeyCode::Char('t') => {
-                self.apply_toggled_onset_entry(pending)?;
-            }
-            _ => {
-                self.status_message = pending.unknown_message();
+            return Ok(());
+        };
+
+        match action {
+            OnsetKeyAction::UndoContinuous => {
                 if pending.is_continuous() {
-                    self.resume_continuous_input(pending);
+                    self.handle_continuous_input_undo(pending)?;
+                } else {
+                    self.status_message = pending.unknown_message();
                 }
             }
+            OnsetKeyAction::Cancel => {
+                self.status_message = pending.cancel_message().into();
+            }
+            OnsetKeyAction::PlaceNoteOn => self.apply_onset_entry(pending, '^')?,
+            OnsetKeyAction::PlaceRest => self.apply_onset_entry(pending, '.')?,
+            OnsetKeyAction::PlaceSustain => self.apply_onset_entry(pending, '-')?,
+            OnsetKeyAction::Toggle => self.apply_toggled_onset_entry(pending)?,
         }
         Ok(())
     }

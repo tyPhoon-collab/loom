@@ -1,43 +1,83 @@
 use super::input::PendingInput;
 use super::settings::{format_track_header, parse_track_header};
-use super::{is_plain_char, is_shift_char, StudioApp};
+use super::{lookup_key_action, KeyBinding, KeySpec, StudioApp};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
 use ratatui_textarea::CursorMove;
 
+#[derive(Clone, Copy, Debug)]
+enum GotoKeyAction {
+    Cancel,
+    NextTrack,
+    PreviousTrack,
+    GotoTemplateDefinition,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DeleteStructureKeyAction {
+    Cancel,
+    DeleteTrack,
+}
+
+const GOTO_KEY_BINDINGS: &[KeyBinding<GotoKeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: GotoKeyAction::Cancel,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('t'),
+        action: GotoKeyAction::NextTrack,
+    },
+    KeyBinding {
+        spec: KeySpec::ShiftChar('t'),
+        action: GotoKeyAction::PreviousTrack,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('d'),
+        action: GotoKeyAction::GotoTemplateDefinition,
+    },
+];
+
+const DELETE_STRUCTURE_KEY_BINDINGS: &[KeyBinding<DeleteStructureKeyAction>] = &[
+    KeyBinding {
+        spec: KeySpec::Code(KeyCode::Esc),
+        action: DeleteStructureKeyAction::Cancel,
+    },
+    KeyBinding {
+        spec: KeySpec::PlainChar('t'),
+        action: DeleteStructureKeyAction::DeleteTrack,
+    },
+];
+
 impl StudioApp {
     pub(super) fn handle_goto_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        let Some(action) = lookup_key_action(GOTO_KEY_BINDINGS, &key) else {
+            self.status_message = PendingInput::Goto.unknown_message();
+            return Ok(());
+        };
+
+        match action {
+            GotoKeyAction::Cancel => {
                 self.status_message = PendingInput::Goto.cancel_message().into();
             }
-            _ if is_plain_char(&key, 't') => {
-                self.goto_adjacent_track(1);
-            }
-            _ if is_shift_char(&key, 't') => {
-                self.goto_adjacent_track(-1);
-            }
-            _ if is_plain_char(&key, 'd') => {
-                self.goto_current_template_definition()?;
-            }
-            _ => {
-                self.status_message = PendingInput::Goto.unknown_message();
-            }
+            GotoKeyAction::NextTrack => self.goto_adjacent_track(1),
+            GotoKeyAction::PreviousTrack => self.goto_adjacent_track(-1),
+            GotoKeyAction::GotoTemplateDefinition => self.goto_current_template_definition()?,
         }
         Ok(())
     }
 
     pub(super) fn handle_delete_structure_key(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => {
+        let Some(action) = lookup_key_action(DELETE_STRUCTURE_KEY_BINDINGS, &key) else {
+            self.status_message = PendingInput::DeleteStructure.unknown_message();
+            return Ok(());
+        };
+
+        match action {
+            DeleteStructureKeyAction::Cancel => {
                 self.status_message = PendingInput::DeleteStructure.cancel_message().into();
             }
-            _ if is_plain_char(&key, 't') => {
-                self.delete_current_track()?;
-            }
-            _ => {
-                self.status_message = PendingInput::DeleteStructure.unknown_message();
-            }
+            DeleteStructureKeyAction::DeleteTrack => self.delete_current_track()?,
         }
         Ok(())
     }
