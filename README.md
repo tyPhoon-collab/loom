@@ -33,6 +33,7 @@ loom save examples/starter/melody-simple.loom
 
 ## Documentation
 
+- Published docs: https://loom-5ue.pages.dev/
 - Docs source: `docs/` (VitePress)
 - Playback setup: `docs/guide/playback.md`
 - AI-oriented overview: `docs/llms.md`
