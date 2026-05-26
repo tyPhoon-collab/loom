@@ -13,6 +13,7 @@ use ratatui_textarea::TextArea;
 use selection::StudioSelection;
 use std::collections::HashMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -506,8 +507,7 @@ impl StudioApp {
         config_status: String,
         studio_config: StudioConfig,
     ) -> Result<Self> {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| miette::miette!("Failed to read {}: {}", path.display(), e))?;
+        let (content, created_new_file) = load_or_create_studio_file(&path)?;
         let mut textarea = if content.is_empty() {
             TextArea::default()
         } else {
@@ -527,7 +527,11 @@ impl StudioApp {
             mode: StudioMode::Normal,
             show_help_overlay: false,
             input_state: StudioInputState::default(),
-            status_message: "Ready".to_string(),
+            status_message: if created_new_file {
+                "Created new file".to_string()
+            } else {
+                "Ready".to_string()
+            },
             compile_status: CompileStatus::Ok {
                 notes: 0,
                 controls: 0,
@@ -956,6 +960,31 @@ impl StudioApp {
             CursorMotion::Forward => CursorMove::Forward,
         };
         self.textarea.move_cursor(motion);
+    }
+}
+
+fn load_or_create_studio_file(path: &PathBuf) -> Result<(String, bool)> {
+    match fs::read_to_string(path) {
+        Ok(content) => Ok((content, false)),
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    miette::miette!(
+                        "Failed to create parent directory for {}: {}",
+                        path.display(),
+                        e
+                    )
+                })?;
+            }
+            fs::write(path, "")
+                .map_err(|e| miette::miette!("Failed to create {}: {}", path.display(), e))?;
+            Ok((String::new(), true))
+        }
+        Err(err) => Err(miette::miette!(
+            "Failed to read {}: {}",
+            path.display(),
+            err
+        )),
     }
 }
 
