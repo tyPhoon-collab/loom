@@ -291,11 +291,6 @@ impl StudioApp {
         let header_rows = track_header_rows(&lines);
         let (start_row, end_row, deleted_header_row) =
             track_delete_span(&lines, &header_rows, track_index);
-        let track_count = header_rows.len();
-        if track_count <= 1 {
-            self.status_message = "Cannot delete the last track".into();
-            return Ok(());
-        }
 
         lines.drain(start_row..end_row);
         let next_cursor_row = start_row.min(lines.len().saturating_sub(1));
@@ -815,6 +810,13 @@ mod tests {
         ];
         let headers = track_header_rows(&lines);
         assert_eq!(track_delete_span(&lines, &headers, 1), (2, 5, 3));
+    }
+
+    #[test]
+    fn track_delete_span_can_cover_last_remaining_track() {
+        let lines = vec!["# Piano: 1".to_string(), "seq | C4 |".to_string()];
+        let headers = track_header_rows(&lines);
+        assert_eq!(track_delete_span(&lines, &headers, 0), (0, 2, 0));
     }
 
     #[test]
