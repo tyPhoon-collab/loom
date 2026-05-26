@@ -1,4 +1,4 @@
-use super::input::{PendingInput, ADD_HELP};
+use super::input::PendingInput;
 use super::keystroke::{
     key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
 };
@@ -22,6 +22,7 @@ enum AddKeyAction {
     AddSeqLine,
     AddNoteHeadLine,
     AddTrack,
+    AddPianoRollTrack,
     AddSeparator,
     AddDefaultDrumLanes,
     AddVelocityModifier,
@@ -51,6 +52,10 @@ const ADD_KEY_BINDINGS: &[KeyBinding<AddKeyAction>] = &[
     KeyBinding {
         stroke: KeyStroke::Char('t'),
         action: AddKeyAction::AddTrack,
+    },
+    KeyBinding {
+        stroke: KeyStroke::ShiftChar('p'),
+        action: AddKeyAction::AddPianoRollTrack,
     },
     KeyBinding {
         stroke: KeyStroke::Char('h'),
@@ -101,17 +106,16 @@ const ADD_KEY_BINDINGS: &[KeyBinding<AddKeyAction>] = &[
 impl StudioApp {
     pub(super) fn handle_add_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(action) = lookup_key_action(ADD_KEY_BINDINGS, &key) else {
-            self.status_message = format!("Unknown add command. {}", ADD_HELP);
+            self.reject_pending_input(PendingInput::Add);
             return Ok(());
         };
 
         match action {
-            AddKeyAction::Cancel => {
-                self.status_message = "Add cancelled".into();
-            }
+            AddKeyAction::Cancel => self.cancel_pending_input(PendingInput::Add),
             AddKeyAction::AddSeqLine => self.add_seq_line()?,
             AddKeyAction::AddNoteHeadLine => self.add_note_head_line()?,
             AddKeyAction::AddTrack => self.add_track()?,
+            AddKeyAction::AddPianoRollTrack => self.add_piano_roll_track()?,
             AddKeyAction::AddSeparator => self.add_separator()?,
             AddKeyAction::AddDefaultDrumLanes => self.add_default_drum_lanes()?,
             AddKeyAction::AddVelocityModifier => self.add_modifier_line("v")?,
@@ -145,12 +149,12 @@ impl StudioApp {
 
     pub(super) fn handle_track_init_add_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(spec) = parse_track_init_key(key) else {
-            self.status_message = PendingInput::TrackInitAdd.unknown_message();
+            self.reject_pending_input(PendingInput::TrackInitAdd);
             return Ok(());
         };
 
         if matches!(spec, TrackInitKeySpec::Cancel) {
-            self.status_message = PendingInput::TrackInitAdd.cancel_message().into();
+            self.cancel_pending_input(PendingInput::TrackInitAdd);
             return Ok(());
         }
 
@@ -175,6 +179,24 @@ impl StudioApp {
             (insert_row + 2, 8),
             "Added default drum lanes".into(),
             None,
+        )
+    }
+
+    pub(super) fn add_piano_roll_track(&mut self) -> Result<()> {
+        let cursor = self.textarea.cursor();
+        let mut lines = self.textarea.lines().to_vec();
+        let insert_row = insert_row_after_cursor(&lines, cursor.0);
+        let (track_name, channel) = next_track_header(&lines);
+        let inserted = piano_roll_track_lines(&track_name, channel);
+        lines.splice(insert_row..insert_row, inserted);
+        self.apply_cursor_source_update(
+            lines,
+            (insert_row + 9, 0),
+            format!(
+                "Added piano-roll track: {} on channel {}",
+                track_name, channel
+            ),
+            Some((insert_row + 9, "G4".to_string())),
         )
     }
 
@@ -556,6 +578,18 @@ fn modifier_label_name(label: &str) -> &'static str {
     }
 }
 
+fn piano_roll_track_lines(track_name: &str, channel: u8) -> Vec<String> {
+    let mut lines = vec![String::new(), format!("# {}: {}", track_name, channel)];
+    lines.extend(
+        [
+            "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4",
+        ]
+        .into_iter()
+        .map(|note| format!("{:<4}| . . . . |", note)),
+    );
+    lines
+}
+
 fn next_track_header(lines: &[String]) -> (String, u8) {
     let track_count = lines
         .iter()
@@ -684,8 +718,8 @@ fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usi
 mod tests {
     use super::{
         add_rest_bar_to_line, current_track_header_row, insert_separator_at_row,
-        next_empty_template_name, next_track_header, parse_track_init_key, place_seq_token_at_slot,
-        track_init_insert_row, TrackInitKeySpec,
+        next_empty_template_name, next_track_header, parse_track_init_key, piano_roll_track_lines,
+        place_seq_token_at_slot, track_init_insert_row, TrackInitKeySpec,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -795,5 +829,17 @@ mod tests {
             parse_track_init_key(key(KeyCode::Char('v'), KeyModifiers::NONE)),
             Some(TrackInitKeySpec::Volume)
         );
+    }
+
+    #[test]
+    fn piano_roll_track_lines_create_header_and_chromatic_lanes() {
+        let lines = piano_roll_track_lines("Track 2", 3);
+        assert_eq!(lines.first().map(String::as_str), Some(""));
+        assert_eq!(lines.get(1).map(String::as_str), Some("# Track 2: 3"));
+        assert_eq!(lines.get(2).map(String::as_str), Some("C4  | . . . . |"));
+        assert_eq!(lines.get(3).map(String::as_str), Some("C#4 | . . . . |"));
+        assert_eq!(lines.get(9).map(String::as_str), Some("G4  | . . . . |"));
+        assert_eq!(lines.last().map(String::as_str), Some("B4  | . . . . |"));
+        assert_eq!(lines.len(), 14);
     }
 }

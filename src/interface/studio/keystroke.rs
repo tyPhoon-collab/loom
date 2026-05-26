@@ -35,7 +35,7 @@ pub(super) fn normalized_key_stroke(key: &KeyEvent) -> Option<KeyStroke> {
         KeyCode::Char(code) => normalize_symbol(code, key.modifiers)
             .map(KeyStroke::Symbol)
             .or_else(|| {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if code.is_ascii_uppercase() || key.modifiers.contains(KeyModifiers::SHIFT) {
                     Some(KeyStroke::ShiftChar(code.to_ascii_lowercase()))
                 } else {
                     Some(KeyStroke::Char(code.to_ascii_lowercase()))
@@ -83,5 +83,11 @@ mod tests {
     fn plain_symbol_stays_plain() {
         let key = KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE);
         assert_eq!(normalized_key_stroke(&key), Some(KeyStroke::Symbol('.')));
+    }
+
+    #[test]
+    fn uppercase_char_without_shift_normalizes_to_shift_char() {
+        let key = KeyEvent::new(KeyCode::Char('P'), KeyModifiers::NONE);
+        assert_eq!(normalized_key_stroke(&key), Some(KeyStroke::ShiftChar('p')));
     }
 }

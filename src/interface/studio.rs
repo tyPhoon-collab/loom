@@ -641,12 +641,29 @@ impl StudioApp {
         self.status_message = pending.prompt(self.note_keyboard_octave);
     }
 
+    fn retain_pending_input(&mut self, pending: PendingInput) {
+        self.input_state.begin(pending);
+    }
+
+    fn retain_pending_with_prompt(&mut self, pending: PendingInput) {
+        self.retain_pending_input(pending);
+        self.status_message = pending.prompt(self.note_keyboard_octave);
+    }
+
+    fn cancel_pending_input(&mut self, pending: PendingInput) {
+        self.status_message = pending.cancel_message().into();
+    }
+
+    fn reject_pending_input(&mut self, pending: PendingInput) {
+        self.status_message = pending.unknown_message();
+        self.retain_pending_input(pending);
+    }
+
     fn resume_continuous_input(&mut self, pending: PendingInput) {
         if !pending.is_continuous() {
             return;
         }
-        self.input_state.begin(pending);
-        self.status_message = pending.prompt(self.note_keyboard_octave);
+        self.retain_pending_with_prompt(pending);
     }
 
     fn record_continuous_step(&mut self, step: ContinuousInputStep) {
@@ -719,8 +736,8 @@ impl StudioApp {
     }
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> Result<()> {
-        if let Some(pending) = self.input_state.take_pending() {
-            return self.handle_pending_input(pending, key);
+        if let Some(pending) = self.input_state.pending() {
+            return self.dispatch_pending_input(pending, key);
         }
 
         if let Some(action) = lookup_key_action(NORMAL_KEY_BINDINGS, &key) {
@@ -766,19 +783,24 @@ impl StudioApp {
         }
     }
 
+    fn dispatch_pending_input(&mut self, pending: PendingInput, key: KeyEvent) -> Result<()> {
+        self.input_state.clear();
+        self.handle_pending_input(pending, key)
+    }
+
     fn handle_select_key(&mut self, key: KeyEvent) -> Result<()> {
-        if let Some(pending) = self.input_state.take_pending() {
+        if let Some(pending) = self.input_state.pending() {
             return match pending {
-                PendingInput::PreviewNote => self.handle_pending_input(pending, key),
+                PendingInput::PreviewNote => self.dispatch_pending_input(pending, key),
                 PendingInput::Note(_) => self.handle_select_note_key(key),
                 PendingInput::Onset(_) => self.handle_select_onset_key(key),
                 PendingInput::Goto | PendingInput::DeleteStructure => {
-                    self.handle_pending_input(pending, key)
+                    self.dispatch_pending_input(pending, key)
                 }
                 PendingInput::Add
                 | PendingInput::TemplateMacro
                 | PendingInput::TrackInitAdd
-                | PendingInput::TrackInitDelete => self.handle_pending_input(pending, key),
+                | PendingInput::TrackInitDelete => self.dispatch_pending_input(pending, key),
             };
         }
 
@@ -1015,5 +1037,51 @@ fn midi_device_name(port_index: usize) -> String {
         }
     } else {
         format!("Port {}", port_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PendingInput, StudioApp};
+    use crate::config::StudioConfig;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    fn test_studio_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("loom-studio-{name}-{nanos}.loom"))
+    }
+
+    #[test]
+    fn add_pending_survives_unknown_key_and_still_handles_uppercase_command() {
+        let path = test_studio_path("pending-add");
+        let mut app = StudioApp::new(path, 0, String::new(), StudioConfig::default()).unwrap();
+
+        app.handle_key(test_key(KeyCode::Char('a'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(app.input_state.pending(), Some(PendingInput::Add));
+
+        app.handle_key(test_key(KeyCode::Char('Z'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(app.input_state.pending(), Some(PendingInput::Add));
+
+        app.handle_key(test_key(KeyCode::Char('P'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(app.input_state.pending(), None);
+        assert!(app.status_message.contains("Added piano-roll track"));
+        assert!(app
+            .textarea
+            .lines()
+            .iter()
+            .any(|line| line == "# Track 1: 1"));
     }
 }

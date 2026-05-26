@@ -45,13 +45,13 @@ impl StudioApp {
 
     pub(super) fn handle_template_macro_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(action) = lookup_key_action(TEMPLATE_MACRO_KEY_BINDINGS, &key) else {
-            self.status_message = PendingInput::TemplateMacro.unknown_message();
+            self.reject_pending_input(PendingInput::TemplateMacro);
             return Ok(());
         };
 
         match action {
             TemplateMacroKeyAction::Cancel => {
-                self.status_message = PendingInput::TemplateMacro.cancel_message().into();
+                self.cancel_pending_input(PendingInput::TemplateMacro)
             }
             TemplateMacroKeyAction::InsertArp => self.insert_template_macro("arp")?,
             TemplateMacroKeyAction::InsertRev => self.insert_template_macro("rev")?,

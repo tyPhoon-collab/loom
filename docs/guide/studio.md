@@ -175,6 +175,7 @@ Useful add commands:
 | `a s` | add a `seq` line |
 | `a l` | add a note-head line |
 | `a t` | add a new track and empty `seq` line |
+| `a P` | add a new piano-roll-style track with `C4` through `B4` lanes |
 | `a h` | add a `---` separator line |
 | `a T` | add an empty template definition |
 | `a b` | append a rest bar |

@@ -104,14 +104,12 @@ const DELETE_STRUCTURE_KEY_BINDINGS: &[KeyBinding<DeleteStructureKeyAction>] = &
 impl StudioApp {
     pub(super) fn handle_goto_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(action) = lookup_key_action(GOTO_KEY_BINDINGS, &key) else {
-            self.status_message = PendingInput::Goto.unknown_message();
+            self.reject_pending_input(PendingInput::Goto);
             return Ok(());
         };
 
         match action {
-            GotoKeyAction::Cancel => {
-                self.status_message = PendingInput::Goto.cancel_message().into();
-            }
+            GotoKeyAction::Cancel => self.cancel_pending_input(PendingInput::Goto),
             GotoKeyAction::NextTrack => self.goto_adjacent_track(1),
             GotoKeyAction::PreviousTrack => self.goto_adjacent_track(-1),
             GotoKeyAction::GotoTemplateDefinition => self.goto_current_template_definition()?,
@@ -121,13 +119,13 @@ impl StudioApp {
 
     pub(super) fn handle_delete_structure_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(action) = lookup_key_action(DELETE_STRUCTURE_KEY_BINDINGS, &key) else {
-            self.status_message = PendingInput::DeleteStructure.unknown_message();
+            self.reject_pending_input(PendingInput::DeleteStructure);
             return Ok(());
         };
 
         match action {
             DeleteStructureKeyAction::Cancel => {
-                self.status_message = PendingInput::DeleteStructure.cancel_message().into();
+                self.cancel_pending_input(PendingInput::DeleteStructure)
             }
             DeleteStructureKeyAction::DeleteSeqLine => self.delete_current_seq_line()?,
             DeleteStructureKeyAction::DeleteNoteHeadLine => self.delete_current_note_head_line()?,
@@ -155,12 +153,12 @@ impl StudioApp {
 
     pub(super) fn handle_track_init_delete_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(spec) = parse_track_init_key(key) else {
-            self.status_message = PendingInput::TrackInitDelete.unknown_message();
+            self.reject_pending_input(PendingInput::TrackInitDelete);
             return Ok(());
         };
 
         if matches!(spec, TrackInitKeySpec::Cancel) {
-            self.status_message = PendingInput::TrackInitDelete.cancel_message().into();
+            self.cancel_pending_input(PendingInput::TrackInitDelete);
             return Ok(());
         }
 

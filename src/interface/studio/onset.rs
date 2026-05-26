@@ -83,9 +83,10 @@ impl StudioApp {
         }
 
         let Some(action) = lookup_key_action(ONSET_KEY_BINDINGS, &key) else {
-            self.status_message = pending.unknown_message();
             if pending.is_continuous() {
-                self.resume_continuous_input(pending);
+                self.reject_pending_input(pending);
+            } else {
+                self.status_message = pending.unknown_message();
             }
             return Ok(());
         };
@@ -98,9 +99,7 @@ impl StudioApp {
                     self.status_message = pending.unknown_message();
                 }
             }
-            OnsetKeyAction::Cancel => {
-                self.status_message = pending.cancel_message().into();
-            }
+            OnsetKeyAction::Cancel => self.cancel_pending_input(pending),
             OnsetKeyAction::PlaceNoteOn => self.apply_onset_entry(pending, '^')?,
             OnsetKeyAction::PlaceRest => self.apply_onset_entry(pending, '.')?,
             OnsetKeyAction::PlaceSustain => self.apply_onset_entry(pending, '-')?,

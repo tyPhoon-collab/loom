@@ -31,7 +31,7 @@ const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line
 const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
     &["a add  D delete  g goto  L toggle-loop  Ctrl-L clear-loop"];
 const OVERLAY_ADD_LINES: &[&str] = &[
-    "s seq  l lane  t track  h separator  T template  b bar",
+    "s seq  l lane  t track  P piano-roll  h separator  T template  b bar",
     "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
 ];
 const OVERLAY_DELETE_LINES: &[&str] = &[

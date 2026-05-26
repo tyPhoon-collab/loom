@@ -1,4 +1,4 @@
-use super::input::{NoteInputMode, PendingInput, NOTE_HELP, PREVIEW_NOTE_HELP};
+use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
 use super::keystroke::{key_stroke_matches, normalized_key_stroke, KeyStroke};
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
@@ -134,19 +134,19 @@ impl StudioApp {
                     self.player.preview_note_off(active.channel, active.note);
                 }
             }
-            self.begin_pending_input(pending);
+            self.retain_pending_with_prompt(pending);
             return Ok(());
         }
 
         match note_keyboard_action(&self.note_keyboard, &key) {
             Some(NoteKeyboardAction::OctaveDown) => {
                 self.adjust_note_keyboard_octave(-1);
-                self.begin_pending_input(pending);
+                self.retain_pending_with_prompt(pending);
                 return Ok(());
             }
             Some(NoteKeyboardAction::OctaveUp) => {
                 self.adjust_note_keyboard_octave(1);
-                self.begin_pending_input(pending);
+                self.retain_pending_with_prompt(pending);
                 return Ok(());
             }
             None => {}
@@ -156,19 +156,16 @@ impl StudioApp {
             match self.note_key_input(key) {
                 NoteKeyInput::Cancel => {
                     self.clear_active_preview_notes();
-                    self.status_message = pending.cancel_message().into();
+                    self.cancel_pending_input(pending);
                 }
-                NoteKeyInput::Unknown => {
-                    self.status_message = format!("Unknown preview key. {}", PREVIEW_NOTE_HELP);
-                    self.begin_pending_input(pending);
-                }
+                NoteKeyInput::Unknown => self.reject_pending_input(pending),
                 NoteKeyInput::Token(_) => unreachable!(),
             }
             return Ok(());
         };
 
         if self.active_preview_keys.contains_key(&ch) {
-            self.begin_pending_input(pending);
+            self.retain_pending_with_prompt(pending);
             return Ok(());
         }
 
@@ -189,7 +186,7 @@ impl StudioApp {
                     self.active_preview_keys.remove(&ch);
                     self.status_message = format!("Preview unavailable here: {}", token);
                 }
-                self.begin_pending_input(pending);
+                self.retain_pending_with_prompt(pending);
             }
             Some(PreviewAction::SilentToken) => {
                 let NoteKeyInput::Token(token) = self.note_key_input(key) else {
@@ -197,16 +194,11 @@ impl StudioApp {
                 };
                 self.active_preview_keys.remove(&ch);
                 self.status_message = format!("Preview silent: {}", token);
-                self.begin_pending_input(pending);
+                self.retain_pending_with_prompt(pending);
             }
             None => match self.note_key_input(key) {
-                NoteKeyInput::Cancel => {
-                    self.status_message = pending.cancel_message().into();
-                }
-                NoteKeyInput::Unknown => {
-                    self.status_message = format!("Unknown preview key. {}", PREVIEW_NOTE_HELP);
-                    self.begin_pending_input(pending);
-                }
+                NoteKeyInput::Cancel => self.cancel_pending_input(pending),
+                NoteKeyInput::Unknown => self.reject_pending_input(pending),
                 NoteKeyInput::Token(_) => unreachable!(),
             },
         }
@@ -263,7 +255,7 @@ impl StudioApp {
 
         match self.note_key_input(key) {
             NoteKeyInput::Cancel => {
-                self.status_message = pending.cancel_message().into();
+                self.cancel_pending_input(pending);
             }
             NoteKeyInput::Token(token) => {
                 let placed = self.place_token_at_current_slot(&token)?;
@@ -276,9 +268,10 @@ impl StudioApp {
                 }
             }
             NoteKeyInput::Unknown => {
-                self.status_message = pending.unknown_message();
                 if pending.is_continuous() {
-                    self.resume_continuous_input(pending);
+                    self.reject_pending_input(pending);
+                } else {
+                    self.status_message = pending.unknown_message();
                 }
             }
         }

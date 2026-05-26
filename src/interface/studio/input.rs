@@ -1,5 +1,5 @@
 pub(super) const ADD_HELP: &str =
-    "Add\n  s seq  l lane  t track  h separator  T template  b bar\n  d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain";
+    "Add\n  s seq  l lane  t track  P piano-roll  h separator  T template  b bar\n  d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain";
 pub(super) const GOTO_HELP: &str =
     "Goto: t next track | T previous track | d template definition | Esc cancel";
 pub(super) const DELETE_HELP: &str =
@@ -123,11 +123,11 @@ impl StudioInputState {
         self.pending = Some(pending);
     }
 
-    pub(super) fn take_pending(&mut self) -> Option<PendingInput> {
-        self.pending.take()
-    }
-
     pub(super) fn pending(&self) -> Option<PendingInput> {
         self.pending
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.pending = None;
     }
 }
