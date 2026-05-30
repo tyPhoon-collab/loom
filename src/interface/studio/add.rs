@@ -598,16 +598,17 @@ fn next_track_header(lines: &[String]) -> (String, u8) {
             trimmed.starts_with('#') && !trimmed.starts_with("##")
         })
         .count();
-    let next_channel = lines
+    let used_channels: std::collections::HashSet<u8> = lines
         .iter()
         .filter_map(|line| parse_track_header_channel(line))
-        .map(|channel| channel + 2)
-        .max()
-        .unwrap_or(1)
-        .min(16);
+        .map(|channel| channel + 1)
+        .collect();
+    let next_channel = (1u8..=16)
+        .filter(|channel| *channel != 10)
+        .find(|channel| !used_channels.contains(channel))
+        .unwrap_or(16);
     (format!("Track {}", track_count + 1), next_channel)
 }
-
 fn next_empty_template_name(lines: &[String], cursor_row: usize) -> String {
     let existing: std::collections::HashSet<String> = lines
         .iter()
@@ -754,7 +755,20 @@ mod tests {
             "seq | C4 |".to_string(),
             "# Bass: 3".to_string(),
         ];
-        assert_eq!(next_track_header(&lines), ("Track 3".to_string(), 4));
+        assert_eq!(next_track_header(&lines), ("Track 3".to_string(), 2));
+    }
+
+    #[test]
+    fn next_track_header_skips_drum_channel_and_fills_smallest_gap() {
+        let lines = vec![
+            "# Piano: 1".to_string(),
+            "seq | C4 |".to_string(),
+            "# Bass: 2".to_string(),
+            "seq | C3 |".to_string(),
+            "# Drums: 10".to_string(),
+            "kick | ^ |".to_string(),
+        ];
+        assert_eq!(next_track_header(&lines), ("Track 4".to_string(), 3));
     }
 
     #[test]
