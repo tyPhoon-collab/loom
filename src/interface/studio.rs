@@ -11,7 +11,7 @@ use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use selection::StudioSelection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -25,6 +25,7 @@ mod input;
 mod keystroke;
 mod note_entry;
 mod onset;
+mod preview_keyboard;
 mod selection;
 mod selection_ops;
 mod selection_state;
@@ -60,7 +61,7 @@ enum KeyAction {
     ForceQuit,
     EnterInsertMode,
     BeginPending(PendingInput),
-    ClearPreviewAndBegin(PendingInput),
+    TogglePreviewPanel,
     SubdivideCurrentUnit,
     ShrinkCurrentEditableGroup,
     DeleteCurrentUnit,
@@ -140,7 +141,7 @@ const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     },
     KeyBinding {
         stroke: KeyStroke::ShiftChar('p'),
-        action: KeyAction::ClearPreviewAndBegin(PendingInput::PreviewNote),
+        action: KeyAction::TogglePreviewPanel,
     },
     KeyBinding {
         stroke: KeyStroke::Char('n'),
@@ -478,6 +479,7 @@ pub struct StudioApp {
     selection: Option<StudioSelection>,
     source_undo_stack: Vec<SourceUndoEntry>,
     continuous_input_history: Vec<ContinuousInputStep>,
+    preview_panel: PreviewPanelState,
     active_preview_keys: HashMap<char, ActivePreviewNote>,
     player: LivePlayer,
 }
@@ -498,6 +500,23 @@ enum ContinuousInputStep {
 struct ActivePreviewNote {
     channel: u8,
     note: u8,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct PreviewPanelState {
+    pub(super) open: bool,
+    pub(super) track_name: String,
+    pub(super) channel: u8,
+    pub(super) source_program: Option<u8>,
+    pub(super) override_program: Option<u8>,
+    pub(super) velocity: u8,
+    pub(super) active_keys: HashSet<char>,
+}
+
+impl PreviewPanelState {
+    pub(super) fn effective_program(&self) -> Option<u8> {
+        self.override_program.or(self.source_program)
+    }
 }
 
 impl StudioApp {
@@ -550,6 +569,10 @@ impl StudioApp {
             selection: None,
             source_undo_stack: Vec::new(),
             continuous_input_history: Vec::new(),
+            preview_panel: PreviewPanelState {
+                velocity: 96,
+                ..PreviewPanelState::default()
+            },
             active_preview_keys: HashMap::new(),
             player,
         };
@@ -573,12 +596,7 @@ impl StudioApp {
                 if let event::Event::Key(key) = event::read().into_diagnostic()? {
                     match key.kind {
                         KeyEventKind::Press | KeyEventKind::Repeat => self.handle_key(key)?,
-                        KeyEventKind::Release
-                            if matches!(
-                                self.input_state.pending(),
-                                Some(PendingInput::PreviewNote)
-                            ) =>
-                        {
+                        KeyEventKind::Release if self.preview_panel.open => {
                             self.handle_key(key)?;
                         }
                         _ => {}
@@ -624,6 +642,10 @@ impl StudioApp {
                 }
             );
             return Ok(());
+        }
+
+        if self.preview_panel.open {
+            return self.handle_preview_panel_key(key);
         }
 
         match self.mode {
@@ -777,7 +799,6 @@ impl StudioApp {
             PendingInput::TemplateMacro => self.handle_template_macro_key(key),
             PendingInput::TrackInitAdd => self.handle_track_init_add_key(key),
             PendingInput::TrackInitDelete => self.handle_track_init_delete_key(key),
-            PendingInput::PreviewNote => self.handle_preview_note_key(key),
             PendingInput::Note(mode) => self.handle_note_key(mode, key),
             PendingInput::Onset(mode) => self.handle_onset_key(mode, key),
         }
@@ -791,7 +812,6 @@ impl StudioApp {
     fn handle_select_key(&mut self, key: KeyEvent) -> Result<()> {
         if let Some(pending) = self.input_state.pending() {
             return match pending {
-                PendingInput::PreviewNote => self.dispatch_pending_input(pending, key),
                 PendingInput::Note(_) => self.handle_select_note_key(key),
                 PendingInput::Onset(_) => self.handle_select_onset_key(key),
                 PendingInput::Goto | PendingInput::DeleteStructure => {
@@ -839,10 +859,7 @@ impl StudioApp {
                 self.status_message = "Insert mode".into();
             }
             KeyAction::BeginPending(pending) => self.begin_pending_input(pending),
-            KeyAction::ClearPreviewAndBegin(pending) => {
-                self.clear_active_preview_notes();
-                self.begin_pending_input(pending);
-            }
+            KeyAction::TogglePreviewPanel => self.toggle_preview_panel(),
             KeyAction::SubdivideCurrentUnit => self.subdivide_current_unit()?,
             KeyAction::ShrinkCurrentEditableGroup => self.shrink_current_editable_group()?,
             KeyAction::DeleteCurrentUnit => self.delete_current_unit()?,

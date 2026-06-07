@@ -8,8 +8,6 @@ pub(super) const NOTE_HELP: &str =
     "Note: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const CONTINUOUS_NOTE_HELP: &str =
     "Note*: keyboard piano key | Space skip | . rest | - sustain | z/x octave | Tab subdivide | S-Tab shrink | Backspace undo | Esc cancel";
-pub(super) const PREVIEW_NOTE_HELP: &str =
-    "Preview: keyboard piano key | . rest | - sustain | z/x octave | Esc cancel";
 pub(super) const ONSET_HELP: &str = "Onset: x note-on | . rest | - sustain | t toggle | Esc cancel";
 pub(super) const CONTINUOUS_ONSET_HELP: &str =
     "Onset*: x note-on | Space skip | . rest | - sustain | t toggle | Tab subdivide | S-Tab shrink | Backspace undo | Esc cancel";
@@ -33,7 +31,6 @@ pub(super) enum PendingInput {
     TemplateMacro,
     TrackInitAdd,
     TrackInitDelete,
-    PreviewNote,
     Note(NoteInputMode),
     Onset(NoteInputMode),
 }
@@ -52,9 +49,6 @@ impl PendingInput {
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP.to_string(),
             PendingInput::TrackInitAdd => TRACK_INIT_ADD_HELP.to_string(),
             PendingInput::TrackInitDelete => TRACK_INIT_DELETE_HELP.to_string(),
-            PendingInput::PreviewNote => {
-                format!("{} | octave {}", self.help_text(), note_keyboard_octave)
-            }
             PendingInput::Note(_) => {
                 format!("{} | octave {}", self.help_text(), note_keyboard_octave)
             }
@@ -70,7 +64,6 @@ impl PendingInput {
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP,
             PendingInput::TrackInitAdd => TRACK_INIT_ADD_HELP,
             PendingInput::TrackInitDelete => TRACK_INIT_DELETE_HELP,
-            PendingInput::PreviewNote => PREVIEW_NOTE_HELP,
             PendingInput::Note(NoteInputMode::Single) => NOTE_HELP,
             PendingInput::Note(NoteInputMode::Continuous) => CONTINUOUS_NOTE_HELP,
             PendingInput::Onset(NoteInputMode::Single) => ONSET_HELP,
@@ -86,7 +79,6 @@ impl PendingInput {
             PendingInput::TemplateMacro => "Template macro cancelled",
             PendingInput::TrackInitAdd => "Track init add cancelled",
             PendingInput::TrackInitDelete => "Track init delete cancelled",
-            PendingInput::PreviewNote => "Preview cancelled",
             PendingInput::Note(NoteInputMode::Single) => "Note entry cancelled",
             PendingInput::Note(NoteInputMode::Continuous) => "Continuous note entry cancelled",
             PendingInput::Onset(NoteInputMode::Single) => "Onset edit cancelled",
@@ -102,7 +94,6 @@ impl PendingInput {
             PendingInput::TemplateMacro => "template macro command",
             PendingInput::TrackInitAdd => "track init add command",
             PendingInput::TrackInitDelete => "track init delete command",
-            PendingInput::PreviewNote => "preview key",
             PendingInput::Note(_) => "note key",
             PendingInput::Onset(_) => "onset command",
         };

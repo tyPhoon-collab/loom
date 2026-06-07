@@ -26,6 +26,10 @@ pub enum PlayerCommand {
         note: u8,
         velocity: u8,
     },
+    PreviewProgramChange {
+        channel: u8,
+        program: u8,
+    },
     PreviewNoteOff {
         channel: u8,
         note: u8,
@@ -93,6 +97,12 @@ impl LivePlayer {
             note,
             velocity,
         });
+    }
+
+    pub fn preview_program_change(&self, channel: u8, program: u8) {
+        let _ = self
+            .command_sender
+            .send(PlayerCommand::PreviewProgramChange { channel, program });
     }
 
     pub fn preview_note_off(&self, channel: u8, note: u8) {
@@ -171,6 +181,9 @@ fn run_player_loop(
                     velocity,
                 } => {
                     core.preview_note_on(channel, note, velocity)?;
+                }
+                PlayerCommand::PreviewProgramChange { channel, program } => {
+                    core.preview_program_change(channel, program)?;
                 }
                 PlayerCommand::PreviewNoteOff { channel, note } => {
                     core.preview_note_off(channel, note)?;

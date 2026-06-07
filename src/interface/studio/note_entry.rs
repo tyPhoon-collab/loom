@@ -2,6 +2,7 @@ use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
 use super::keystroke::{key_stroke_matches, normalized_key_stroke, KeyStroke};
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
+use crate::dsl::Note;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use miette::Result;
 use std::collections::HashMap;
@@ -9,6 +10,8 @@ use std::collections::HashMap;
 const MIN_KEYBOARD_OCTAVE: i32 = 0;
 const MAX_KEYBOARD_OCTAVE: i32 = 7;
 const DEFAULT_KEYBOARD_OCTAVE: i32 = 4;
+const PREVIEW_PROGRAM_STEP: u8 = 1;
+const PREVIEW_PROGRAM_PAGE_STEP: u8 = 10;
 
 #[derive(Clone, Debug)]
 pub(super) struct NoteKeyboard {
@@ -17,7 +20,7 @@ pub(super) struct NoteKeyboard {
     octave_up: char,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum NoteKeyBinding {
     Pitch { name: String, octave_offset: i32 },
     Rest,
@@ -34,6 +37,23 @@ enum NoteKeyInput {
 enum PreviewAction {
     AuditionPitch,
     SilentToken,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct KeyboardVisualKey {
+    pub(super) physical_key: char,
+    pub(super) note_name: &'static str,
+    pub(super) octave_offset: i32,
+    pub(super) is_black: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct KeyboardVisualLayout {
+    pub(super) pitch_keys: Vec<KeyboardVisualKey>,
+    pub(super) rest_key: char,
+    pub(super) sustain_key: char,
+    pub(super) octave_down_key: char,
+    pub(super) octave_up_key: char,
 }
 
 impl NoteKeyboard {
@@ -54,7 +74,7 @@ impl NoteKeyboard {
             let Some(binding) = parse_note_binding(value) else {
                 continue;
             };
-            keyboard.keys.insert(key, binding);
+            keyboard.set_binding(key, binding);
         }
 
         let octave = config
@@ -83,7 +103,79 @@ impl NoteKeyboard {
             NoteKeyBinding::Sustain => Some("-".to_string()),
         }
     }
+
+    fn set_binding(&mut self, key: char, binding: NoteKeyBinding) {
+        self.keys.retain(|existing_key, existing_binding| {
+            *existing_key == key || *existing_binding != binding
+        });
+        self.keys.insert(key, binding);
+    }
+
+    pub(super) fn visual_layout(&self) -> KeyboardVisualLayout {
+        KeyboardVisualLayout {
+            pitch_keys: VISUAL_PITCH_LAYOUT
+                .iter()
+                .filter_map(|(note_name, octave_offset, is_black)| {
+                    self.find_pitch_key(note_name, *octave_offset)
+                        .map(|physical_key| KeyboardVisualKey {
+                            physical_key,
+                            note_name,
+                            octave_offset: *octave_offset,
+                            is_black: *is_black,
+                        })
+                })
+                .collect(),
+            rest_key: self.find_rest_key().unwrap_or('.'),
+            sustain_key: self.find_sustain_key().unwrap_or('-'),
+            octave_down_key: self.octave_down,
+            octave_up_key: self.octave_up,
+        }
+    }
+
+    fn find_pitch_key(&self, name: &str, octave_offset: i32) -> Option<char> {
+        self.keys.iter().find_map(|(key, binding)| match binding {
+            NoteKeyBinding::Pitch {
+                name: binding_name,
+                octave_offset: binding_offset,
+            } if binding_name == name && *binding_offset == octave_offset => Some(*key),
+            _ => None,
+        })
+    }
+
+    fn find_rest_key(&self) -> Option<char> {
+        self.keys.iter().find_map(|(key, binding)| match binding {
+            NoteKeyBinding::Rest => Some(*key),
+            _ => None,
+        })
+    }
+
+    fn find_sustain_key(&self) -> Option<char> {
+        self.keys.iter().find_map(|(key, binding)| match binding {
+            NoteKeyBinding::Sustain => Some(*key),
+            _ => None,
+        })
+    }
 }
+
+const VISUAL_PITCH_LAYOUT: &[(&str, i32, bool)] = &[
+    ("C", 0, false),
+    ("C#", 0, true),
+    ("D", 0, false),
+    ("D#", 0, true),
+    ("E", 0, false),
+    ("F", 0, false),
+    ("F#", 0, true),
+    ("G", 0, false),
+    ("G#", 0, true),
+    ("A", 0, false),
+    ("A#", 0, true),
+    ("B", 0, false),
+    ("C", 1, false),
+    ("C#", 1, true),
+    ("D", 1, false),
+    ("D#", 1, true),
+    ("E", 1, false),
+];
 
 impl Default for NoteKeyboard {
     fn default() -> Self {
@@ -104,6 +196,8 @@ impl Default for NoteKeyboard {
             ('k', "C", 1),
             ('o', "C#", 1),
             ('l', "D", 1),
+            ('p', "D#", 1),
+            (';', "E", 1),
         ] {
             keys.insert(
                 key,
@@ -125,28 +219,65 @@ impl Default for NoteKeyboard {
 }
 
 impl StudioApp {
-    pub(super) fn handle_preview_note_key(&mut self, key: KeyEvent) -> Result<()> {
-        let pending = PendingInput::PreviewNote;
-
+    pub(super) fn handle_preview_panel_key(&mut self, key: KeyEvent) -> Result<()> {
         if key.kind == KeyEventKind::Release {
             if let Some(ch) = preview_key_char(&key) {
+                self.preview_panel.active_keys.remove(&ch);
                 if let Some(active) = self.active_preview_keys.remove(&ch) {
                     self.player.preview_note_off(active.channel, active.note);
                 }
             }
-            self.retain_pending_with_prompt(pending);
             return Ok(());
+        }
+
+        if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key)
+            || key_stroke_matches(KeyStroke::ShiftChar('p'), &key)
+        {
+            self.close_preview_panel();
+            return Ok(());
+        }
+
+        match normalized_key_stroke(&key) {
+            Some(KeyStroke::Symbol('[')) => {
+                self.adjust_preview_program(-i16::from(PREVIEW_PROGRAM_STEP));
+                return Ok(());
+            }
+            Some(KeyStroke::Symbol(']')) => {
+                self.adjust_preview_program(i16::from(PREVIEW_PROGRAM_STEP));
+                return Ok(());
+            }
+            Some(KeyStroke::Symbol('{')) => {
+                self.adjust_preview_program(-i16::from(PREVIEW_PROGRAM_PAGE_STEP));
+                return Ok(());
+            }
+            Some(KeyStroke::Symbol('}')) => {
+                self.adjust_preview_program(i16::from(PREVIEW_PROGRAM_PAGE_STEP));
+                return Ok(());
+            }
+            Some(KeyStroke::Char('r')) => {
+                self.preview_panel.override_program = None;
+                self.status_message = match self.preview_panel.source_program {
+                    Some(program) => format!("Preview program reset to source pc {}", program),
+                    None => "Preview program reset to track default".to_string(),
+                };
+                return Ok(());
+            }
+            _ => {}
         }
 
         match note_keyboard_action(&self.note_keyboard, &key) {
             Some(NoteKeyboardAction::OctaveDown) => {
+                self.preview_panel
+                    .active_keys
+                    .insert(self.note_keyboard.octave_down);
                 self.adjust_note_keyboard_octave(-1);
-                self.retain_pending_with_prompt(pending);
                 return Ok(());
             }
             Some(NoteKeyboardAction::OctaveUp) => {
+                self.preview_panel
+                    .active_keys
+                    .insert(self.note_keyboard.octave_up);
                 self.adjust_note_keyboard_octave(1);
-                self.retain_pending_with_prompt(pending);
                 return Ok(());
             }
             None => {}
@@ -156,16 +287,18 @@ impl StudioApp {
             match self.note_key_input(key) {
                 NoteKeyInput::Cancel => {
                     self.clear_active_preview_notes();
-                    self.cancel_pending_input(pending);
+                    self.close_preview_panel();
                 }
-                NoteKeyInput::Unknown => self.reject_pending_input(pending),
+                NoteKeyInput::Unknown => {
+                    self.status_message = "Unknown preview key".into();
+                }
                 NoteKeyInput::Token(_) => unreachable!(),
             }
             return Ok(());
         };
 
+        self.preview_panel.active_keys.insert(ch);
         if self.active_preview_keys.contains_key(&ch) {
-            self.retain_pending_with_prompt(pending);
             return Ok(());
         }
 
@@ -174,19 +307,27 @@ impl StudioApp {
                 let NoteKeyInput::Token(token) = self.note_key_input(key) else {
                     unreachable!();
                 };
-                let row = self.textarea.cursor().0;
                 if self.is_playing {
                     self.status_message = format!("Preview suppressed while playing: {}", token);
-                } else if let Some((channel, note)) = self.preview_target(row, &token) {
+                } else if let Some((channel, note)) =
+                    self.preview_target_for_channel(self.preview_panel.channel, &token)
+                {
+                    if let Some(program) = self.preview_panel.effective_program() {
+                        self.player.preview_program_change(channel, program);
+                    }
                     self.player.preview_note_on(channel, note, 96);
                     self.active_preview_keys
                         .insert(ch, super::ActivePreviewNote { channel, note });
-                    self.status_message = format!("Preview: {}", token);
+                    self.status_message = match self.preview_panel.effective_program() {
+                        Some(program) => {
+                            format!("Preview: {} | ch {} | pc {}", token, channel + 1, program)
+                        }
+                        None => format!("Preview: {} | ch {}", token, channel + 1),
+                    };
                 } else {
                     self.active_preview_keys.remove(&ch);
                     self.status_message = format!("Preview unavailable here: {}", token);
                 }
-                self.retain_pending_with_prompt(pending);
             }
             Some(PreviewAction::SilentToken) => {
                 let NoteKeyInput::Token(token) = self.note_key_input(key) else {
@@ -194,15 +335,66 @@ impl StudioApp {
                 };
                 self.active_preview_keys.remove(&ch);
                 self.status_message = format!("Preview silent: {}", token);
-                self.retain_pending_with_prompt(pending);
             }
             None => match self.note_key_input(key) {
-                NoteKeyInput::Cancel => self.cancel_pending_input(pending),
-                NoteKeyInput::Unknown => self.reject_pending_input(pending),
+                NoteKeyInput::Cancel => self.close_preview_panel(),
+                NoteKeyInput::Unknown => {
+                    self.status_message = "Unknown preview key".into();
+                }
                 NoteKeyInput::Token(_) => unreachable!(),
             },
         }
         Ok(())
+    }
+
+    pub(super) fn toggle_preview_panel(&mut self) {
+        if self.preview_panel.open {
+            self.close_preview_panel();
+            return;
+        }
+
+        let row = self.textarea.cursor().0;
+        let Some(context) = self.preview_track_context_for_row(row) else {
+            self.status_message = "Preview panel needs the cursor inside a track".into();
+            return;
+        };
+
+        self.clear_active_preview_notes();
+        self.preview_panel.open = true;
+        self.preview_panel.track_name = context.track_name;
+        self.preview_panel.channel = context.channel;
+        self.preview_panel.source_program = context.source_program;
+        self.preview_panel.override_program = None;
+        self.preview_panel.velocity = 96;
+        self.preview_panel.active_keys.clear();
+        self.status_message = format!(
+            "Preview panel: {} | ch {}{}",
+            self.preview_panel.track_name,
+            self.preview_panel.channel + 1,
+            self.preview_panel
+                .source_program
+                .map(|program| format!(" | source pc {}", program))
+                .unwrap_or_default()
+        );
+    }
+
+    pub(super) fn close_preview_panel(&mut self) {
+        self.clear_active_preview_notes();
+        self.preview_panel.open = false;
+        self.preview_panel.active_keys.clear();
+        self.status_message = "Preview panel closed".into();
+    }
+
+    fn adjust_preview_program(&mut self, delta: i16) {
+        let current = self.preview_panel.effective_program().unwrap_or(0);
+        let next = (i16::from(current) + delta).clamp(0, 127) as u8;
+        self.preview_panel.override_program = Some(next);
+        self.status_message = format!(
+            "Preview program: {} (track {} ch {})",
+            next,
+            self.preview_panel.track_name,
+            self.preview_panel.channel + 1
+        );
     }
 
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
@@ -313,6 +505,18 @@ impl StudioApp {
 
     fn note_key_input(&self, key: KeyEvent) -> NoteKeyInput {
         note_key_input_for_key(&self.note_keyboard, self.note_keyboard_octave, key)
+    }
+}
+
+impl StudioApp {
+    fn preview_target_for_channel(&self, channel: u8, token: &str) -> Option<(u8, u8)> {
+        let note = token.parse::<Note>().ok()?;
+        let midi = note.to_midi_checked().ok()?;
+        let channel = match note {
+            Note::Drum(_) => 9,
+            _ => channel,
+        };
+        Some((channel, midi))
     }
 }
 
@@ -436,6 +640,8 @@ mod tests {
         assert_eq!(keyboard.token('k', 4).as_deref(), Some("C5"));
         assert_eq!(keyboard.token('o', 4).as_deref(), Some("C#5"));
         assert_eq!(keyboard.token('l', 4).as_deref(), Some("D5"));
+        assert_eq!(keyboard.token('p', 4).as_deref(), Some("D#5"));
+        assert_eq!(keyboard.token(';', 4).as_deref(), Some("E5"));
         assert_eq!(keyboard.token('.', 4).as_deref(), Some("."));
         assert_eq!(keyboard.token('-', 4).as_deref(), Some("-"));
     }
@@ -491,6 +697,30 @@ mod tests {
         assert_eq!(keyboard.token('w', octave).as_deref(), Some("-"));
         assert!(keyboard.is_octave_down(','));
         assert!(keyboard.is_octave_up('.'));
+    }
+
+    #[test]
+    fn visual_layout_prefers_configured_override_over_default_binding() {
+        let mut keys = HashMap::new();
+        keys.insert("a".to_string(), "E".to_string());
+        let config = NoteKeyboardConfig {
+            base_octave: Some(4),
+            octave_down: None,
+            octave_up: None,
+            keys,
+        };
+
+        let (keyboard, _) = NoteKeyboard::from_config(&config);
+        let layout = keyboard.visual_layout();
+        let e_key = layout
+            .pitch_keys
+            .iter()
+            .find(|key| key.note_name == "E" && key.octave_offset == 0)
+            .map(|key| key.physical_key);
+
+        assert_eq!(e_key, Some('a'));
+        assert_eq!(keyboard.token('d', 4), None);
+        assert_eq!(keyboard.token('a', 4).as_deref(), Some("E4"));
     }
 
     #[test]
@@ -572,5 +802,26 @@ mod tests {
         };
 
         assert_eq!(preview_key_char(&key), None);
+    }
+
+    #[test]
+    fn visual_layout_covers_default_c_through_high_e() {
+        let layout = NoteKeyboard::default().visual_layout();
+
+        let keys: Vec<char> = layout
+            .pitch_keys
+            .iter()
+            .map(|key| key.physical_key)
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                'a', 'w', 's', 'e', 'd', 'f', 't', 'g', 'y', 'h', 'u', 'j', 'k', 'o', 'l', 'p', ';'
+            ]
+        );
+        assert_eq!(layout.rest_key, '.');
+        assert_eq!(layout.sustain_key, '-');
+        assert_eq!(layout.octave_down_key, 'z');
+        assert_eq!(layout.octave_up_key, 'x');
     }
 }

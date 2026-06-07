@@ -60,7 +60,7 @@ Main bindings:
 | `a` | add prefix |
 | `g` | goto prefix |
 | `g d` | jump to template definition under cursor |
-| `P` | preview note audition |
+| `P` | open / close preview panel |
 | `n` | single note entry |
 | `N` | continuous note entry |
 | `o` | single onset entry |
@@ -133,15 +133,17 @@ Typical Select mode operations:
 
 Note entry is the fastest way to place notes in `seq` lines.
 
-- `P` enters preview-only audition using the same keyboard mapping without editing source
+- `P` opens a preview panel for the current track without editing source
 - `n` places one unit
 - `N` keeps advancing to the next unit
 - during `N`, `Space` skips to the next unit without writing, `Tab` subdivides the current unit, and `Shift-Tab` shrinks the current bracket group
 - during `O`, `Space` skips to the next unit without writing, `Tab` subdivides the current unit, and `Shift-Tab` shrinks the current bracket group
 - `Esc` exits note entry
 - `Backspace` undoes the last step in continuous `N` / `O` entry
-- during `P`, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
-- during `P`, octave changes still work and `.` / `-` stay silent
+- inside the preview panel, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
+- the preview panel is split into an LCD-style control row and a keyboard deck, showing track name, channel, source `pc`, preview `pc`, octave, velocity, and lit pad/buttons for `Oct-`, `Oct+`, `Rest`, and `Sustain`
+- inside the preview panel, `[` / `]` adjust preview `pc` by 1, `{` / `}` adjust it by 10, and `r` resets to the source `pc`
+- inside the preview panel, octave changes still work and `.` / `-` stay silent
 
 Default keyboard layout:
 
@@ -150,11 +152,11 @@ octave:
 Z down / X up
 
 black keys:
-    W   E       T   Y   U       O
+    W   E       T   Y   U       O   P
 white keys:
-  A   S   D   F   G   H   J   K   L
+  A   S   D   F   G   H   J   K   L   ;
 pitch:
-  C   D   E   F   G   A   B   C   D
+  C   D   E   F   G   A   B   C   D   E
 ```
 
 Notes:
