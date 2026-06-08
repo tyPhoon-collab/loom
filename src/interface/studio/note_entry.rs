@@ -274,17 +274,23 @@ impl StudioApp {
 
         match note_keyboard_action(&self.note_keyboard, &key) {
             Some(NoteKeyboardAction::OctaveDown) => {
-                self.preview_panel
+                if self
+                    .preview_panel
                     .active_keys
-                    .insert(self.note_keyboard.octave_down);
-                self.adjust_note_keyboard_octave(-1);
+                    .insert(self.note_keyboard.octave_down)
+                {
+                    self.adjust_note_keyboard_octave(-1);
+                }
                 return Ok(());
             }
             Some(NoteKeyboardAction::OctaveUp) => {
-                self.preview_panel
+                if self
+                    .preview_panel
                     .active_keys
-                    .insert(self.note_keyboard.octave_up);
-                self.adjust_note_keyboard_octave(1);
+                    .insert(self.note_keyboard.octave_up)
+                {
+                    self.adjust_note_keyboard_octave(1);
+                }
                 return Ok(());
             }
             None => {}
