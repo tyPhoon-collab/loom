@@ -141,7 +141,7 @@ Note entry is the fastest way to place notes in `seq` lines.
 - `Esc` exits note entry
 - `Backspace` undoes the last step in continuous `N` / `O` entry
 - inside the preview panel, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
-- the preview panel is split into an LCD-style control row and a keyboard deck, showing track name, channel, source `pc`, preview `pc`, octave, velocity, and lit pad/buttons for `Oct-`, `Oct+`, `Rest`, and `Sustain`
+- the preview panel is split into an LCD-style status row, performance pads for octave and preview `pc` changes, and a centered keyboard deck
 - inside the preview panel, `[` / `]` adjust preview `pc` by 1, `{` / `}` adjust it by 10, and `r` resets to the source `pc`
 - inside the preview panel, octave changes still work and `.` / `-` stay silent
 

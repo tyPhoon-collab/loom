@@ -3,7 +3,7 @@ use super::preview_keyboard::preview_keyboard_deck_text;
 use super::settings::parse_track_header;
 use super::{CompileStatus, StudioApp, StudioMode};
 use ratatui::{
-    layout::{Constraint, Direction, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
@@ -197,8 +197,12 @@ impl StudioApp {
             .borders(Borders::ALL)
             .style(chassis_style);
         let inner = block.inner(area);
-        let sections =
-            Layout::vertical([Constraint::Length(2), Constraint::Length(12)]).split(inner);
+        let sections = Layout::vertical([
+            Constraint::Length(4),
+            Constraint::Length(10),
+            Constraint::Length(1),
+        ])
+        .split(inner);
         f.render_widget(Clear, area);
         f.render_widget(block, area);
         f.render_widget(
@@ -209,7 +213,8 @@ impl StudioApp {
                 self.preview_panel.effective_program(),
                 self.note_keyboard_octave,
                 self.preview_panel.velocity,
-            )),
+            ))
+            .alignment(Alignment::Center),
             sections[0],
         );
         f.render_widget(
@@ -217,8 +222,13 @@ impl StudioApp {
                 &self.note_keyboard.visual_layout(),
                 &self.preview_panel.active_keys,
                 self.note_keyboard_octave,
-            )),
+            ))
+            .alignment(Alignment::Center),
             sections[1],
+        );
+        f.render_widget(
+            Paragraph::new(preview_panel_brief_help()).alignment(Alignment::Center),
+            sections[2],
         );
     }
 
@@ -352,48 +362,41 @@ fn preview_control_panel_text(
     octave: i32,
     velocity: u8,
 ) -> Text<'static> {
-    let source_matches_preview = source_program == preview_program;
     Text::from(vec![
         Line::from(vec![
-            lcd_span("TRACK", track_name, 18),
+            lcd_span("TRACK", track_name, 30),
             Span::raw(" "),
-            badge_span("CH", channel.to_string(), false),
+            badge_span("CH", channel.to_string(), BadgeTone::Dim),
             Span::raw(" "),
-            badge_span(
-                "SRC",
-                source_program
-                    .map(|program| format!("pc {}", program))
-                    .unwrap_or_else(|| "unset".to_string()),
-                false,
-            ),
+            program_badge_span(source_program, preview_program),
             Span::raw(" "),
-            badge_span(
-                "PREV",
-                preview_program
-                    .map(|program| format!("pc {}", program))
-                    .unwrap_or_else(|| "device".to_string()),
-                !source_matches_preview,
-            ),
+            badge_span("OCT", octave.to_string(), BadgeTone::Normal),
             Span::raw(" "),
-            badge_span("OCT", octave.to_string(), false),
-            Span::raw(" "),
-            badge_span("VEL", velocity.to_string(), false),
+            badge_span("VEL", velocity.to_string(), BadgeTone::Normal),
         ]),
         Line::from(vec![
-            pad_label_span("Z", "oct-"),
+            performance_pad_span("Z", "oct-", Color::Rgb(188, 246, 204)),
             Span::raw(" "),
-            pad_label_span("X", "oct+"),
+            performance_pad_span("X", "oct+", Color::Rgb(188, 246, 204)),
             Span::raw(" "),
-            pad_label_span(".", "rest"),
+            performance_pad_span("[", "pc-", Color::Rgb(181, 232, 255)),
             Span::raw(" "),
-            pad_label_span("-", "sus"),
-            Span::raw("   "),
-            Span::styled(
-                "Esc close  r reset  [ / ] pc-1/+1  { / } pc-10/+10",
-                Style::default().fg(Color::Gray).bg(Color::Rgb(28, 30, 34)),
-            ),
+            performance_pad_span("]", "pc+", Color::Rgb(181, 232, 255)),
+            Span::raw(" "),
+            performance_pad_span("{", "-10", Color::Rgb(244, 196, 255)),
+            Span::raw(" "),
+            performance_pad_span("}", "+10", Color::Rgb(244, 196, 255)),
         ]),
     ])
+}
+
+fn preview_panel_brief_help() -> Line<'static> {
+    Line::from(vec![Span::styled(
+        "Esc close   r reset pc   note-off on key release",
+        Style::default()
+            .fg(Color::Rgb(124, 130, 148))
+            .bg(Color::Rgb(28, 30, 34)),
+    )])
 }
 
 fn lcd_span(label: &str, value: &str, width: usize) -> Span<'static> {
@@ -406,21 +409,50 @@ fn lcd_span(label: &str, value: &str, width: usize) -> Span<'static> {
     )
 }
 
-fn badge_span(label: &str, value: String, emphasized: bool) -> Span<'static> {
-    let style = if emphasized {
-        Style::default().fg(Color::Black).bg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::Gray).bg(Color::Rgb(44, 47, 54))
+#[derive(Clone, Copy)]
+enum BadgeTone {
+    Dim,
+    Normal,
+    Emphasized,
+}
+
+fn badge_span(label: &str, value: String, tone: BadgeTone) -> Span<'static> {
+    let style = match tone {
+        BadgeTone::Dim => Style::default()
+            .fg(Color::Rgb(124, 130, 148))
+            .bg(Color::Rgb(37, 39, 46)),
+        BadgeTone::Normal => Style::default()
+            .fg(Color::Rgb(188, 195, 216))
+            .bg(Color::Rgb(44, 47, 54)),
+        BadgeTone::Emphasized => Style::default()
+            .fg(Color::Rgb(32, 24, 0))
+            .bg(Color::Rgb(255, 206, 82)),
     };
     Span::styled(format!(" {} {} ", label, value), style)
 }
 
-fn pad_label_span(key: &str, label: &str) -> Span<'static> {
+fn program_badge_span(source_program: Option<u8>, preview_program: Option<u8>) -> Span<'static> {
+    let source_matches_preview = source_program == preview_program;
+    let value = match (source_program, preview_program) {
+        (_, Some(preview)) => format!("pc {}", preview),
+        (Some(source), None) => format!("pc {}", source),
+        (None, None) => "device".to_string(),
+    };
+    badge_span(
+        "PC",
+        value,
+        if source_matches_preview {
+            BadgeTone::Normal
+        } else {
+            BadgeTone::Emphasized
+        },
+    )
+}
+
+fn performance_pad_span(key: &str, label: &str, color: Color) -> Span<'static> {
     Span::styled(
-        format!(" {}:{} ", key, label),
-        Style::default()
-            .fg(Color::DarkGray)
-            .bg(Color::Rgb(28, 30, 34)),
+        format!(" {:^5} {:<4} ", key, label),
+        Style::default().fg(Color::Rgb(22, 24, 28)).bg(color),
     )
 }
 
@@ -452,7 +484,9 @@ mod tests {
             .join("\n");
 
         assert!(rendered.contains("TRACK Lead"));
-        assert!(rendered.contains("SRC pc 12"));
-        assert!(rendered.contains("PREV pc 42"));
+        assert!(rendered.contains("PC pc 42"));
+        assert!(rendered.contains("Z   oct-"));
+        assert!(rendered.contains("[   pc-"));
+        assert!(rendered.contains("]   pc+"));
     }
 }

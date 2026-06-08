@@ -35,35 +35,7 @@ pub(super) fn preview_keyboard_deck_text(
     draw_white_keybed(&mut canvas, &white_keys, active_keys, octave);
     draw_black_keys(&mut canvas, &black_keys, active_keys);
 
-    let aux = vec![
-        button_span(
-            "oct-",
-            layout.octave_down_key,
-            active_keys.contains(&layout.octave_down_key),
-        ),
-        Span::styled("  ", chassis),
-        button_span(
-            "oct+",
-            layout.octave_up_key,
-            active_keys.contains(&layout.octave_up_key),
-        ),
-        Span::styled("  ", chassis),
-        button_span(
-            "rest",
-            layout.rest_key,
-            active_keys.contains(&layout.rest_key),
-        ),
-        Span::styled("  ", chassis),
-        button_span(
-            "sus",
-            layout.sustain_key,
-            active_keys.contains(&layout.sustain_key),
-        ),
-    ];
-
-    let mut lines = canvas.into_lines();
-    lines.push(Line::from(aux));
-    Text::from(lines)
+    Text::from(canvas.into_lines())
 }
 
 fn white_key_style(active: bool) -> Style {
@@ -226,18 +198,6 @@ fn draw_black_keys(
     }
 }
 
-fn button_span(label: &str, key: char, active: bool) -> Span<'static> {
-    let style = if active {
-        Style::default().fg(Color::Black).bg(Color::LightYellow)
-    } else {
-        Style::default().fg(Color::White).bg(Color::Rgb(36, 39, 44))
-    };
-    Span::styled(
-        format!(" [{}] {:<4} ", key.to_ascii_uppercase(), label),
-        style,
-    )
-}
-
 fn styled_cells_to_line(cells: Vec<(char, Style)>) -> Line<'static> {
     let mut spans = Vec::new();
     let mut current_style = None;
@@ -287,6 +247,5 @@ mod tests {
         assert!(rendered.contains("A"));
         assert!(rendered.contains("C4"));
         assert!(rendered.contains("E5"));
-        assert!(rendered.contains("[Z] oct-"));
     }
 }
