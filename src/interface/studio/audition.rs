@@ -7,6 +7,7 @@ use crate::dsl::token::TrackInitEvent;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PreviewTrackContext {
+    pub(super) track_header_row: usize,
     pub(super) track_name: String,
     pub(super) channel: u8,
     pub(super) source_program: Option<u8>,
@@ -129,6 +130,7 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
             current = Some((
                 index,
                 PreviewTrackContext {
+                    track_header_row: index,
                     track_name: header.name,
                     channel: crate::validation::to_zero_based_channel(header.channel).ok()?,
                     source_program: None,
@@ -174,6 +176,7 @@ mod tests {
         assert_eq!(
             preview_track_context(&lines, 2),
             Some(PreviewTrackContext {
+                track_header_row: 0,
                 track_name: "Piano".to_string(),
                 channel: 1,
                 source_program: Some(41),
@@ -192,6 +195,7 @@ mod tests {
         assert_eq!(
             preview_track_context(&lines, 2),
             Some(PreviewTrackContext {
+                track_header_row: 0,
                 track_name: "Lead".to_string(),
                 channel: 0,
                 source_program: Some(81),
@@ -210,6 +214,7 @@ mod tests {
         assert_eq!(
             preview_track_context(&lines, 0),
             Some(PreviewTrackContext {
+                track_header_row: 0,
                 track_name: "Pad".to_string(),
                 channel: 2,
                 source_program: Some(89),

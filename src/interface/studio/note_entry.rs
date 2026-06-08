@@ -1,7 +1,10 @@
 use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
 use super::keystroke::{key_stroke_matches, normalized_key_stroke, KeyStroke};
+use super::settings::parse_track_header;
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
+use crate::dsl::parser::parse_track_init_command;
+use crate::dsl::token::TrackInitEvent;
 use crate::dsl::Note;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use miette::Result;
@@ -236,6 +239,10 @@ impl StudioApp {
             self.close_preview_panel();
             return Ok(());
         }
+        if key_stroke_matches(KeyStroke::Code(KeyCode::Enter), &key) {
+            self.apply_preview_program()?;
+            return Ok(());
+        }
 
         match normalized_key_stroke(&key) {
             Some(KeyStroke::Symbol('[')) => {
@@ -361,6 +368,7 @@ impl StudioApp {
 
         self.clear_active_preview_notes();
         self.preview_panel.open = true;
+        self.preview_panel.track_header_row = Some(context.track_header_row);
         self.preview_panel.track_name = context.track_name;
         self.preview_panel.channel = context.channel;
         self.preview_panel.source_program = context.source_program;
@@ -381,6 +389,7 @@ impl StudioApp {
     pub(super) fn close_preview_panel(&mut self) {
         self.clear_active_preview_notes();
         self.preview_panel.open = false;
+        self.preview_panel.track_header_row = None;
         self.preview_panel.active_keys.clear();
         self.status_message = "Preview panel closed".into();
     }
@@ -395,6 +404,34 @@ impl StudioApp {
             self.preview_panel.track_name,
             self.preview_panel.channel + 1
         );
+    }
+
+    fn apply_preview_program(&mut self) -> Result<()> {
+        let Some(program) = self.preview_panel.effective_program() else {
+            self.status_message = "No preview pc to apply".into();
+            return Ok(());
+        };
+        let Some(track_header_row) = self.preview_panel.track_header_row else {
+            self.status_message = "Preview apply needs a track target".into();
+            return Ok(());
+        };
+
+        let mut lines = self.textarea.lines().to_vec();
+        let Some(applied_row) = apply_track_program_to_lines(&mut lines, track_header_row, program)
+        else {
+            self.status_message = "Preview apply needs a track target".into();
+            return Ok(());
+        };
+        let track_name = self.preview_panel.track_name.clone();
+        self.apply_cursor_source_update(
+            lines,
+            (applied_row, 0),
+            format!("Applied pc {} to {}", program, track_name),
+            None,
+        )?;
+        self.preview_panel.source_program = Some(program);
+        self.preview_panel.override_program = None;
+        Ok(())
     }
 
     pub(super) fn handle_note_key(&mut self, mode: NoteInputMode, key: KeyEvent) -> Result<()> {
@@ -520,6 +557,44 @@ impl StudioApp {
     }
 }
 
+fn apply_track_program_to_lines(
+    lines: &mut Vec<String>,
+    track_header_row: usize,
+    program: u8,
+) -> Option<usize> {
+    parse_track_header(lines.get(track_header_row)?)?;
+    let replacement = format!("## pc {}", program);
+    let track_end = lines
+        .iter()
+        .enumerate()
+        .skip(track_header_row + 1)
+        .find_map(|(row, line)| {
+            (parse_track_header(line).is_some() || line.trim().starts_with("# @")).then_some(row)
+        })
+        .unwrap_or(lines.len());
+
+    if let Some(row) =
+        (track_header_row + 1..track_end).find(|&row| is_program_init_line(&lines[row]))
+    {
+        lines[row] = replacement;
+        return Some(row);
+    }
+
+    let insert_row = track_header_row + 1;
+    lines.insert(insert_row, replacement);
+    Some(insert_row)
+}
+
+fn is_program_init_line(line: &str) -> bool {
+    let Some(command) = line.trim().strip_prefix("## ") else {
+        return false;
+    };
+    matches!(
+        parse_track_init_command(command),
+        Ok((TrackInitEvent::ProgramChange { .. }, _))
+    )
+}
+
 fn note_key_input_for_key(keyboard: &NoteKeyboard, octave: i32, key: KeyEvent) -> NoteKeyInput {
     if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
         return NoteKeyInput::Cancel;
@@ -621,8 +696,8 @@ fn is_note_name(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        note_key_input_for_key, parse_note_binding, preview_action, preview_key_char, NoteKeyInput,
-        NoteKeyboard, PreviewAction, MAX_KEYBOARD_OCTAVE,
+        apply_track_program_to_lines, note_key_input_for_key, parse_note_binding, preview_action,
+        preview_key_char, NoteKeyInput, NoteKeyboard, PreviewAction, MAX_KEYBOARD_OCTAVE,
     };
     use crate::config::NoteKeyboardConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -823,5 +898,65 @@ mod tests {
         assert_eq!(layout.sustain_key, '-');
         assert_eq!(layout.octave_down_key, 'z');
         assert_eq!(layout.octave_up_key, 'x');
+    }
+
+    #[test]
+    fn apply_track_program_replaces_existing_pc() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "## pc 12".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 42), Some(1));
+        assert_eq!(
+            lines,
+            vec![
+                "# Lead: 1".to_string(),
+                "## pc 42".to_string(),
+                "C4 | ^ |".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_track_program_normalizes_sound_alias() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "## sound 81".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 7), Some(1));
+        assert_eq!(lines[1], "## pc 7");
+    }
+
+    #[test]
+    fn apply_track_program_inserts_below_header_when_missing() {
+        let mut lines = vec!["# Lead: 1".to_string(), "C4 | ^ |".to_string()];
+
+        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 33), Some(1));
+        assert_eq!(
+            lines,
+            vec![
+                "# Lead: 1".to_string(),
+                "## pc 33".to_string(),
+                "C4 | ^ |".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_track_program_does_not_cross_track_boundary() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "C4 | ^ |".to_string(),
+            "# Bass: 2".to_string(),
+            "## pc 34".to_string(),
+        ];
+
+        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 99), Some(1));
+        assert_eq!(lines[1], "## pc 99");
+        assert_eq!(lines[4], "## pc 34");
     }
 }

@@ -18,7 +18,7 @@ const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x d
 const FOOTER_SELECT_DETAIL_HELP: &str =
     "Select+: s/S group  +/-/[] transpose  Enter loop-range  T template";
 const FOOTER_PREVIEW_PANEL_HELP: &str =
-    "Preview: note keys  z/x octave  [/] pc +/-1  { / } pc +/-10  r reset  Esc/P close";
+    "Preview: note keys  z/x octave  [/] pc +/-1  { / } pc +/-10  Enter apply pc  r reset  Esc/P close";
 
 const OVERLAY_GLOBAL_LINES: &[&str] = &[
     "? toggle help overlay",
@@ -67,6 +67,7 @@ const OVERLAY_PREVIEW_PANEL_LINES: &[&str] = &[
     "play mapped note keys to audition the current track",
     "z/x octave down/up  . rest  - sustain",
     "[/] preview pc -1/+1  { / } preview pc -10/+10  r reset to source pc",
+    "Enter applies the preview pc to the current track",
     "the panel shows an LCD-style control row, pad buttons, and a lit keyboard deck",
     "Esc or P closes the preview panel",
 ];
@@ -392,7 +393,7 @@ fn preview_control_panel_text(
 
 fn preview_panel_brief_help() -> Line<'static> {
     Line::from(vec![Span::styled(
-        "Esc close   r reset pc   note-off on key release",
+        "Enter apply pc   r reset pc   Esc close   note-off on key release",
         Style::default()
             .fg(Color::Rgb(124, 130, 148))
             .bg(Color::Rgb(28, 30, 34)),

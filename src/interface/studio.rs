@@ -505,6 +505,7 @@ struct ActivePreviewNote {
 #[derive(Clone, Debug, Default)]
 pub(super) struct PreviewPanelState {
     pub(super) open: bool,
+    pub(super) track_header_row: Option<usize>,
     pub(super) track_name: String,
     pub(super) channel: u8,
     pub(super) source_program: Option<u8>,

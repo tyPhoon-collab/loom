@@ -143,6 +143,7 @@ Note entry is the fastest way to place notes in `seq` lines.
 - inside the preview panel, note-on happens on key press and note-off happens on key release in Kitty-compatible terminals
 - the preview panel is split into an LCD-style status row, performance pads for octave and preview `pc` changes, and a centered keyboard deck
 - inside the preview panel, `[` / `]` adjust preview `pc` by 1, `{` / `}` adjust it by 10, and `r` resets to the source `pc`
+- inside the preview panel, `Enter` applies the current preview `pc` to the track as `## pc`
 - inside the preview panel, octave changes still work and `.` / `-` stay silent
 
 Default keyboard layout:
