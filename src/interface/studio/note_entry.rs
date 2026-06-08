@@ -4,7 +4,7 @@ use super::settings::parse_track_header;
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
 use crate::dsl::parser::parse_track_init_command;
-use crate::dsl::token::TrackInitEvent;
+use crate::dsl::token::{TrackInitEvent, TrackInitLabel};
 use crate::dsl::Note;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use miette::Result;
@@ -240,33 +240,36 @@ impl StudioApp {
             return Ok(());
         }
         if key_stroke_matches(KeyStroke::Code(KeyCode::Enter), &key) {
-            self.apply_preview_program()?;
+            self.apply_preview_changes()?;
             return Ok(());
         }
 
         match normalized_key_stroke(&key) {
+            Some(KeyStroke::Char('r')) => {
+                self.preview_panel.reset_overrides();
+                self.status_message = "Preview changes reset to source values".to_string();
+                return Ok(());
+            }
+            Some(KeyStroke::Char(ch)) if super::PreviewTarget::from_index(ch).is_some() => {
+                let target = super::PreviewTarget::from_index(ch).unwrap();
+                self.preview_panel.selected_target = target;
+                self.status_message = format!("Preview target: {}", target.label());
+                return Ok(());
+            }
             Some(KeyStroke::Symbol('[')) => {
-                self.adjust_preview_program(-i16::from(PREVIEW_PROGRAM_STEP));
+                self.adjust_preview_target(-i16::from(PREVIEW_PROGRAM_STEP));
                 return Ok(());
             }
             Some(KeyStroke::Symbol(']')) => {
-                self.adjust_preview_program(i16::from(PREVIEW_PROGRAM_STEP));
+                self.adjust_preview_target(i16::from(PREVIEW_PROGRAM_STEP));
                 return Ok(());
             }
             Some(KeyStroke::Symbol('{')) => {
-                self.adjust_preview_program(-i16::from(PREVIEW_PROGRAM_PAGE_STEP));
+                self.adjust_preview_target(-i16::from(PREVIEW_PROGRAM_PAGE_STEP));
                 return Ok(());
             }
             Some(KeyStroke::Symbol('}')) => {
-                self.adjust_preview_program(i16::from(PREVIEW_PROGRAM_PAGE_STEP));
-                return Ok(());
-            }
-            Some(KeyStroke::Char('r')) => {
-                self.preview_panel.override_program = None;
-                self.status_message = match self.preview_panel.source_program {
-                    Some(program) => format!("Preview program reset to source pc {}", program),
-                    None => "Preview program reset to track default".to_string(),
-                };
+                self.adjust_preview_target(i16::from(PREVIEW_PROGRAM_PAGE_STEP));
                 return Ok(());
             }
             _ => {}
@@ -328,6 +331,14 @@ impl StudioApp {
                     if let Some(program) = self.preview_panel.effective_program() {
                         self.player.preview_program_change(channel, program);
                     }
+                    for target in super::PreviewTarget::ALL {
+                        if let Some(spec) = target.control_spec() {
+                            if let Some(value) = self.preview_panel.effective_control_value(target)
+                            {
+                                self.player.preview_control_change(channel, spec.cc, value);
+                            }
+                        }
+                    }
                     self.player.preview_note_on(channel, note, 96);
                     self.active_preview_keys
                         .insert(ch, super::ActivePreviewNote { channel, note });
@@ -379,6 +390,8 @@ impl StudioApp {
         self.preview_panel.channel = context.channel;
         self.preview_panel.source_program = context.source_program;
         self.preview_panel.override_program = None;
+        self.preview_panel.controls = context.controls;
+        self.preview_panel.selected_target = super::PreviewTarget::Program;
         self.preview_panel.velocity = 96;
         self.preview_panel.active_keys.clear();
         self.status_message = format!(
@@ -400,10 +413,19 @@ impl StudioApp {
         self.status_message = "Preview panel closed".into();
     }
 
+    fn adjust_preview_target(&mut self, delta: i16) {
+        match self.preview_panel.selected_target {
+            super::PreviewTarget::Program => self.adjust_preview_program(delta),
+            target => self.adjust_preview_control(target, delta),
+        }
+    }
+
     fn adjust_preview_program(&mut self, delta: i16) {
         let current = self.preview_panel.effective_program().unwrap_or(0);
         let next = (i16::from(current) + delta).clamp(0, 127) as u8;
         self.preview_panel.override_program = Some(next);
+        self.player
+            .preview_program_change(self.preview_panel.channel, next);
         self.status_message = format!(
             "Preview program: {} (track {} ch {})",
             next,
@@ -412,9 +434,30 @@ impl StudioApp {
         );
     }
 
-    fn apply_preview_program(&mut self) -> Result<()> {
-        let Some(program) = self.preview_panel.effective_program() else {
-            self.status_message = "No preview pc to apply".into();
+    fn adjust_preview_control(&mut self, target: super::PreviewTarget, delta: i16) {
+        let Some(spec) = target.control_spec() else {
+            return;
+        };
+        let Some(state) = self.preview_panel.controls.get_mut(target) else {
+            return;
+        };
+        let current = state.effective_value(spec);
+        let next = (i16::from(current) + delta).clamp(0, 127) as u8;
+        state.override_value = Some(next);
+        self.player
+            .preview_control_change(self.preview_panel.channel, spec.cc, next);
+        self.status_message = format!(
+            "Preview {}: {} (track {} ch {})",
+            target.label(),
+            next,
+            self.preview_panel.track_name,
+            self.preview_panel.channel + 1
+        );
+    }
+
+    fn apply_preview_changes(&mut self) -> Result<()> {
+        if !self.preview_panel.has_overrides() {
+            self.status_message = "No preview changes to apply".into();
             return Ok(());
         };
         let Some(track_header_row) = self.preview_panel.track_header_row else {
@@ -423,20 +466,48 @@ impl StudioApp {
         };
 
         let mut lines = self.textarea.lines().to_vec();
-        let Some(applied_row) = apply_track_program_to_lines(&mut lines, track_header_row, program)
+        let mut changes = Vec::new();
+        if let Some(program) = self.preview_panel.override_program {
+            changes.push(PreviewInitChange::Program(program));
+        }
+        for target in super::PreviewTarget::ALL {
+            if let Some(spec) = target.control_spec() {
+                if let Some(state) = self.preview_panel.controls.get(target) {
+                    if let Some(value) = state.override_value {
+                        changes.push(PreviewInitChange::Control { spec, value });
+                    }
+                }
+            }
+        }
+
+        let Some(applied_row) =
+            apply_preview_init_changes_to_lines(&mut lines, track_header_row, &changes)
         else {
             self.status_message = "Preview apply needs a track target".into();
             return Ok(());
         };
         let track_name = self.preview_panel.track_name.clone();
+        let count = changes.len();
         self.apply_cursor_source_update(
             lines,
             (applied_row, 0),
-            format!("Applied pc {} to {}", program, track_name),
+            format!("Applied {} preview change(s) to {}", count, track_name),
             None,
         )?;
-        self.preview_panel.source_program = Some(program);
-        self.preview_panel.override_program = None;
+        for change in changes {
+            match change {
+                PreviewInitChange::Program(program) => {
+                    self.preview_panel.source_program = Some(program);
+                    self.preview_panel.override_program = None;
+                }
+                PreviewInitChange::Control { spec, value } => {
+                    if let Some(state) = self.preview_panel.controls.get_mut(spec.target) {
+                        state.source = Some(value);
+                        state.override_value = None;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -563,13 +634,24 @@ impl StudioApp {
     }
 }
 
-fn apply_track_program_to_lines(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewInitChange {
+    Program(u8),
+    Control {
+        spec: super::PreviewControlSpec,
+        value: u8,
+    },
+}
+
+fn apply_preview_init_changes_to_lines(
     lines: &mut Vec<String>,
     track_header_row: usize,
-    program: u8,
+    changes: &[PreviewInitChange],
 ) -> Option<usize> {
     parse_track_header(lines.get(track_header_row)?)?;
-    let replacement = format!("## pc {}", program);
+    if changes.is_empty() {
+        return None;
+    }
     let track_end = lines
         .iter()
         .enumerate()
@@ -579,26 +661,83 @@ fn apply_track_program_to_lines(
         })
         .unwrap_or(lines.len());
 
-    if let Some(row) =
-        (track_header_row + 1..track_end).find(|&row| is_program_init_line(&lines[row]))
+    let mut first_applied_row = None;
+    let mut pending = changes.to_vec();
+
+    for (row, line) in lines
+        .iter_mut()
+        .enumerate()
+        .take(track_end)
+        .skip(track_header_row + 1)
     {
-        lines[row] = replacement;
-        return Some(row);
+        let Some(existing) = preview_init_change_for_line(line) else {
+            continue;
+        };
+        if let Some(index) = pending
+            .iter()
+            .position(|change| preview_init_change_matches(*change, existing))
+        {
+            let change = pending.remove(index);
+            *line = preview_init_line(change);
+            first_applied_row.get_or_insert(row);
+        }
     }
 
-    let insert_row = track_header_row + 1;
-    lines.insert(insert_row, replacement);
-    Some(insert_row)
+    let mut insert_row = track_header_row + 1;
+    for change in pending {
+        lines.insert(insert_row, preview_init_line(change));
+        first_applied_row.get_or_insert(insert_row);
+        insert_row += 1;
+    }
+
+    first_applied_row
 }
 
-fn is_program_init_line(line: &str) -> bool {
-    let Some(command) = line.trim().strip_prefix("## ") else {
-        return false;
+fn preview_init_change_for_line(line: &str) -> Option<PreviewInitChange> {
+    let command = line.trim().strip_prefix("## ")?;
+    let Ok((event, _)) = parse_track_init_command(command) else {
+        return None;
     };
-    matches!(
-        parse_track_init_command(command),
-        Ok((TrackInitEvent::ProgramChange { .. }, _))
-    )
+    match event {
+        TrackInitEvent::ProgramChange { program } => Some(PreviewInitChange::Program(program)),
+        TrackInitEvent::ControlChange { cc, value } => super::PreviewTarget::ALL
+            .into_iter()
+            .filter_map(super::PreviewTarget::control_spec)
+            .find(|spec| spec.cc == cc)
+            .map(|spec| PreviewInitChange::Control { spec, value }),
+        TrackInitEvent::BankSelect { .. } => None,
+    }
+}
+
+fn preview_init_change_matches(change: PreviewInitChange, existing: PreviewInitChange) -> bool {
+    match (change, existing) {
+        (PreviewInitChange::Program(_), PreviewInitChange::Program(_)) => true,
+        (
+            PreviewInitChange::Control { spec, .. },
+            PreviewInitChange::Control {
+                spec: existing_spec,
+                ..
+            },
+        ) => spec.cc == existing_spec.cc,
+        _ => false,
+    }
+}
+
+fn preview_init_line(change: PreviewInitChange) -> String {
+    match change {
+        PreviewInitChange::Program(program) => format!("## pc {}", program),
+        PreviewInitChange::Control { spec, value } => {
+            let event = TrackInitEvent::ControlChange { cc: spec.cc, value };
+            let label = match spec.target {
+                super::PreviewTarget::Volume => TrackInitLabel::Volume,
+                super::PreviewTarget::Pan => TrackInitLabel::Pan,
+                super::PreviewTarget::Expression => TrackInitLabel::Expression,
+                super::PreviewTarget::Mod => TrackInitLabel::Mod,
+                super::PreviewTarget::Program => unreachable!(),
+            };
+            format!("## {}", event.format_with_label(label))
+        }
+    }
 }
 
 fn note_key_input_for_key(keyboard: &NoteKeyboard, octave: i32, key: KeyEvent) -> NoteKeyInput {
@@ -702,10 +841,12 @@ fn is_note_name(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_track_program_to_lines, note_key_input_for_key, parse_note_binding, preview_action,
-        preview_key_char, NoteKeyInput, NoteKeyboard, PreviewAction, MAX_KEYBOARD_OCTAVE,
+        apply_preview_init_changes_to_lines, note_key_input_for_key, parse_note_binding,
+        preview_action, preview_key_char, NoteKeyInput, NoteKeyboard, PreviewAction,
+        PreviewInitChange, MAX_KEYBOARD_OCTAVE,
     };
     use crate::config::NoteKeyboardConfig;
+    use crate::interface::studio::PreviewTarget;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use std::collections::HashMap;
 
@@ -914,7 +1055,10 @@ mod tests {
             "C4 | ^ |".to_string(),
         ];
 
-        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 42), Some(1));
+        assert_eq!(
+            apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(42)]),
+            Some(1)
+        );
         assert_eq!(
             lines,
             vec![
@@ -933,7 +1077,10 @@ mod tests {
             "C4 | ^ |".to_string(),
         ];
 
-        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 7), Some(1));
+        assert_eq!(
+            apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(7)]),
+            Some(1)
+        );
         assert_eq!(lines[1], "## pc 7");
     }
 
@@ -941,7 +1088,10 @@ mod tests {
     fn apply_track_program_inserts_below_header_when_missing() {
         let mut lines = vec!["# Lead: 1".to_string(), "C4 | ^ |".to_string()];
 
-        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 33), Some(1));
+        assert_eq!(
+            apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(33)]),
+            Some(1)
+        );
         assert_eq!(
             lines,
             vec![
@@ -961,8 +1111,136 @@ mod tests {
             "## pc 34".to_string(),
         ];
 
-        assert_eq!(apply_track_program_to_lines(&mut lines, 0, 99), Some(1));
+        assert_eq!(
+            apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(99)]),
+            Some(1)
+        );
         assert_eq!(lines[1], "## pc 99");
         assert_eq!(lines[4], "## pc 34");
+    }
+
+    #[test]
+    fn apply_preview_init_replaces_existing_shorthand_control() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "## volume 90".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        assert_eq!(
+            apply_preview_init_changes_to_lines(
+                &mut lines,
+                0,
+                &[PreviewInitChange::Control {
+                    spec: PreviewTarget::Volume.control_spec().unwrap(),
+                    value: 100,
+                }],
+            ),
+            Some(1)
+        );
+        assert_eq!(lines[1], "## volume 100");
+    }
+
+    #[test]
+    fn apply_preview_init_normalizes_raw_control() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "## cc 10 50".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        assert_eq!(
+            apply_preview_init_changes_to_lines(
+                &mut lines,
+                0,
+                &[PreviewInitChange::Control {
+                    spec: PreviewTarget::Pan.control_spec().unwrap(),
+                    value: 64,
+                }],
+            ),
+            Some(1)
+        );
+        assert_eq!(lines[1], "## pan 64");
+    }
+
+    #[test]
+    fn apply_preview_init_inserts_missing_controls_below_header() {
+        let mut lines = vec!["# Lead: 1".to_string(), "C4 | ^ |".to_string()];
+
+        assert_eq!(
+            apply_preview_init_changes_to_lines(
+                &mut lines,
+                0,
+                &[PreviewInitChange::Control {
+                    spec: PreviewTarget::Expression.control_spec().unwrap(),
+                    value: 100,
+                }],
+            ),
+            Some(1)
+        );
+        assert_eq!(lines[1], "## expression 100");
+    }
+
+    #[test]
+    fn apply_preview_init_does_not_cross_template_boundary() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "# @arp(x)".to_string(),
+            "## cc 7 50".to_string(),
+        ];
+
+        assert_eq!(
+            apply_preview_init_changes_to_lines(
+                &mut lines,
+                0,
+                &[PreviewInitChange::Control {
+                    spec: PreviewTarget::Volume.control_spec().unwrap(),
+                    value: 100,
+                }],
+            ),
+            Some(1)
+        );
+        assert_eq!(lines[1], "## volume 100");
+        assert_eq!(lines[2], "# @arp(x)");
+        assert_eq!(lines[3], "## cc 7 50");
+    }
+
+    #[test]
+    fn apply_preview_init_applies_multiple_changes() {
+        let mut lines = vec![
+            "# Lead: 1".to_string(),
+            "## pc 12".to_string(),
+            "## cc 7 70".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        assert_eq!(
+            apply_preview_init_changes_to_lines(
+                &mut lines,
+                0,
+                &[
+                    PreviewInitChange::Program(42),
+                    PreviewInitChange::Control {
+                        spec: PreviewTarget::Volume.control_spec().unwrap(),
+                        value: 100,
+                    },
+                    PreviewInitChange::Control {
+                        spec: PreviewTarget::Mod.control_spec().unwrap(),
+                        value: 20,
+                    },
+                ],
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "# Lead: 1".to_string(),
+                "## mod 20".to_string(),
+                "## pc 42".to_string(),
+                "## volume 100".to_string(),
+                "C4 | ^ |".to_string(),
+            ]
+        );
     }
 }

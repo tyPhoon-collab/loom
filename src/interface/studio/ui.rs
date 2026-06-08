@@ -18,7 +18,7 @@ const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x d
 const FOOTER_SELECT_DETAIL_HELP: &str =
     "Select+: s/S group  +/-/[] transpose  Enter loop-range  T template";
 const FOOTER_PREVIEW_PANEL_HELP: &str =
-    "Preview: note keys  z/x octave  [/] pc +/-1  { / } pc +/-10  Enter apply pc  r reset  Esc/P close";
+    "Preview: note keys  1-5 target  [/] +/-1  { / } +/-10  Enter apply  r reset  Esc/P close";
 
 const OVERLAY_GLOBAL_LINES: &[&str] = &[
     "? toggle help overlay",
@@ -66,8 +66,10 @@ const OVERLAY_SELECT_LINES: &[&str] = &[
 const OVERLAY_PREVIEW_PANEL_LINES: &[&str] = &[
     "play mapped note keys to audition the current track",
     "z/x octave down/up  . rest  - sustain",
-    "[/] preview pc -1/+1  { / } preview pc -10/+10  r reset to source pc",
-    "Enter applies the preview pc to the current track",
+    "1 pc  2 volume  3 pan  4 expression  5 mod",
+    "[/] adjusts the selected target by -1/+1  { / } adjusts by -10/+10",
+    "r resets unapplied preview changes to source values",
+    "Enter applies unapplied preview changes to the current track",
     "the panel shows an LCD-style control row, pad buttons, and a lit keyboard deck",
     "Esc or P closes the preview panel",
 ];
@@ -208,12 +210,8 @@ impl StudioApp {
         f.render_widget(block, area);
         f.render_widget(
             Paragraph::new(preview_control_panel_text(
-                &self.preview_panel.track_name,
-                self.preview_panel.channel + 1,
-                self.preview_panel.source_program,
-                self.preview_panel.effective_program(),
+                &self.preview_panel,
                 self.note_keyboard_octave,
-                self.preview_panel.velocity,
             ))
             .alignment(Alignment::Center),
             sections[0],
@@ -254,9 +252,10 @@ impl StudioApp {
             push_blank_line(&mut sections);
             sections.push("Context".to_string());
             sections.push(format!(
-                "  track {} | channel {} | source {} | preview {}",
+                "  track {} | channel {} | target {} | source {} | preview {}",
                 self.preview_panel.track_name,
                 self.preview_panel.channel + 1,
+                self.preview_panel.selected_target.label(),
                 self.preview_panel
                     .source_program
                     .map(|program| format!("pc {}", program))
@@ -355,34 +354,66 @@ fn centered_rect(horizontal_percent: u16, vertical_percent: u16, area: Rect) -> 
     .split(vertical[1])[1]
 }
 
-fn preview_control_panel_text(
-    track_name: &str,
-    channel: u8,
-    source_program: Option<u8>,
-    preview_program: Option<u8>,
-    octave: i32,
-    velocity: u8,
-) -> Text<'static> {
+fn preview_control_panel_text(panel: &super::PreviewPanelState, octave: i32) -> Text<'static> {
     Text::from(vec![
         Line::from(vec![
-            lcd_span("TRACK", track_name, 30),
+            lcd_span("TRACK", &panel.track_name, 30),
             Span::raw(" "),
-            badge_span("CH", channel.to_string(), BadgeTone::Dim),
+            badge_span("CH", (panel.channel + 1).to_string(), BadgeTone::Dim),
             Span::raw(" "),
-            program_badge_span(source_program, preview_program),
+            target_badge_span(
+                super::PreviewTarget::Program,
+                panel.selected_target,
+                panel.source_program,
+                panel.effective_program(),
+            ),
+            Span::raw(" "),
+            control_badge_span(
+                super::PreviewTarget::Volume,
+                panel.selected_target,
+                &panel.controls,
+            ),
+            Span::raw(" "),
+            control_badge_span(
+                super::PreviewTarget::Pan,
+                panel.selected_target,
+                &panel.controls,
+            ),
+            Span::raw(" "),
+            control_badge_span(
+                super::PreviewTarget::Expression,
+                panel.selected_target,
+                &panel.controls,
+            ),
+            Span::raw(" "),
+            control_badge_span(
+                super::PreviewTarget::Mod,
+                panel.selected_target,
+                &panel.controls,
+            ),
             Span::raw(" "),
             badge_span("OCT", octave.to_string(), BadgeTone::Normal),
             Span::raw(" "),
-            badge_span("VEL", velocity.to_string(), BadgeTone::Normal),
+            badge_span("VEL", panel.velocity.to_string(), BadgeTone::Normal),
         ]),
         Line::from(vec![
             performance_pad_span("Z", "oct-", Color::Rgb(188, 246, 204)),
             Span::raw(" "),
             performance_pad_span("X", "oct+", Color::Rgb(188, 246, 204)),
             Span::raw(" "),
-            performance_pad_span("[", "pc-", Color::Rgb(181, 232, 255)),
+            performance_pad_span("1", "pc", Color::Rgb(181, 232, 255)),
             Span::raw(" "),
-            performance_pad_span("]", "pc+", Color::Rgb(181, 232, 255)),
+            performance_pad_span("2", "vol", Color::Rgb(181, 232, 255)),
+            Span::raw(" "),
+            performance_pad_span("3", "pan", Color::Rgb(181, 232, 255)),
+            Span::raw(" "),
+            performance_pad_span("4", "exp", Color::Rgb(181, 232, 255)),
+            Span::raw(" "),
+            performance_pad_span("5", "mod", Color::Rgb(181, 232, 255)),
+            Span::raw(" "),
+            performance_pad_span("[", "-1", Color::Rgb(244, 196, 255)),
+            Span::raw(" "),
+            performance_pad_span("]", "+1", Color::Rgb(244, 196, 255)),
             Span::raw(" "),
             performance_pad_span("{", "-10", Color::Rgb(244, 196, 255)),
             Span::raw(" "),
@@ -393,7 +424,7 @@ fn preview_control_panel_text(
 
 fn preview_panel_brief_help() -> Line<'static> {
     Line::from(vec![Span::styled(
-        "Enter apply pc   r reset pc   Esc close   note-off on key release",
+        "1-5 select   [/] +/-1   {/} +/-10   Enter apply   r reset   Esc close",
         Style::default()
             .fg(Color::Rgb(124, 130, 148))
             .bg(Color::Rgb(28, 30, 34)),
@@ -414,6 +445,7 @@ fn lcd_span(label: &str, value: &str, width: usize) -> Span<'static> {
 enum BadgeTone {
     Dim,
     Normal,
+    Selected,
     Emphasized,
 }
 
@@ -425,6 +457,9 @@ fn badge_span(label: &str, value: String, tone: BadgeTone) -> Span<'static> {
         BadgeTone::Normal => Style::default()
             .fg(Color::Rgb(188, 195, 216))
             .bg(Color::Rgb(44, 47, 54)),
+        BadgeTone::Selected => Style::default()
+            .fg(Color::Rgb(6, 24, 18))
+            .bg(Color::Rgb(156, 244, 199)),
         BadgeTone::Emphasized => Style::default()
             .fg(Color::Rgb(32, 24, 0))
             .bg(Color::Rgb(255, 206, 82)),
@@ -432,20 +467,49 @@ fn badge_span(label: &str, value: String, tone: BadgeTone) -> Span<'static> {
     Span::styled(format!(" {} {} ", label, value), style)
 }
 
-fn program_badge_span(source_program: Option<u8>, preview_program: Option<u8>) -> Span<'static> {
+fn target_badge_span(
+    target: super::PreviewTarget,
+    selected_target: super::PreviewTarget,
+    source_program: Option<u8>,
+    preview_program: Option<u8>,
+) -> Span<'static> {
     let source_matches_preview = source_program == preview_program;
     let value = match (source_program, preview_program) {
-        (_, Some(preview)) => format!("pc {}", preview),
-        (Some(source), None) => format!("pc {}", source),
+        (_, Some(preview)) => preview.to_string(),
+        (Some(source), None) => source.to_string(),
         (None, None) => "device".to_string(),
     };
     badge_span(
-        "PC",
+        target.label(),
         value,
-        if source_matches_preview {
-            BadgeTone::Normal
-        } else {
+        if !source_matches_preview {
             BadgeTone::Emphasized
+        } else if target == selected_target {
+            BadgeTone::Selected
+        } else {
+            BadgeTone::Normal
+        },
+    )
+}
+
+fn control_badge_span(
+    target: super::PreviewTarget,
+    selected_target: super::PreviewTarget,
+    controls: &super::PreviewControls,
+) -> Span<'static> {
+    let spec = target.control_spec().unwrap();
+    let state = controls.get(target).unwrap_or_default();
+    let value = state.effective_value(spec);
+    let source = state.source.unwrap_or(spec.default_value);
+    badge_span(
+        target.label(),
+        value.to_string(),
+        if value != source {
+            BadgeTone::Emphasized
+        } else if target == selected_target {
+            BadgeTone::Selected
+        } else {
+            BadgeTone::Normal
         },
     )
 }
@@ -476,7 +540,18 @@ mod tests {
 
     #[test]
     fn preview_control_panel_emphasizes_changed_preview_program() {
-        let text = preview_control_panel_text("Lead", 3, Some(12), Some(42), 4, 96);
+        let mut panel = super::super::PreviewPanelState {
+            track_name: "Lead".to_string(),
+            channel: 2,
+            source_program: Some(12),
+            override_program: Some(42),
+            selected_target: super::super::PreviewTarget::Volume,
+            velocity: 96,
+            ..super::super::PreviewPanelState::default()
+        };
+        panel.controls.volume.source = Some(90);
+        panel.controls.volume.override_value = Some(100);
+        let text = preview_control_panel_text(&panel, 4);
         let rendered = text
             .lines
             .iter()
@@ -485,9 +560,12 @@ mod tests {
             .join("\n");
 
         assert!(rendered.contains("TRACK Lead"));
-        assert!(rendered.contains("PC pc 42"));
+        assert!(rendered.contains("PC 42"));
+        assert!(rendered.contains("VOL 100"));
+        assert!(rendered.contains("1   pc"));
+        assert!(rendered.contains("2   vol"));
         assert!(rendered.contains("Z   oct-"));
-        assert!(rendered.contains("[   pc-"));
-        assert!(rendered.contains("]   pc+"));
+        assert!(rendered.contains("[   -1"));
+        assert!(rendered.contains("]   +1"));
     }
 }

@@ -1,6 +1,7 @@
 use super::selection::{unit_at_or_near_col, unit_spans_in_line, UnitSpan};
 use super::settings::parse_track_header;
 use super::StudioApp;
+use super::{PreviewControls, PreviewTarget};
 use crate::dsl::note::Note;
 use crate::dsl::parser::{self, parse_track_init_command};
 use crate::dsl::token::TrackInitEvent;
@@ -11,6 +12,7 @@ pub(super) struct PreviewTrackContext {
     pub(super) track_name: String,
     pub(super) channel: u8,
     pub(super) source_program: Option<u8>,
+    pub(super) controls: PreviewControls,
 }
 
 impl StudioApp {
@@ -134,6 +136,7 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
                     track_name: header.name,
                     channel: crate::validation::to_zero_based_channel(header.channel).ok()?,
                     source_program: None,
+                    controls: PreviewControls::default(),
                 },
             ));
         } else if line.trim().starts_with("# @") {
@@ -149,11 +152,20 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
 
         let trimmed = line.trim();
         if let Some(command) = trimmed.strip_prefix("## ") {
-            if let Ok((TrackInitEvent::ProgramChange { program }, _)) =
-                parse_track_init_command(command)
-            {
-                context.source_program.get_or_insert(program);
-                break;
+            if let Ok((event, _)) = parse_track_init_command(command) {
+                match event {
+                    TrackInitEvent::ProgramChange { program } => {
+                        context.source_program.get_or_insert(program);
+                    }
+                    TrackInitEvent::ControlChange { cc, value } => {
+                        if let Some(target) = preview_target_for_cc(cc) {
+                            if let Some(state) = context.controls.get_mut(target) {
+                                state.source.get_or_insert(value);
+                            }
+                        }
+                    }
+                    TrackInitEvent::BankSelect { .. } => {}
+                }
             }
         }
     }
@@ -161,8 +173,19 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
     Some(context)
 }
 
+pub(super) fn preview_target_for_cc(cc: u8) -> Option<PreviewTarget> {
+    match cc {
+        7 => Some(PreviewTarget::Volume),
+        10 => Some(PreviewTarget::Pan),
+        11 => Some(PreviewTarget::Expression),
+        1 => Some(PreviewTarget::Mod),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::{PreviewControlState, PreviewControls};
     use super::{preview_track_context, PreviewTrackContext};
 
     #[test]
@@ -180,6 +203,7 @@ mod tests {
                 track_name: "Piano".to_string(),
                 channel: 1,
                 source_program: Some(41),
+                controls: PreviewControls::default(),
             })
         );
     }
@@ -199,6 +223,7 @@ mod tests {
                 track_name: "Lead".to_string(),
                 channel: 0,
                 source_program: Some(81),
+                controls: PreviewControls::default(),
             })
         );
     }
@@ -218,8 +243,62 @@ mod tests {
                 track_name: "Pad".to_string(),
                 channel: 2,
                 source_program: Some(89),
+                controls: PreviewControls::default(),
             })
         );
+    }
+
+    #[test]
+    fn preview_track_context_reads_shorthand_controls() {
+        let lines = vec![
+            "# Pad: 1".to_string(),
+            "## volume 90".to_string(),
+            "## pan 60".to_string(),
+            "## expression 80".to_string(),
+            "## mod 12".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        let context = preview_track_context(&lines, 5).unwrap();
+        assert_eq!(
+            context.controls,
+            PreviewControls {
+                volume: PreviewControlState {
+                    source: Some(90),
+                    override_value: None,
+                },
+                pan: PreviewControlState {
+                    source: Some(60),
+                    override_value: None,
+                },
+                expression: PreviewControlState {
+                    source: Some(80),
+                    override_value: None,
+                },
+                mod_wheel: PreviewControlState {
+                    source: Some(12),
+                    override_value: None,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn preview_track_context_reads_raw_controls() {
+        let lines = vec![
+            "# Pad: 1".to_string(),
+            "## cc 7 91".to_string(),
+            "## cc 10 61".to_string(),
+            "## cc 11 81".to_string(),
+            "## cc 1 13".to_string(),
+            "C4 | ^ |".to_string(),
+        ];
+
+        let context = preview_track_context(&lines, 5).unwrap();
+        assert_eq!(context.controls.volume.source, Some(91));
+        assert_eq!(context.controls.pan.source, Some(61));
+        assert_eq!(context.controls.expression.source, Some(81));
+        assert_eq!(context.controls.mod_wheel.source, Some(13));
     }
 
     #[test]

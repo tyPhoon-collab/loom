@@ -268,6 +268,23 @@ Studio also previews notes for many musical edits:
 - transpose
 - duplicate in note-oriented contexts
 
+Manual preview mode opens a panel for the current track. It can audition notes and adjust initial playback controls before applying them to the source:
+
+| Key | Action |
+| --- | --- |
+| `1` | select `pc` |
+| `2` | select `volume` / CC7 |
+| `3` | select `pan` / CC10 |
+| `4` | select `expression` / CC11 |
+| `5` | select `mod` / CC1 |
+| `[` / `]` | adjust the selected value by `-1` / `+1` |
+| `{` / `}` | adjust the selected value by `-10` / `+10` |
+| `r` | reset unapplied preview changes to the source values |
+| `Enter` | apply unapplied preview changes to the current track init |
+| `Esc` / `P` | close the preview panel |
+
+Applying preview changes writes canonical track init lines. `## sound` is normalized to `## pc`, and raw `## cc 7`, `## cc 10`, `## cc 11`, and `## cc 1` lines are normalized to `## volume`, `## pan`, `## expression`, and `## mod`.
+
 Preview is suppressed while normal playback is already running.
 
 ## Save, Format, Undo

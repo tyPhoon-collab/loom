@@ -30,6 +30,11 @@ pub enum PlayerCommand {
         channel: u8,
         program: u8,
     },
+    PreviewControlChange {
+        channel: u8,
+        cc: u8,
+        value: u8,
+    },
     PreviewNoteOff {
         channel: u8,
         note: u8,
@@ -103,6 +108,12 @@ impl LivePlayer {
         let _ = self
             .command_sender
             .send(PlayerCommand::PreviewProgramChange { channel, program });
+    }
+
+    pub fn preview_control_change(&self, channel: u8, cc: u8, value: u8) {
+        let _ = self
+            .command_sender
+            .send(PlayerCommand::PreviewControlChange { channel, cc, value });
     }
 
     pub fn preview_note_off(&self, channel: u8, note: u8) {
@@ -184,6 +195,9 @@ fn run_player_loop(
                 }
                 PlayerCommand::PreviewProgramChange { channel, program } => {
                     core.preview_program_change(channel, program)?;
+                }
+                PlayerCommand::PreviewControlChange { channel, cc, value } => {
+                    core.preview_control_change(channel, cc, value)?;
                 }
                 PlayerCommand::PreviewNoteOff { channel, note } => {
                     core.preview_note_off(channel, note)?;

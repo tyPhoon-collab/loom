@@ -34,6 +34,7 @@ pub struct Core {
     active_notes: Vec<ActiveNote>,
     active_preview_notes: Vec<ActivePreviewNote>,
     preview_programs: [Option<u8>; 16],
+    preview_controls: [[Option<u8>; 128]; 16],
     last_processed_beat: f64,
     loop_range: Option<(f64, f64)>, // Start/End beats
 }
@@ -52,6 +53,7 @@ impl Core {
             active_notes: Vec::new(),
             active_preview_notes: Vec::new(),
             preview_programs: [None; 16],
+            preview_controls: [[None; 128]; 16],
             last_processed_beat: -1.0,
             loop_range: None,
         })
@@ -65,7 +67,7 @@ impl Core {
             self.seq_offset += elapsed * (old_bpm / 60.0);
             self.start_time = Instant::now();
         }
-        self.preview_programs = [None; 16];
+        self.clear_preview_cache();
         self.loop_range = loop_range_beats(&metadata);
         self.store.update(events, metadata);
     }
@@ -83,7 +85,7 @@ impl Core {
             let was_stopped = self.state == PlaybackState::Stopped;
             self.state = PlaybackState::Playing;
             self.start_time = Instant::now();
-            self.preview_programs = [None; 16];
+            self.clear_preview_cache();
             if was_stopped {
                 self.seq_offset = self.loop_range.map(|(s, _)| s).unwrap_or(0.0);
                 self.last_processed_beat = self.seq_offset - 0.001; // Ensure start notes trigger
@@ -96,7 +98,7 @@ impl Core {
             let bpm = self.store.metadata.bpm.max(1) as f64;
             self.seq_offset += self.start_time.elapsed().as_secs_f64() * (bpm / 60.0);
             self.state = PlaybackState::Paused;
-            self.preview_programs = [None; 16];
+            self.clear_preview_cache();
             self.silence_all()?;
         }
         Ok(())
@@ -106,7 +108,7 @@ impl Core {
         self.state = PlaybackState::Stopped;
         self.seq_offset = 0.0;
         self.last_processed_beat = -1.0;
-        self.preview_programs = [None; 16];
+        self.clear_preview_cache();
         self.silence_all()?;
         Ok(())
     }
@@ -115,7 +117,7 @@ impl Core {
         self.seq_offset = self.loop_range.map(|(s, _)| s).unwrap_or(0.0);
         self.last_processed_beat = self.seq_offset - 0.001;
         self.start_time = Instant::now();
-        self.preview_programs = [None; 16];
+        self.clear_preview_cache();
         self.silence_all()?;
         Ok(())
     }
@@ -182,6 +184,27 @@ impl Core {
         self.send_midi(&[0xC0 | channel, program])?;
         self.preview_programs[index] = Some(program);
         Ok(true)
+    }
+
+    pub fn preview_control_change(&mut self, channel: u8, cc: u8, value: u8) -> Result<bool> {
+        if self.state == PlaybackState::Playing {
+            return Ok(false);
+        }
+
+        let channel_index = usize::from(channel);
+        let cc_index = usize::from(cc);
+        if self.preview_controls[channel_index][cc_index] == Some(value) {
+            return Ok(false);
+        }
+
+        self.send_midi(&[0xB0 | channel, cc, value])?;
+        self.preview_controls[channel_index][cc_index] = Some(value);
+        Ok(true)
+    }
+
+    fn clear_preview_cache(&mut self) {
+        self.preview_programs = [None; 16];
+        self.preview_controls = [[None; 128]; 16];
     }
 
     pub fn tick(&mut self) -> Result<PlaybackState> {
