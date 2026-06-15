@@ -13,6 +13,8 @@ It is optimized for a fast compose-listen-edit loop inside one terminal session:
 
 Studio is designed around modern terminals with Kitty keyboard protocol support. In practice, preview note input and other Shift/release-sensitive bindings are expected to work best in terminals such as Ghostty, Kitty, WezTerm, or Alacritty.
 
+The long-term keybinding direction is documented in [Studio Keybinding Policy](/concepts/studio-keybindings).
+
 ## Launch
 
 ```bash
@@ -61,6 +63,7 @@ Main bindings:
 | `g` | goto prefix |
 | `g d` | jump to template definition under cursor |
 | `P` | open / close preview panel |
+| `p` | paste yanked content after the current unit, bar, or template call |
 | `n` | single note entry |
 | `N` | continuous note entry |
 | `o` | single onset entry |
@@ -68,7 +71,7 @@ Main bindings:
 | `m` | toggle mute on current track |
 | `M` | toggle solo on current track |
 | `X` | clear solo and mute flags on all tracks |
-| `D` | structure delete prefix |
+| `d` | structure delete prefix |
 | `x` | delete current unit |
 | `s` | subdivide current unit |
 | `S` | shrink current bracket group |
@@ -117,8 +120,9 @@ Supported selections:
 Typical Select mode operations:
 
 - move / expand selection with `hjkl` and `HJKL`
-- `x` delete selected units or bars
-- `d` duplicate selected units or bars
+- `d` or `x` delete selected units or bars
+- `y` yank selected units, bars, or template calls
+- `p` paste yanked content after the current selection
 - `g d` jumps from a selected template call to its definition
 - transpose with `+`, `-`, `[`, `]` also applies to template call selection by editing the call's `+N` parameter
 - `>` / `<` on template call selection adjust the call's `xN` repeat parameter
@@ -191,7 +195,7 @@ Useful add commands:
 | `a .` | place rest in the current `seq` slot |
 | `a -` | place sustain in the current `seq` slot |
 
-Modifier lines are selectable as units, so `v` / `p` lines support unit navigation plus Select-mode delete and duplicate operations.
+Modifier lines are selectable as units, so `v` / `p` lines support unit navigation plus Select-mode delete and yank / paste operations.
 
 When the cursor is on a template call in Normal mode:
 
@@ -266,6 +270,7 @@ Studio also previews notes for many musical edits:
 - note entry
 - onset placement
 - transpose
+- yank / paste in note-oriented contexts
 - duplicate in note-oriented contexts
 
 Manual preview mode opens a panel for the current track. It can audition notes and adjust initial playback controls before applying them to the source:

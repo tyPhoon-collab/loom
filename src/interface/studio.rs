@@ -82,9 +82,10 @@ enum KeyAction {
     Redo,
     ExitSelectMode,
     DeleteSelection,
+    YankSelection,
+    PasteAfter,
     SubdivideSelectedUnits,
     ShrinkSelectedEditableGroups,
-    DuplicateSelection,
     ExtractSelectedBarsToTemplate,
     ApplySelectedLoopRange,
     ExpandSelectVertical(i32),
@@ -172,8 +173,12 @@ const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
         action: KeyAction::DeleteCurrentUnit,
     },
     KeyBinding {
-        stroke: KeyStroke::ShiftChar('d'),
+        stroke: KeyStroke::Char('d'),
         action: KeyAction::BeginPending(PendingInput::DeleteStructure),
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('p'),
+        action: KeyAction::PasteAfter,
     },
     KeyBinding {
         stroke: KeyStroke::Char('m'),
@@ -251,8 +256,20 @@ const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
         action: KeyAction::BeginPending(PendingInput::Onset(NoteInputMode::Single)),
     },
     KeyBinding {
+        stroke: KeyStroke::Char('d'),
+        action: KeyAction::DeleteSelection,
+    },
+    KeyBinding {
         stroke: KeyStroke::Char('x'),
         action: KeyAction::DeleteSelection,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('y'),
+        action: KeyAction::YankSelection,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Char('p'),
+        action: KeyAction::PasteAfter,
     },
     KeyBinding {
         stroke: KeyStroke::Char('s'),
@@ -261,10 +278,6 @@ const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
         stroke: KeyStroke::ShiftChar('s'),
         action: KeyAction::ShrinkSelectedEditableGroups,
-    },
-    KeyBinding {
-        stroke: KeyStroke::Char('d'),
-        action: KeyAction::DuplicateSelection,
     },
     KeyBinding {
         stroke: KeyStroke::ShiftChar('t'),
@@ -477,6 +490,7 @@ pub struct StudioApp {
     textarea: TextArea<'static>,
     textarea_viewport: selection_view::TextAreaViewport,
     selection: Option<StudioSelection>,
+    yank_buffer: Option<YankBuffer>,
     source_undo_stack: Vec<SourceUndoEntry>,
     continuous_input_history: Vec<ContinuousInputStep>,
     preview_panel: PreviewPanelState,
@@ -500,6 +514,33 @@ enum ContinuousInputStep {
 struct ActivePreviewNote {
     channel: u8,
     note: u8,
+}
+
+#[derive(Clone, Debug)]
+enum YankBuffer {
+    Units {
+        tokens: Vec<String>,
+        context: UnitYankContext,
+    },
+    Bars {
+        rows: Vec<YankedBarRow>,
+    },
+    TemplateCalls {
+        calls: Vec<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnitYankContext {
+    Seq,
+    Modifier,
+    LaneBody,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct YankedBarRow {
+    text: String,
+    count: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -723,6 +764,7 @@ impl StudioApp {
             textarea,
             textarea_viewport: selection_view::TextAreaViewport::default(),
             selection: None,
+            yank_buffer: None,
             source_undo_stack: Vec::new(),
             continuous_input_history: Vec::new(),
             preview_panel: PreviewPanelState {
@@ -1072,9 +1114,10 @@ impl StudioApp {
             }
             KeyAction::ExitSelectMode => self.exit_select_mode(),
             KeyAction::DeleteSelection => self.delete_selection()?,
+            KeyAction::YankSelection => self.yank_selection(),
+            KeyAction::PasteAfter => self.paste_after()?,
             KeyAction::SubdivideSelectedUnits => self.subdivide_selected_units()?,
             KeyAction::ShrinkSelectedEditableGroups => self.shrink_selected_editable_groups()?,
-            KeyAction::DuplicateSelection => self.duplicate_selection()?,
             KeyAction::ExtractSelectedBarsToTemplate => self.extract_selected_bars_to_template()?,
             KeyAction::ApplySelectedLoopRange => self.apply_selected_loop_range()?,
             KeyAction::ExpandSelectVertical(delta) => self.expand_select_vertical(delta),
@@ -1215,9 +1258,10 @@ fn midi_device_name(port_index: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingInput, StudioApp};
+    use super::{PendingInput, StudioApp, StudioMode};
     use crate::config::StudioConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui_textarea::CursorMove;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1231,6 +1275,10 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("loom-studio-{name}-{nanos}.loom"))
+    }
+
+    fn test_source(lines: &[&str]) -> String {
+        lines.join("\n")
     }
 
     #[test]
@@ -1256,5 +1304,57 @@ mod tests {
             .lines()
             .iter()
             .any(|line| line == "# Track 1: 1"));
+    }
+
+    #[test]
+    fn normal_mode_d_starts_delete_prefix() {
+        let path = test_studio_path("pending-delete");
+        let mut app = StudioApp::new(path, 0, String::new(), StudioConfig::default()).unwrap();
+
+        app.handle_key(test_key(KeyCode::Char('d'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(
+            app.input_state.pending(),
+            Some(PendingInput::DeleteStructure)
+        );
+    }
+
+    #[test]
+    fn select_mode_d_deletes_selection() {
+        let path = test_studio_path("select-delete");
+        let mut app = StudioApp::new(path, 0, String::new(), StudioConfig::default()).unwrap();
+        app.replace_source(test_source(&["# Track 1: 1", "", "seq | C4 D4 |"]));
+        app.textarea.move_cursor(CursorMove::Jump(2, 6));
+        app.enter_note_select_mode();
+
+        app.handle_key(test_key(KeyCode::Char('d'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(app.mode, StudioMode::Normal);
+        assert_eq!(app.textarea.lines()[2], "seq | D4 |");
+    }
+
+    #[test]
+    fn yank_and_paste_unit_after_cursor() {
+        let path = test_studio_path("yank-paste-unit");
+        let mut app = StudioApp::new(path, 0, String::new(), StudioConfig::default()).unwrap();
+        app.replace_source(test_source(&["# Track 1: 1", "", "seq | C4 D4 |"]));
+        app.textarea.move_cursor(CursorMove::Jump(2, 6));
+        app.enter_note_select_mode();
+
+        app.handle_key(test_key(KeyCode::Char('y'), KeyModifiers::NONE))
+            .unwrap();
+        app.handle_key(test_key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+
+        let target = app.unit_at_or_after_cursor(2, 9).unwrap();
+        app.textarea
+            .move_cursor(CursorMove::Jump(target.row as u16, target.start_col as u16));
+        app.handle_key(test_key(KeyCode::Char('p'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(app.textarea.lines()[2], "seq | C4 D4 C4 |");
+        assert!(app.status_message.contains("Pasted 1 unit"));
     }
 }

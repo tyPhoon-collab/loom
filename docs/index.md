@@ -10,6 +10,7 @@ Loom is a text-first DSL for composing and playing MIDI.
 - [Language Specification](/language/spec)
 - [Concept](/concepts/concept)
 - [Philosophy](/concepts/philosophy)
+- [Studio Keybinding Policy](/concepts/studio-keybindings)
 - [Global Configuration](/reference/config)
 
 ## Status

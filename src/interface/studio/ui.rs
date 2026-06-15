@@ -11,12 +11,13 @@ use ratatui::{
 
 const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save  f format  q quit";
 const FOOTER_NORMAL_HELP: &str =
-    "Normal: n/N note  o/O onset  v/V/b/B select  x delete-unit  s/S grid";
-const FOOTER_NORMAL_PREFIX_HELP: &str = "Prefix: a add  g goto  P preview-panel  D delete";
+    "Normal: n/N note  o/O onset  v/V/b/B select  x delete-unit  p paste  s/S grid";
+const FOOTER_NORMAL_PREFIX_HELP: &str = "Prefix: a add  d delete  g goto  P preview-panel";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
-const FOOTER_SELECT_HELP: &str = "Select: move hjkl  expand HJKL  n replace  x delete  d duplicate";
+const FOOTER_SELECT_HELP: &str =
+    "Select: move hjkl  expand HJKL  n replace  d delete  y/p yank-paste";
 const FOOTER_SELECT_DETAIL_HELP: &str =
-    "Select+: s/S group  +/-/[] transpose  Enter loop-range  T template";
+    "Select+: x delete  s/S group  +/-/[] transpose  Enter loop-range  T template";
 const FOOTER_PREVIEW_PANEL_HELP: &str =
     "Preview: note keys  1-5 target  [/] +/-1  { / } +/-10  Enter apply  r reset  Esc/P close";
 
@@ -29,11 +30,11 @@ const OVERLAY_NORMAL_TRANSPORT_LINES: &[&str] =
 const OVERLAY_NORMAL_NAVIGATION_LINES: &[&str] = &["hjkl/arrows move  ,/. unit-nav  </> bar-nav"];
 const OVERLAY_NORMAL_ENTRY_LINES: &[&str] = &[
     "i insert  P preview-panel  n/N note  o/O onset",
-    "x delete-unit  s subdivide  S shrink  +/-/[] transpose",
+    "x delete-unit  p paste  s subdivide  S shrink  +/-/[] transpose",
 ];
 const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line-bars"];
 const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
-    &["a add  D delete  g goto  L toggle-loop  Ctrl-L clear-loop"];
+    &["a add  d delete  g goto  L toggle-loop  Ctrl-L clear-loop"];
 const OVERLAY_ADD_LINES: &[&str] = &[
     "s seq  l lane  t track  P piano-roll  h separator  T template  b bar",
     "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
@@ -58,9 +59,9 @@ const OVERLAY_INSERT_LINES: &[&str] = &[
 ];
 const OVERLAY_SELECT_LINES: &[&str] = &[
     "hjkl/arrows move focus  HJKL/Shift-arrows expand",
-    "n note replace  o onset replace  x delete  d duplicate",
+    "n note replace  o onset replace  d/x delete  y yank  p paste",
     "s subdivide  S shrink  +/-/[] transpose",
-    "template call selection: x delete  d duplicate  g d goto-definition  +/-/[] transpose  </> repeat  {} time-scale",
+    "template call selection: d/x delete  y yank  p paste  g d goto-definition  +/-/[] transpose  </> repeat  {} time-scale",
     "Enter writes loop_range from bar selection  T extracts template",
 ];
 const OVERLAY_PREVIEW_PANEL_LINES: &[&str] = &[

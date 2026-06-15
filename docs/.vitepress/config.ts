@@ -32,7 +32,8 @@ export default defineConfig({
         text: "Concepts",
         items: [
           { text: "Concept", link: "/concepts/concept" },
-          { text: "Philosophy", link: "/concepts/philosophy" }
+          { text: "Philosophy", link: "/concepts/philosophy" },
+          { text: "Studio Keybinding Policy", link: "/concepts/studio-keybindings" }
         ]
       },
       {
