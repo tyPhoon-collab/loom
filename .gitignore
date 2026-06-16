@@ -11,3 +11,4 @@ memo*.md
 /.wrangler
 
 .antigravitycli
+/.code-review-graph
