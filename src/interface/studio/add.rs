@@ -8,12 +8,39 @@ use super::selection::{
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
 use super::{StudioApp, StudioMode};
-use crate::dsl::token::TrackInitLabel;
+use crate::dsl::{formatter, token::TrackInitLabel};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
+use ratatui_textarea::CursorMove;
 
 struct PlacedSlot {
     index_on_line: usize,
+}
+
+enum FormattedCursorTarget {
+    ExactLineCol {
+        approx_row: usize,
+        line: String,
+        col: usize,
+    },
+    HeadStart {
+        approx_row: usize,
+        head: String,
+    },
+    HeadBodyStart {
+        approx_row: usize,
+        head: String,
+    },
+    HeadToken {
+        approx_row: usize,
+        head: String,
+        token_index: usize,
+    },
+    HeadBar {
+        approx_row: usize,
+        head: String,
+        bar_index: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -165,18 +192,25 @@ impl StudioApp {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
-        let inserted = vec![
-            String::new(),
-            "# Drums: 10".to_string(),
-            "kick  | . . . . |".to_string(),
-            "snare | . . . . |".to_string(),
-            "hh    | . . . . |".to_string(),
-            "oh    | . . . . |".to_string(),
-        ];
+        let leading_blank = leading_blank_offset(&lines, insert_row);
+        let inserted = meta_data_island(
+            &lines,
+            insert_row,
+            vec!["# Drums: 10".to_string()],
+            vec![
+                "kick  | . . . . |".to_string(),
+                "snare | . . . . |".to_string(),
+                "hh    | . . . . |".to_string(),
+                "oh    | . . . . |".to_string(),
+            ],
+        );
         lines.splice(insert_row..insert_row, inserted);
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row + 2, 8),
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: insert_row + leading_blank + 2,
+                head: "kick".to_string(),
+            },
             "Added default drum lanes".into(),
             None,
         )
@@ -187,16 +221,20 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         let (track_name, channel) = next_track_header(&lines);
-        let inserted = piano_roll_track_lines(&track_name, channel);
+        let leading_blank = leading_blank_offset(&lines, insert_row);
+        let inserted = piano_roll_track_lines(&lines, insert_row, &track_name, channel);
         lines.splice(insert_row..insert_row, inserted);
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row + 9, 0),
+            FormattedCursorTarget::HeadStart {
+                approx_row: insert_row + leading_blank + 9,
+                head: "G4".to_string(),
+            },
             format!(
                 "Added piano-roll track: {} on channel {}",
                 track_name, channel
             ),
-            Some((insert_row + 9, "G4".to_string())),
+            Some((insert_row + leading_blank + 9, "G4".to_string())),
         )
     }
 
@@ -205,7 +243,15 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         lines.insert(insert_row, "seq | . . . . |".to_string());
-        self.apply_cursor_source_update(lines, (insert_row, 6), "Added seq line".into(), None)
+        self.apply_formatted_add_update(
+            lines,
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: insert_row,
+                head: "seq".to_string(),
+            },
+            "Added seq line".into(),
+            None,
+        )
     }
 
     pub(super) fn add_note_head_line(&mut self) -> Result<()> {
@@ -214,9 +260,12 @@ impl StudioApp {
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         let note = self.note_token_for_add();
         lines.insert(insert_row, format!("{} | ^ . . . |", note));
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row, 0),
+            FormattedCursorTarget::HeadStart {
+                approx_row: insert_row,
+                head: note.clone(),
+            },
             format!("Added note-head line: {}", note),
             Some((insert_row, note)),
         )
@@ -227,15 +276,20 @@ impl StudioApp {
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         let (track_name, channel) = next_track_header(&lines);
-        let inserted = vec![
-            String::new(),
-            format!("# {}: {}", track_name, channel),
-            "seq | . . . . |".to_string(),
-        ];
+        let leading_blank = leading_blank_offset(&lines, insert_row);
+        let inserted = meta_data_island(
+            &lines,
+            insert_row,
+            vec![format!("# {}: {}", track_name, channel)],
+            vec!["seq | . . . . |".to_string()],
+        );
         lines.splice(insert_row..insert_row, inserted);
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row + 2, 6),
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: insert_row + leading_blank + 2,
+                head: "seq".to_string(),
+            },
             format!("Added track: {} on channel {}", track_name, channel),
             None,
         )
@@ -245,8 +299,19 @@ impl StudioApp {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
-        insert_separator_at_row(&mut lines, insert_row);
-        self.apply_cursor_source_update(lines, (insert_row, 0), "Added separator".into(), None)
+        let leading_blank = leading_blank_offset(&lines, insert_row);
+        let inserted = meta_data_island(&lines, insert_row, vec!["---".to_string()], Vec::new());
+        lines.splice(insert_row..insert_row, inserted);
+        self.apply_formatted_add_update(
+            lines,
+            FormattedCursorTarget::ExactLineCol {
+                approx_row: insert_row + leading_blank,
+                line: "---".to_string(),
+                col: 0,
+            },
+            "Added separator".into(),
+            None,
+        )
     }
 
     pub(super) fn add_template_definition(&mut self) -> Result<()> {
@@ -255,15 +320,20 @@ impl StudioApp {
         let insert_row = insert_row_after_cursor(&lines, cursor.0);
         let template_name = next_empty_template_name(&lines, cursor.0);
 
-        let inserted = vec![
-            String::new(),
-            format!("# @{}", template_name),
-            "seq | . . . . |".to_string(),
-        ];
+        let leading_blank = leading_blank_offset(&lines, insert_row);
+        let inserted = meta_data_island(
+            &lines,
+            insert_row,
+            vec![format!("# @{}", template_name)],
+            vec!["seq | . . . . |".to_string()],
+        );
         lines.splice(insert_row..insert_row, inserted);
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row + 2, 6),
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: insert_row + leading_blank + 2,
+                head: "seq".to_string(),
+            },
             format!("Added template definition: @{}", template_name),
             None,
         )
@@ -277,11 +347,21 @@ impl StudioApp {
             return Ok(());
         };
 
-        let Ok(new_cursor_col) = add_rest_bar_to_line(line) else {
+        let Ok(new_bar_index) = add_rest_bar_to_line(line) else {
             self.status_message = "Add bar needs a line with bars".into();
             return Ok(());
         };
-        self.apply_cursor_source_update(lines, (cursor.0, new_cursor_col), "Added bar".into(), None)
+        let head = line_head(line).unwrap_or_default().to_string();
+        self.apply_formatted_add_update(
+            lines,
+            FormattedCursorTarget::HeadBar {
+                approx_row: cursor.0,
+                head,
+                bar_index: new_bar_index,
+            },
+            "Added bar".into(),
+            None,
+        )
     }
 
     pub(super) fn add_modifier_line(&mut self, label: &str) -> Result<()> {
@@ -295,9 +375,12 @@ impl StudioApp {
 
         let template = format!("{:<2} | . . . . |", label);
         lines.insert(insert_row, template);
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (insert_row, 5),
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: insert_row,
+                head: label.to_string(),
+            },
             format!("Added {} modifier line", modifier_label_name(label)),
             None,
         )
@@ -316,14 +399,14 @@ impl StudioApp {
             return Ok(false);
         };
 
-        let cursor_col = unit_spans_in_line(cursor.0, line)
-            .get(slot.index_on_line)
-            .map(|note| note.start_col)
-            .unwrap_or(cursor.1);
         let audition = (token != "." && token != "-").then(|| (cursor.0, token.to_string()));
-        self.apply_cursor_source_update(
+        self.apply_formatted_add_update(
             lines,
-            (cursor.0, cursor_col),
+            FormattedCursorTarget::HeadToken {
+                approx_row: cursor.0,
+                head: "seq".to_string(),
+                token_index: slot.index_on_line,
+            },
             format!("Placed {}", token),
             audition,
         )?;
@@ -357,17 +440,29 @@ impl StudioApp {
     fn add_track_init_line(&mut self, template: TrackInitTemplate) -> Result<()> {
         let cursor = self.textarea.cursor();
         let mut lines = self.textarea.lines().to_vec();
-        let Some((header_row, insert_row)) = track_init_insert_row(&lines, cursor.0) else {
+        let Some((header_row, mut insert_row)) = track_init_insert_row(&lines, cursor.0) else {
             self.status_message = "Track init add needs the cursor inside a track".into();
             return Ok(());
         };
 
+        if insert_row == header_row + 1 && needs_trailing_blank(&lines, header_row + 1) {
+            lines.insert(insert_row, String::new());
+            insert_row += 1;
+        }
+
         let line = template.line();
         let cursor_col = template.value_col();
-        lines.insert(insert_row, line);
-        self.apply_cursor_source_update(
+        lines.insert(insert_row, line.clone());
+        if insert_row + 1 < lines.len() && is_format_data_line(&lines[insert_row + 1]) {
+            lines.insert(insert_row + 1, String::new());
+        }
+        self.apply_formatted_add_update(
             lines,
-            (insert_row, cursor_col),
+            FormattedCursorTarget::ExactLineCol {
+                approx_row: insert_row,
+                line,
+                col: cursor_col,
+            },
             format!(
                 "Added track init {} on track line {}",
                 template.label,
@@ -377,6 +472,33 @@ impl StudioApp {
         )?;
         self.mode = StudioMode::Insert;
         self.status_message = format!("Added track init {} | Insert mode", template.label);
+        Ok(())
+    }
+
+    fn apply_formatted_add_update(
+        &mut self,
+        mut lines: Vec<String>,
+        target: FormattedCursorTarget,
+        status_message: String,
+        audition: Option<(usize, String)>,
+    ) -> Result<()> {
+        self.push_source_undo();
+
+        if let Some(row) = target.data_anchor_row() {
+            format_data_island_at(&mut lines, row);
+        }
+
+        let mut source = lines.join("\n");
+        source.push('\n');
+        self.replace_source(source);
+
+        let cursor = locate_formatted_cursor(self.textarea.lines(), target);
+        self.textarea
+            .move_cursor(CursorMove::Jump(cursor.0 as u16, cursor.1 as u16));
+        self.dirty = true;
+        self.compile_and_update_current_source()?;
+        self.status_message = status_message;
+        self.audition_candidate(audition);
         Ok(())
     }
 }
@@ -510,13 +632,14 @@ fn is_track_init_line(line: &str) -> bool {
 }
 
 fn insert_row_after_cursor(lines: &[String], cursor_row: usize) -> usize {
-    if lines.is_empty() {
+    if lines.is_empty() || (lines.len() == 1 && lines[0].is_empty()) {
         0
     } else {
         (cursor_row + 1).min(lines.len())
     }
 }
 
+#[cfg(test)]
 fn insert_separator_at_row(lines: &mut Vec<String>, row: usize) {
     lines.insert(row, "---".to_string());
 }
@@ -578,16 +701,24 @@ fn modifier_label_name(label: &str) -> &'static str {
     }
 }
 
-fn piano_roll_track_lines(track_name: &str, channel: u8) -> Vec<String> {
-    let mut lines = vec![String::new(), format!("# {}: {}", track_name, channel)];
-    lines.extend(
-        [
-            "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4",
-        ]
-        .into_iter()
-        .map(|note| format!("{:<4}| . . . . |", note)),
-    );
-    lines
+fn piano_roll_track_lines(
+    lines: &[String],
+    insert_row: usize,
+    track_name: &str,
+    channel: u8,
+) -> Vec<String> {
+    let lane_lines = [
+        "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4",
+    ]
+    .into_iter()
+    .map(|note| format!("{:<4}| . . . . |", note))
+    .collect();
+    meta_data_island(
+        lines,
+        insert_row,
+        vec![format!("# {}: {}", track_name, channel)],
+        lane_lines,
+    )
 }
 
 fn next_track_header(lines: &[String]) -> (String, u8) {
@@ -651,11 +782,12 @@ fn add_rest_bar_to_line(line: &mut String) -> std::result::Result<usize, ()> {
     if !line.contains('|') {
         return Err(());
     }
+    let row = 0;
+    let new_bar_index = bar_spans_in_line(row, line).len();
     let trimmed_len = line.trim_end().chars().count();
     replace_char_range(line, trimmed_len, line.chars().count(), "");
-    let cursor_col = line.chars().count() + 1;
     line.push_str(" . . . . |");
-    Ok(cursor_col)
+    Ok(new_bar_index)
 }
 
 fn place_seq_token_at_slot(
@@ -715,21 +847,179 @@ fn unit_at_or_near_col_with_index(notes: &[UnitSpan], col: usize) -> Option<(usi
         })
 }
 
+fn locate_formatted_cursor(lines: &[String], target: FormattedCursorTarget) -> (usize, usize) {
+    match target {
+        FormattedCursorTarget::ExactLineCol {
+            approx_row,
+            line,
+            col,
+        } => find_nearest_line(lines, approx_row, |candidate| candidate == line)
+            .map(|row| (row, col.min(lines[row].chars().count())))
+            .unwrap_or((approx_row.min(lines.len().saturating_sub(1)), col)),
+        FormattedCursorTarget::HeadStart { approx_row, head } => {
+            find_nearest_head(lines, approx_row, &head)
+                .map(|row| (row, 0))
+                .unwrap_or((approx_row.min(lines.len().saturating_sub(1)), 0))
+        }
+        FormattedCursorTarget::HeadBodyStart { approx_row, head } => {
+            let row = find_nearest_head(lines, approx_row, &head)
+                .unwrap_or_else(|| approx_row.min(lines.len().saturating_sub(1)));
+            let col = lines
+                .get(row)
+                .and_then(|line| {
+                    bar_spans_in_line(row, line)
+                        .first()
+                        .map(|bar| bar.start_col + 1)
+                })
+                .unwrap_or(0);
+            (row, col)
+        }
+        FormattedCursorTarget::HeadToken {
+            approx_row,
+            head,
+            token_index,
+        } => {
+            let row = find_nearest_head(lines, approx_row, &head)
+                .unwrap_or_else(|| approx_row.min(lines.len().saturating_sub(1)));
+            let col = lines
+                .get(row)
+                .and_then(|line| {
+                    unit_spans_in_line(row, line)
+                        .get(token_index)
+                        .map(|token| token.start_col)
+                })
+                .unwrap_or(0);
+            (row, col)
+        }
+        FormattedCursorTarget::HeadBar {
+            approx_row,
+            head,
+            bar_index,
+        } => {
+            let row = find_nearest_head(lines, approx_row, &head)
+                .unwrap_or_else(|| approx_row.min(lines.len().saturating_sub(1)));
+            let col = lines
+                .get(row)
+                .and_then(|line| {
+                    bar_spans_in_line(row, line)
+                        .get(bar_index)
+                        .map(|bar| bar.start_col + 1)
+                })
+                .unwrap_or(0);
+            (row, col)
+        }
+    }
+}
+
+impl FormattedCursorTarget {
+    fn data_anchor_row(&self) -> Option<usize> {
+        match self {
+            Self::HeadStart { approx_row, .. }
+            | Self::HeadBodyStart { approx_row, .. }
+            | Self::HeadToken { approx_row, .. }
+            | Self::HeadBar { approx_row, .. } => Some(*approx_row),
+            Self::ExactLineCol { .. } => None,
+        }
+    }
+}
+
+fn find_nearest_head(lines: &[String], approx_row: usize, head: &str) -> Option<usize> {
+    find_nearest_line(lines, approx_row, |line| line_head(line) == Some(head))
+}
+
+fn find_nearest_line(
+    lines: &[String],
+    approx_row: usize,
+    predicate: impl Fn(&str) -> bool,
+) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| predicate(line))
+        .min_by_key(|(row, _)| row.abs_diff(approx_row))
+        .map(|(row, _)| row)
+}
+
+fn line_head(line: &str) -> Option<&str> {
+    let pipe_col = line.chars().position(|ch| ch == '|')?;
+    let head = line[..pipe_col].trim();
+    (!head.is_empty()).then_some(head)
+}
+
+fn format_data_island_at(lines: &mut Vec<String>, anchor_row: usize) {
+    if lines.is_empty() || anchor_row >= lines.len() || !is_format_data_line(&lines[anchor_row]) {
+        return;
+    }
+
+    let mut start = anchor_row;
+    while start > 0 && is_format_data_line(&lines[start - 1]) {
+        start -= 1;
+    }
+
+    let mut end = anchor_row + 1;
+    while end < lines.len() && is_format_data_line(&lines[end]) {
+        end += 1;
+    }
+
+    let mut source = lines[start..end].join("\n");
+    source.push('\n');
+    let Ok(formatted) = formatter::format_string(&source) else {
+        return;
+    };
+
+    let formatted_lines = formatted.lines().map(str::to_string).collect::<Vec<_>>();
+    lines.splice(start..end, formatted_lines);
+}
+
+fn is_format_data_line(line: &str) -> bool {
+    line.contains('|') || line.trim().starts_with("[@")
+}
+
+fn meta_data_island(
+    lines: &[String],
+    insert_row: usize,
+    meta_lines: Vec<String>,
+    data_lines: Vec<String>,
+) -> Vec<String> {
+    let mut inserted = Vec::new();
+    if leading_blank_offset(lines, insert_row) == 1 {
+        inserted.push(String::new());
+    }
+    inserted.extend(meta_lines);
+    if !data_lines.is_empty() {
+        inserted.push(String::new());
+        inserted.extend(data_lines);
+    }
+    if needs_trailing_blank(lines, insert_row) {
+        inserted.push(String::new());
+    }
+    inserted
+}
+
+fn leading_blank_offset(lines: &[String], insert_row: usize) -> usize {
+    (insert_row > 0 && !lines[insert_row - 1].is_empty()) as usize
+}
+
+fn needs_trailing_blank(lines: &[String], insert_row: usize) -> bool {
+    insert_row < lines.len() && !lines[insert_row].is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        add_rest_bar_to_line, current_track_header_row, insert_separator_at_row,
+        add_rest_bar_to_line, current_track_header_row, find_nearest_head, insert_row_after_cursor,
+        insert_separator_at_row, line_head, locate_formatted_cursor, meta_data_island,
         next_empty_template_name, next_track_header, parse_track_init_key, piano_roll_track_lines,
-        place_seq_token_at_slot, track_init_insert_row, TrackInitKeySpec,
+        place_seq_token_at_slot, track_init_insert_row, FormattedCursorTarget, TrackInitKeySpec,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     #[test]
     pub(super) fn add_rest_bar_appends_grid_bar() {
         let mut line = "seq | C4 . |".to_string();
-        let cursor_col = add_rest_bar_to_line(&mut line).unwrap();
+        let bar_index = add_rest_bar_to_line(&mut line).unwrap();
         assert_eq!(line, "seq | C4 . | . . . . |");
-        assert_eq!(cursor_col, 13);
+        assert_eq!(bar_index, 1);
     }
 
     #[test]
@@ -847,13 +1137,92 @@ mod tests {
 
     #[test]
     fn piano_roll_track_lines_create_header_and_chromatic_lanes() {
-        let lines = piano_roll_track_lines("Track 2", 3);
+        let existing = vec!["# Track 1: 1".to_string()];
+        let lines = piano_roll_track_lines(&existing, 1, "Track 2", 3);
         assert_eq!(lines.first().map(String::as_str), Some(""));
         assert_eq!(lines.get(1).map(String::as_str), Some("# Track 2: 3"));
-        assert_eq!(lines.get(2).map(String::as_str), Some("C4  | . . . . |"));
-        assert_eq!(lines.get(3).map(String::as_str), Some("C#4 | . . . . |"));
-        assert_eq!(lines.get(9).map(String::as_str), Some("G4  | . . . . |"));
+        assert_eq!(lines.get(2).map(String::as_str), Some(""));
+        assert_eq!(lines.get(3).map(String::as_str), Some("C4  | . . . . |"));
+        assert_eq!(lines.get(4).map(String::as_str), Some("C#4 | . . . . |"));
+        assert_eq!(lines.get(10).map(String::as_str), Some("G4  | . . . . |"));
         assert_eq!(lines.last().map(String::as_str), Some("B4  | . . . . |"));
-        assert_eq!(lines.len(), 14);
+        assert_eq!(lines.len(), 15);
+    }
+
+    #[test]
+    fn meta_data_island_avoids_extra_leading_blank_at_file_top() {
+        let island = meta_data_island(
+            &[],
+            0,
+            vec!["# Track 1: 1".to_string()],
+            vec!["seq | . . . . |".to_string()],
+        );
+        assert_eq!(
+            island,
+            vec![
+                "# Track 1: 1".to_string(),
+                String::new(),
+                "seq | . . . . |".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn insert_row_after_cursor_treats_single_empty_line_as_empty_document() {
+        let lines = vec![String::new()];
+        assert_eq!(insert_row_after_cursor(&lines, 0), 0);
+    }
+
+    #[test]
+    fn line_head_extracts_trimmed_head_before_bar() {
+        assert_eq!(line_head("kick  | . . . . |"), Some("kick"));
+        assert_eq!(line_head("v  | 40 60 |"), Some("v"));
+        assert_eq!(line_head("# Track: 1"), None);
+    }
+
+    #[test]
+    fn find_nearest_head_prefers_closest_matching_row() {
+        let lines = vec![
+            "# Track 1: 1".to_string(),
+            String::new(),
+            "seq | . . . . |".to_string(),
+            String::new(),
+            "# Track 2: 2".to_string(),
+            String::new(),
+            "seq | . . . . |".to_string(),
+        ];
+        assert_eq!(find_nearest_head(&lines, 5, "seq"), Some(6));
+    }
+
+    #[test]
+    fn locate_formatted_cursor_finds_modifier_body_after_formatting() {
+        let lines = vec![
+            "# Track: 1".to_string(),
+            String::new(),
+            "C4 | ^      ^    ^      |".to_string(),
+            "v  | 40   60  80  100   |".to_string(),
+        ];
+        let cursor = locate_formatted_cursor(
+            &lines,
+            FormattedCursorTarget::HeadBodyStart {
+                approx_row: 3,
+                head: "v".to_string(),
+            },
+        );
+        assert_eq!(cursor, (3, 4));
+    }
+
+    #[test]
+    fn locate_formatted_cursor_finds_inserted_seq_token() {
+        let lines = vec!["seq | C4 D4 E4 |".to_string()];
+        let cursor = locate_formatted_cursor(
+            &lines,
+            FormattedCursorTarget::HeadToken {
+                approx_row: 0,
+                head: "seq".to_string(),
+                token_index: 1,
+            },
+        );
+        assert_eq!(cursor, (0, 9));
     }
 }
