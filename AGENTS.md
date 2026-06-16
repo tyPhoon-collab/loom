@@ -12,12 +12,8 @@ loom はマークダウンライクなテキストベース作曲用の DSL で�
     - ドキュメントのみの変更の場合は不要
 - コミットメッセージは `type: 日本語の概要` の形式にする
     - type は Conventional Commits に従う
-- `code-review-graph` が使える場合、コード探索や影響調査はまず MCP を使う
-    - graph 未 build または利用不可の場合のみ `rg` などへ fallback する
-    - `.code-review-graph/` は生成物なのでコミットしない
-    - MCP の repo-local 設定は `.codex/config.toml` で管理する
-    - Codex の repo-local hooks は `.codex/hooks.json` で管理する
-    - Codex の `Write` / `Edit` 後は hook が `code-review-graph update --skip-flows` を試みる
+- コード探索や影響調査は MCP の `code-review-graph` を使う
+    - トークン削減のために網羅的な検索より、MCP を経由する
 
 ## Studio
 
