@@ -1,10 +1,9 @@
 use super::settings::{
-    clear_loop_settings_frontmatter, loop_range_for_bar_indices, score_body_start_row,
-    set_loop_range_frontmatter, toggle_loop_frontmatter, track_bar_index_at,
+    loop_range_for_bar_indices, score_body_start_row, set_loop_range_frontmatter,
+    track_bar_index_at,
 };
 use super::StudioApp;
 use miette::Result;
-use ratatui_textarea::CursorMove;
 
 fn shifted_score_row(row: usize, before_source: &str, after_source: &str) -> usize {
     let Ok(before_start) = score_body_start_row(before_source) else {
@@ -72,55 +71,6 @@ impl StudioApp {
                 self.dirty = true;
                 self.compile_and_update_current_source()?;
                 self.status_message = format!("Loop range: {}", loop_range);
-            }
-            Err(message) => {
-                self.status_message = message;
-            }
-        }
-        Ok(())
-    }
-
-    pub(super) fn toggle_loop(&mut self) -> Result<()> {
-        match toggle_loop_frontmatter(&self.source()) {
-            Ok((updated_source, enabled)) => {
-                let cursor = self.textarea.cursor();
-                let source = self.source();
-                let next_row = shifted_score_row(cursor.0, &source, &updated_source);
-                self.push_source_undo();
-                self.replace_source(updated_source);
-                self.textarea
-                    .move_cursor(CursorMove::Jump(next_row as u16, cursor.1 as u16));
-                self.dirty = true;
-                self.compile_and_update_current_source()?;
-                self.status_message = if enabled {
-                    "Loop: on".into()
-                } else {
-                    "Loop: off".into()
-                };
-            }
-            Err(message) => {
-                self.status_message = message;
-            }
-        }
-        Ok(())
-    }
-
-    pub(super) fn clear_loop_settings(&mut self) -> Result<()> {
-        match clear_loop_settings_frontmatter(&self.source()) {
-            Ok(Some(updated_source)) => {
-                let cursor = self.textarea.cursor();
-                let source = self.source();
-                let next_row = shifted_score_row(cursor.0, &source, &updated_source);
-                self.push_source_undo();
-                self.replace_source(updated_source);
-                self.textarea
-                    .move_cursor(CursorMove::Jump(next_row as u16, cursor.1 as u16));
-                self.dirty = true;
-                self.compile_and_update_current_source()?;
-                self.status_message = "Loop cleared".into();
-            }
-            Ok(None) => {
-                self.status_message = "No loop settings to clear".into();
             }
             Err(message) => {
                 self.status_message = message;

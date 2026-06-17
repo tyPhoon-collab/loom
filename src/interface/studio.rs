@@ -20,6 +20,7 @@ use std::time::Duration;
 
 mod add;
 mod audition;
+mod command;
 mod edit_ops;
 mod input;
 mod keystroke;
@@ -43,6 +44,7 @@ enum StudioMode {
     Normal,
     Insert,
     Select,
+    Command,
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +62,7 @@ enum KeyAction {
     Quit,
     ForceQuit,
     EnterInsertMode,
+    EnterCommandMode,
     BeginPending(PendingInput),
     TogglePreviewPanel,
     SubdivideCurrentUnit,
@@ -72,8 +75,6 @@ enum KeyAction {
     EnterLineSelectMode,
     EnterBarSelectMode,
     EnterLineBarSelectMode,
-    ClearLoopSettings,
-    ToggleLoop,
     Save,
     FormatCurrentSource,
     TogglePlayback,
@@ -131,6 +132,10 @@ const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
         stroke: KeyStroke::Char('i'),
         action: KeyAction::EnterInsertMode,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol(':'),
+        action: KeyAction::EnterCommandMode,
     },
     KeyBinding {
         stroke: KeyStroke::Char('a'),
@@ -209,14 +214,6 @@ const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
         action: KeyAction::EnterLineBarSelectMode,
     },
     KeyBinding {
-        stroke: KeyStroke::CtrlChar('l'),
-        action: KeyAction::ClearLoopSettings,
-    },
-    KeyBinding {
-        stroke: KeyStroke::ShiftChar('l'),
-        action: KeyAction::ToggleLoop,
-    },
-    KeyBinding {
         stroke: KeyStroke::Char('w'),
         action: KeyAction::Save,
     },
@@ -246,6 +243,10 @@ const SELECT_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
         stroke: KeyStroke::Code(KeyCode::Esc),
         action: KeyAction::ExitSelectMode,
+    },
+    KeyBinding {
+        stroke: KeyStroke::Symbol(':'),
+        action: KeyAction::EnterCommandMode,
     },
     KeyBinding {
         stroke: KeyStroke::Char('n'),
@@ -475,6 +476,8 @@ pub struct StudioApp {
     should_quit: bool,
     path: PathBuf,
     mode: StudioMode,
+    command_return_mode: Option<StudioMode>,
+    command_buffer: String,
     show_help_overlay: bool,
     input_state: StudioInputState,
     status_message: String,
@@ -741,6 +744,8 @@ impl StudioApp {
             should_quit: false,
             path,
             mode: StudioMode::Normal,
+            command_return_mode: None,
+            command_buffer: String::new(),
             show_help_overlay: false,
             input_state: StudioInputState::default(),
             status_message: if created_new_file {
@@ -822,11 +827,16 @@ impl StudioApp {
                         StudioMode::Normal => "Normal",
                         StudioMode::Insert => "Insert",
                         StudioMode::Select => "Select",
+                        StudioMode::Command => "Command",
                     }
                 );
                 return Ok(());
             }
             self.show_help_overlay = false;
+        }
+
+        if matches!(self.mode, StudioMode::Command) {
+            return self.handle_command_key(key);
         }
 
         if is_help_key(&key) {
@@ -837,6 +847,7 @@ impl StudioApp {
                     StudioMode::Normal => "Normal",
                     StudioMode::Insert => "Insert",
                     StudioMode::Select => "Select",
+                    StudioMode::Command => "Command",
                 }
             );
             return Ok(());
@@ -850,7 +861,18 @@ impl StudioApp {
             StudioMode::Normal => self.handle_normal_key(key),
             StudioMode::Insert => self.handle_insert_key(key),
             StudioMode::Select => self.handle_select_key(key),
+            StudioMode::Command => self.handle_command_key(key),
         }
+    }
+
+    fn begin_command_mode(&mut self) {
+        self.command_return_mode = Some(match self.mode {
+            StudioMode::Command => StudioMode::Normal,
+            mode => mode,
+        });
+        self.command_buffer.clear();
+        self.mode = StudioMode::Command;
+        self.status_message = "Command mode".into();
     }
 
     fn begin_pending_input(&mut self, pending: PendingInput) {
@@ -1056,6 +1078,7 @@ impl StudioApp {
                 self.mode = StudioMode::Insert;
                 self.status_message = "Insert mode".into();
             }
+            KeyAction::EnterCommandMode => self.begin_command_mode(),
             KeyAction::BeginPending(pending) => self.begin_pending_input(pending),
             KeyAction::TogglePreviewPanel => self.toggle_preview_panel(),
             KeyAction::SubdivideCurrentUnit => self.subdivide_current_unit()?,
@@ -1068,8 +1091,6 @@ impl StudioApp {
             KeyAction::EnterLineSelectMode => self.enter_line_select_mode(),
             KeyAction::EnterBarSelectMode => self.enter_bar_select_mode(),
             KeyAction::EnterLineBarSelectMode => self.enter_line_bar_select_mode(),
-            KeyAction::ClearLoopSettings => self.clear_loop_settings()?,
-            KeyAction::ToggleLoop => self.toggle_loop()?,
             KeyAction::Save => self.save()?,
             KeyAction::FormatCurrentSource => self.format_current_source()?,
             KeyAction::TogglePlayback => {

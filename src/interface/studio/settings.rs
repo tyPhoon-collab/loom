@@ -8,52 +8,33 @@ pub(super) struct TrackHeader {
     pub(super) muted: bool,
 }
 
-pub(super) fn toggle_loop_frontmatter(source: &str) -> std::result::Result<(String, bool), String> {
-    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
-
-    if !matches!(lines.first().map(|line| line.as_str()), Some("---")) {
-        let source = if source.is_empty() {
-            "---\nloop: true\n---\n".to_string()
-        } else {
-            format!("---\nloop: true\n---\n\n{}", source)
-        };
-        return Ok((source, true));
+pub(super) fn set_bpm_frontmatter(source: &str, bpm: u32) -> std::result::Result<String, String> {
+    if !(1..=999).contains(&bpm) {
+        return Err("BPM must be 1..999".to_string());
     }
+    set_simple_frontmatter_value(source, "bpm", &bpm.to_string(), "BPM")
+}
 
-    let Some(end_index) = lines
-        .iter()
-        .enumerate()
-        .skip(1)
-        .find_map(|(index, line)| (line == "---").then_some(index))
-    else {
-        return Err("Loop toggle failed: frontmatter block is not closed".to_string());
-    };
+pub(super) fn set_loop_enabled_frontmatter(
+    source: &str,
+    enabled: bool,
+) -> std::result::Result<String, String> {
+    set_simple_frontmatter_value(
+        source,
+        "loop",
+        if enabled { "true" } else { "false" },
+        "Loop",
+    )
+}
 
-    for line in lines.iter_mut().take(end_index).skip(1) {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("loop:") {
-            continue;
-        }
-
-        match trimmed {
-            "loop: true" => {
-                *line = "loop: false".to_string();
-                return Ok((finish_source(lines), false));
-            }
-            "loop: false" => {
-                *line = "loop: true".to_string();
-                return Ok((finish_source(lines), true));
-            }
-            _ => {
-                return Err(
-                    "Loop toggle supports only simple `loop: true` or `loop: false`".to_string(),
-                );
-            }
-        }
+pub(super) fn loop_range_from_bounds(start: f64, end: f64) -> std::result::Result<String, String> {
+    if !start.is_finite() || !end.is_finite() || start < 0.0 {
+        return Err("Loop range bounds must be non-negative numbers".to_string());
     }
-
-    lines.insert(end_index, "loop: true".to_string());
-    Ok((finish_source(lines), true))
+    if end <= start {
+        return Err("Loop range end must be greater than start".to_string());
+    }
+    Ok(format_loop_range_number(start, end))
 }
 
 pub(super) fn loop_range_for_bar_indices(
@@ -73,6 +54,55 @@ pub(super) fn loop_range_for_bar_indices(
     } else {
         Ok(format!("{}..{}", start_index, end_index + 1))
     }
+}
+
+fn set_simple_frontmatter_value(
+    source: &str,
+    key: &str,
+    value: &str,
+    label: &str,
+) -> std::result::Result<String, String> {
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+    let line = format!("{}: {}", key, value);
+
+    if !matches!(lines.first().map(|line| line.as_str()), Some("---")) {
+        let source = if source.is_empty() {
+            format!("---\n{}\n---\n", line)
+        } else {
+            format!("---\n{}\n---\n\n{}", line, source)
+        };
+        return Ok(source);
+    }
+
+    let Some(end_index) = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line == "---").then_some(index))
+    else {
+        return Err(format!(
+            "{} update failed: frontmatter block is not closed",
+            label
+        ));
+    };
+
+    for line_ref in lines.iter_mut().take(end_index).skip(1) {
+        let trimmed = line_ref.trim();
+        if !trimmed.starts_with(&format!("{}:", key)) {
+            continue;
+        }
+        if trimmed == format!("{}:", key) {
+            return Err(format!(
+                "{} update supports only simple `{}: value`",
+                label, key
+            ));
+        }
+        *line_ref = line;
+        return Ok(finish_source(lines));
+    }
+
+    lines.insert(end_index, line);
+    Ok(finish_source(lines))
 }
 
 pub(super) fn track_bar_index_at(
@@ -400,44 +430,41 @@ fn finish_source(lines: Vec<String>) -> String {
 mod tests {
     use super::{
         clear_loop_settings_frontmatter, format_track_header, loop_range_for_bar_indices,
-        parse_track_header, parse_track_header_channel, score_body_start_row,
-        set_loop_range_frontmatter, toggle_loop_frontmatter, track_bar_index_at, TrackHeader,
+        loop_range_from_bounds, parse_track_header, parse_track_header_channel,
+        score_body_start_row, set_bpm_frontmatter, set_loop_enabled_frontmatter,
+        set_loop_range_frontmatter, track_bar_index_at, TrackHeader,
     };
 
     #[test]
-    fn toggle_loop_adds_frontmatter_when_missing() {
-        let (source, enabled) = toggle_loop_frontmatter("# Piano: 1\nC4 | ^ |\n").unwrap();
-        assert!(enabled);
-        assert_eq!(source, "---\nloop: true\n---\n\n# Piano: 1\nC4 | ^ |\n");
+    fn set_bpm_adds_frontmatter_when_missing() {
+        let source = set_bpm_frontmatter("# Piano: 1\n", 140).unwrap();
+        assert_eq!(source, "---\nbpm: 140\n---\n\n# Piano: 1\n");
     }
 
     #[test]
-    fn toggle_loop_adds_key_to_existing_frontmatter() {
-        let (source, enabled) =
-            toggle_loop_frontmatter("---\nbpm: 100\n---\n# Piano: 1\n").unwrap();
-        assert!(enabled);
-        assert_eq!(source, "---\nbpm: 100\nloop: true\n---\n# Piano: 1\n");
+    fn set_bpm_updates_existing_scalar() {
+        let source = set_bpm_frontmatter("---\nbpm: 100\n---\n# Piano: 1\n", 140).unwrap();
+        assert_eq!(source, "---\nbpm: 140\n---\n# Piano: 1\n");
     }
 
     #[test]
-    fn toggle_loop_turns_on_and_off() {
-        let (source, enabled) =
-            toggle_loop_frontmatter("---\nloop: false\n---\n# Piano: 1\n").unwrap();
-        assert!(enabled);
-        assert_eq!(source, "---\nloop: true\n---\n# Piano: 1\n");
-
-        let (source, enabled) = toggle_loop_frontmatter(&source).unwrap();
-        assert!(!enabled);
-        assert_eq!(source, "---\nloop: false\n---\n# Piano: 1\n");
+    fn set_bpm_rejects_complex_value() {
+        let err = set_bpm_frontmatter("---\nbpm:\n  base: 120\n---\n", 140).unwrap_err();
+        assert_eq!(err, "BPM update supports only simple `bpm: value`");
     }
 
     #[test]
-    fn toggle_loop_rejects_non_simple_loop_value() {
-        let err = toggle_loop_frontmatter("---\nloop:\n  enabled: true\n---\n").unwrap_err();
-        assert_eq!(
-            err,
-            "Loop toggle supports only simple `loop: true` or `loop: false`"
-        );
+    fn set_loop_enabled_preserves_loop_range() {
+        let source =
+            set_loop_enabled_frontmatter("---\nloop: true\nloop_range: 0..4\n---\n", false)
+                .unwrap();
+        assert_eq!(source, "---\nloop: false\nloop_range: 0..4\n---\n");
+    }
+
+    #[test]
+    fn loop_range_from_bounds_formats_numbers() {
+        assert_eq!(loop_range_from_bounds(0.0, 4.0).unwrap(), "0..4");
+        assert_eq!(loop_range_from_bounds(0.5, 4.25).unwrap(), "0.5..4.25");
     }
 
     #[test]

@@ -46,11 +46,12 @@ The score title also shows:
 
 ## Modes
 
-Studio has three modes:
+Studio has four modes:
 
 - `Normal`: navigation, editing commands, playback control
 - `Insert`: free text editing
 - `Select`: structure-aware range editing
+- `Command`: short command-line edits and editor actions
 
 ### Normal Mode
 
@@ -59,6 +60,7 @@ Main bindings:
 | Key | Behavior |
 | --- | --- |
 | `i` | enter Insert mode |
+| `:` | enter Command mode |
 | `a` | add prefix |
 | `g` | goto prefix |
 | `g d` | jump to template definition under cursor |
@@ -85,8 +87,6 @@ Main bindings:
 | `-` | transpose -1 semitone |
 | `]` | transpose +12 semitones |
 | `[` | transpose -12 semitones |
-| `L` | toggle `loop` |
-| `Ctrl-L` | clear `loop` and `loop_range` |
 | `space` | play / pause |
 | `r` | restart playback |
 | `f` | format |
@@ -103,6 +103,32 @@ Insert mode delegates text editing to the textarea.
 - `Esc` returns to Normal mode
 - leaving Insert mode recompiles the song
 - Studio does not auto-format while you type
+
+### Command Mode
+
+Command mode opens from Normal or Select mode with `:`. It uses the footer as a command prompt.
+
+- `Enter` runs the command and returns to the previous mode
+- `Esc` cancels and returns to the previous mode
+- playback continues while entering commands
+- invalid commands close Command mode and show an error message
+
+Supported commands:
+
+| Command | Behavior |
+| --- | --- |
+| `bpm 140` | set `bpm: 140` |
+| `loop on` | set `loop: true` |
+| `loop off` | set `loop: false` and keep `loop_range` |
+| `loop clear` | remove `loop` and `loop_range` |
+| `loop 0 4` | set `loop: true` and `loop_range: 0..4` |
+| `w` | save |
+| `q` | quit, with dirty warning |
+| `q!` | force quit |
+| `wq` | save and quit |
+| `format` / `fmt` | format source |
+
+`loop 0 4` uses the current frontmatter `unit`, matching `loop_range` semantics directly. Studio command edits only simple scalar frontmatter values. Complex YAML values should still be edited manually in Insert mode.
 
 ### Select Mode
 
@@ -247,12 +273,15 @@ Track header formatting is kept canonical:
 
 Currently supported frontmatter editing:
 
-- `L` toggles `loop`
-- `Ctrl-L` clears `loop` and `loop_range`
+- `:` opens Command mode
+- `bpm 140` sets `bpm`
+- `loop on` / `loop off` edits `loop`
+- `loop clear` removes `loop` and `loop_range`
+- `loop 0 4` writes `loop_range: 0..4`
 - bar selection + `T` extracts a template definition
 - bar selection + `Enter` writes a `loop_range`
 
-Studio only edits simple scalar loop settings directly. Complex frontmatter should still be edited manually in Insert mode.
+Studio only edits simple scalar frontmatter settings directly. Complex frontmatter should still be edited manually in Insert mode.
 
 ## Playback, Compile, And Audition
 

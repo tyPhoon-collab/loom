@@ -50,6 +50,7 @@ fn normalize_symbol(code: char, modifiers: KeyModifiers) -> Option<char> {
     let shift = modifiers.contains(KeyModifiers::SHIFT);
     match (code, shift) {
         ('/', true) | ('?', _) => Some('?'),
+        (';', true) | (':', _) => Some(':'),
         (',', true) | ('<', _) => Some('<'),
         ('.', true) | ('>', _) => Some('>'),
         ('[', true) | ('{', _) => Some('{'),
@@ -77,6 +78,12 @@ mod tests {
     fn shifted_comma_normalizes_to_left_angle() {
         let key = KeyEvent::new(KeyCode::Char(','), KeyModifiers::SHIFT);
         assert!(key_stroke_matches(KeyStroke::Symbol('<'), &key));
+    }
+
+    #[test]
+    fn shifted_semicolon_normalizes_to_colon() {
+        let key = KeyEvent::new(KeyCode::Char(';'), KeyModifiers::SHIFT);
+        assert!(key_stroke_matches(KeyStroke::Symbol(':'), &key));
     }
 
     #[test]

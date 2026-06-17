@@ -11,11 +11,13 @@ use ratatui::{
 
 const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save  f format  q quit";
 const FOOTER_NORMAL_HELP: &str =
-    "Normal: n/N note  o/O onset  v/V/b/B select  x delete-unit  p paste  s/S grid";
+    "Normal: : command  n/N note  o/O onset  v/V/b/B select  x delete-unit  p paste  s/S grid";
 const FOOTER_NORMAL_PREFIX_HELP: &str = "Prefix: a add  d delete  g goto  P preview-panel";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
+const FOOTER_COMMAND_HELP: &str =
+    "Command: type command  Enter run  Esc cancel  bpm 140 | loop on/off/clear | loop 0 4";
 const FOOTER_SELECT_HELP: &str =
-    "Select: move hjkl  expand HJKL  n replace  d delete  y/p yank-paste";
+    "Select: : command  move hjkl  expand HJKL  n replace  d delete  y/p yank-paste";
 const FOOTER_SELECT_DETAIL_HELP: &str =
     "Select+: x delete  s/S group  +/-/[] transpose  Enter loop-range  T template";
 const FOOTER_PREVIEW_PANEL_HELP: &str =
@@ -33,8 +35,7 @@ const OVERLAY_NORMAL_ENTRY_LINES: &[&str] = &[
     "x delete-unit  p paste  s subdivide  S shrink  +/-/[] transpose",
 ];
 const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line-bars"];
-const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
-    &["a add  d delete  g goto  L toggle-loop  Ctrl-L clear-loop"];
+const OVERLAY_NORMAL_PREFIX_LINES: &[&str] = &["a add  d delete  g goto  : command"];
 const OVERLAY_ADD_LINES: &[&str] = &[
     "s seq  l lane  t track  P piano-roll  h separator  T template  b bar",
     "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
@@ -56,6 +57,12 @@ const OVERLAY_INSERT_LINES: &[&str] = &[
     "type to edit source directly",
     "Esc returns to Normal and recompiles",
     "Ctrl-U / Ctrl-R are handled by the textarea when available",
+];
+const OVERLAY_COMMAND_LINES: &[&str] = &[
+    "Enter runs command  Esc cancels",
+    "bpm 140",
+    "loop on  loop off  loop clear  loop 0 4",
+    "w  q  q!  wq  format  fmt",
 ];
 const OVERLAY_SELECT_LINES: &[&str] = &[
     "hjkl/arrows move focus  HJKL/Shift-arrows expand",
@@ -94,6 +101,7 @@ impl StudioApp {
             StudioMode::Normal => "NORMAL",
             StudioMode::Insert => "INSERT",
             StudioMode::Select => "SELECT",
+            StudioMode::Command => "COMMAND",
         };
         let dirty = if self.dirty { " *" } else { "" };
         let title = format!(
@@ -161,6 +169,10 @@ impl StudioApp {
     }
 
     fn footer_help_text(&self) -> String {
+        if matches!(self.mode, StudioMode::Command) {
+            return format!("Command: {}\n{}", self.command_buffer, FOOTER_COMMAND_HELP);
+        }
+
         let detail = if self.preview_panel.open {
             FOOTER_PREVIEW_PANEL_HELP.to_string()
         } else {
@@ -171,6 +183,7 @@ impl StudioApp {
                         format!("{}\n{}", FOOTER_NORMAL_HELP, FOOTER_NORMAL_PREFIX_HELP)
                     }
                     StudioMode::Insert => FOOTER_INSERT_HELP.to_string(),
+                    StudioMode::Command => FOOTER_COMMAND_HELP.to_string(),
                     StudioMode::Select => {
                         format!("{}\n{}", FOOTER_SELECT_HELP, FOOTER_SELECT_DETAIL_HELP)
                     }
@@ -298,6 +311,9 @@ impl StudioApp {
                 }
             }
             StudioMode::Insert => push_help_section(&mut sections, "Insert", OVERLAY_INSERT_LINES),
+            StudioMode::Command => {
+                push_help_section(&mut sections, "Command", OVERLAY_COMMAND_LINES)
+            }
             StudioMode::Select => push_help_section(&mut sections, "Select", OVERLAY_SELECT_LINES),
         }
 
@@ -309,9 +325,11 @@ impl StudioApp {
                 StudioMode::Normal => "normal",
                 StudioMode::Insert => "insert",
                 StudioMode::Select => "select",
+                StudioMode::Command => "command",
             },
             match self.mode {
                 StudioMode::Select => self.selection_label(),
+                StudioMode::Command => self.command_buffer.clone(),
                 _ => self.cursor_label(),
             }
         ));
