@@ -206,7 +206,7 @@ Useful add commands:
 | Key | Behavior |
 | --- | --- |
 | `a s` | add a `seq` line |
-| `a l` | add a note-head line |
+| `a l` | add a lane |
 | `a t` | add a new track and empty `seq` line |
 | `a P` | add a new piano-roll-style track with `C4` through `B4` lanes |
 | `a h` | add a `---` separator line |
@@ -231,7 +231,7 @@ When the cursor is on a template call in Normal mode:
 
 Outside template calls, `<` and `>` keep their usual bar navigation behavior.
 
-Onset editing for note-head and drum-lane rhythm bodies:
+Onset editing for lane rhythm bodies:
 
 - `o x` note-on
 - `o .` rest
@@ -252,7 +252,7 @@ Studio can edit track header flags directly:
 | `M` | toggle current track solo flag `s` |
 | `X` | clear all track `s` / `x` flags |
 | `D s` | delete current `seq` line |
-| `D l` | delete current note-head or drum lane line |
+| `D l` | delete current lane |
 | `D t` | delete current track |
 | `D h` | delete current `---` separator line |
 | `D T` | delete current template definition block |

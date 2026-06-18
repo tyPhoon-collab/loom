@@ -1,6 +1,6 @@
 # Templates
 
-Templates are reusable sequence blocks expanded in tracks.
+Templates are reusable sequence blocks called from tracks.
 
 ## Definition
 
@@ -9,7 +9,7 @@ Templates are reusable sequence blocks expanded in tracks.
 C4,E4,G4 | ^ |
 ```
 
-## Expansion
+## Template Call
 
 ```loom
 # Lead: 1
@@ -24,7 +24,7 @@ C4,E4,G4 | ^ |
 - `+N` / `-N`: transpose
 - `xN`: structural repeat within block span
 - `/N`: time scaling
-- `*N`: repeat expansion sequence
+- `*N`: repeat the called sequence
 - macros: `rev`, `arp`, `strum`, `vel:N`, `pan:N`
 
 <!-- AUTO-GENERATED:TEMPLATE-MACROS:START -->
@@ -41,7 +41,7 @@ C4,E4,G4 | ^ |
 
 ## Execution Rule
 
-Multiple expansions on the same line execute sequentially.
+Multiple template calls on the same line execute sequentially.
 
 Example:
 

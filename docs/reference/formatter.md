@@ -43,9 +43,9 @@ Rules:
 - Trailing spaces are removed.
 - File ends with a newline.
 
-## Template Expansion Formatting
+## Template Call Formatting
 
-Multiple template expansions in one input line are emitted as compact, independently normalized forms separated by a single space.
+Multiple template calls in one input line are emitted as compact, independently normalized forms separated by a single space.
 
 Example:
 

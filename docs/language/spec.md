@@ -33,14 +33,14 @@ CommentLine  = ">" , { character } , newline ;
 InitLine     = "##" , space , InitCommand , newline ;
 EmptyLine    = { space } , newline ;
 TrackWrap    = "---" , newline ;
-PatternLine  = RowHeader , Bar , Block , { Bar , Block } , Bar , [ space , CommentLine ] ;
+PatternLine  = LaneHead , Bar , Block , { Bar , Block } , Bar , [ space , CommentLine ] ;
 SeqLine      = "seq" , space , Bar , SeqBlock , { Bar , SeqBlock } , Bar , [ space , CommentLine ] ;
 ```
 
 ## Patterns and Tokens
 
 ```ebnf
-RowHeader   = NoteList | DrumName | MidiNote ;
+LaneHead    = NoteList | DrumName | MidiNote ;
 NoteList    = NoteName , { "," , NoteName } ;
 NoteName    = ( "a"..."g" | "A"..."G" ) , [ "#" | "b" ] , digit ;
 MidiNote    = digits ;
@@ -113,7 +113,7 @@ ModifierEmpty  = "." ;
 
 ## Templates
 
-Templates define reusable sequences expanded in tracks.
+Templates define reusable sequences called from tracks.
 
 ### Template Definition
 
@@ -122,26 +122,26 @@ Template       = TemplateHeader , { Line } ;
 TemplateHeader = "#" , space , "@" , name , newline ;
 ```
 
-### Template Expansion
+### Template Call
 
 ```ebnf
-TemplateLine      = TemplateExpansion , { TemplateExpansion } , newline ;
-TemplateExpansion = "[" , "@" , name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
-TemplateParam     = Transpose | StructuralRepeat | TimeScale | Macro ;
-Transpose         = ( "+" | "-" ) , digits ;
-StructuralRepeat  = "x" , digits ;
-TimeScale         = "/" , digits ;
-Macro             = "rev" | "arp" | "strum" | "vel:" , digits | "pan:" , digits ;
+TemplateLine     = TemplateCall , { TemplateCall } , newline ;
+TemplateCall     = "[" , "@" , name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
+TemplateParam    = Transpose | StructuralRepeat | TimeScale | Macro ;
+Transpose        = ( "+" | "-" ) , digits ;
+StructuralRepeat = "x" , digits ;
+TimeScale        = "/" , digits ;
+Macro            = "rev" | "arp" | "strum" | "vel:" , digits | "pan:" , digits ;
 ```
 
 Rules:
 
-- Multiple expansions on the same line are processed sequentially (`[@a][@b]`).
-- Expansions on different lines in the same section are parallel by line semantics.
+- Multiple template calls on the same line are processed sequentially (`[@a][@b]`).
+- Template calls on different lines in the same section are parallel by line semantics.
 - `+N` / `-N`: pitch transposition.
 - `xN`: structural repeat within the same grid span.
 - `/N`: time scale (compress duration to `1/N`).
-- `*N`: repeat the expanded sequence.
+- `*N`: repeat the called sequence.
 - Macros:
   - `rev`
   - `arp`
@@ -187,9 +187,9 @@ Rules:
 
 <!-- AUTO-GENERATED:DSL-SYMBOLS:END -->
 
-## Track Wrapping
+## Track Wrap
 
-`---` in a track body works as a continuation marker.
+`---` in a track body works as a track wrap marker.
 
 ```loom
 # Track: 1

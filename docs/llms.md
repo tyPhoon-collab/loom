@@ -7,7 +7,7 @@ It is written for AI agents that need to read, edit, or generate Loom files with
 
 - Loom is a text-first DSL for MIDI composition and live coding.
 - A song is YAML frontmatter plus one or more tracks.
-- Tracks contain pattern lines, `seq` sugar lines, modifier lines, init lines, comments, template definitions, template calls, and `---` track-wrap markers.
+- Tracks contain lanes, `seq` sugar lines, modifier lines, init lines, comments, template definitions, template calls, and `---` track wrap markers.
 - The compiler emits MIDI `Note`, `ControlChange`, and `ProgramChange` events.
 - Track channels are written as 1-based numbers in source and compiled to 0-based MIDI channels.
 
@@ -97,12 +97,12 @@ Inside a track body, the parser accepts:
 
 - Comment lines starting with `>`
 - Track init lines starting with `##`
-- Pattern lines starting with a row header like `C4`, `kick`, or `60`
+- Lanes starting with a lane head like `C4`, `kick`, or `60`
 - `seq` lines, which are sugar for note literals directly in the grid
 - Modifier lines starting with `v` or `p`
 - Template definition headers starting with `# @name`
 - Template calls like `[@name ...]`
-- `---` track-wrap markers
+- `---` track wrap markers
 - Blank lines
 
 Trailing comments after pattern and modifier lines are supported:
@@ -114,9 +114,9 @@ v  | 80 . 90 |  > trailing comment
 
 Comments start with `>` only. `#` is not a comment marker inside normal track content.
 
-## Pattern Rows
+## Lanes
 
-Pattern rows are written as a row header plus bar-delimited blocks.
+Lanes are pattern rows written as a lane head plus bar-delimited blocks.
 
 ```loom
 C4        | ^ . ^ . |
@@ -125,7 +125,7 @@ C3,E3,G3  | ^ . ^ . |
 60        | ^ . ^ . |
 ```
 
-Row header forms:
+Lane head forms:
 
 - Pitch names like `C4`, `db3`, `F#2`
 - Drum aliases like `kick`, `snare`, `hh`, `ride`
@@ -168,7 +168,7 @@ The bar markers are:
 Blocks are delimited by bars.
 The parser expects each non-empty block to end with a bar.
 
-`---` inside a track body is not a bar. It is a track-wrap marker that continues the current track across sections.
+`---` inside a track body is not a bar. It is a track wrap marker that continues the current track across sections.
 
 Example:
 
