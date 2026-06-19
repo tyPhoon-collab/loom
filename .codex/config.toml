@@ -19,3 +19,6 @@ approval_mode = "approve"
 
 [mcp_servers.code-review-graph.tools.get_impact_radius_tool]
 approval_mode = "approve"
+
+[mcp_servers.code-review-graph.tools.cross_repo_search_tool]
+approval_mode = "approve"

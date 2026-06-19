@@ -8,6 +8,18 @@ Loom is the language and product context for text-first MIDI composition, playba
 A complete Loom composition made of frontmatter and one or more tracks.
 _Avoid_: Composition, document, file
 
+**Song Manifest**:
+A top-level song form that defines song metadata, tracks, and fragment calls.
+_Avoid_: Config file, parent file
+
+**Song Fragment**:
+A reusable portion of a song that is not a complete song by itself.
+_Avoid_: Partial song, file, part
+
+**Fragment Call**:
+A reference that places a song fragment into a song.
+_Avoid_: File call, include, import
+
 **Frontmatter**:
 The song-level metadata and settings written before the tracks.
 _Avoid_: Header, config, preamble
@@ -15,6 +27,10 @@ _Avoid_: Header, config, preamble
 **Track**:
 A named musical part in a song, associated with a MIDI channel.
 _Avoid_: Part, voice
+
+**Track Reference**:
+A fragment-local reference to a track defined by the song.
+_Avoid_: Track header, channel header
 
 **Track Init**:
 A track-level setting that prepares MIDI state before the track's musical events play.
