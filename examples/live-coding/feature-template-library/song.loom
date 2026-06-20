@@ -1,0 +1,14 @@
+---
+bpm: 120
+title: "Template Library"
+templates:
+  drums: libraries/drums.loom
+  bass: libraries/bass.loom
+---
+
+# Bass: 2
+## pc 34
+[@bass.root]
+
+# Drums: 10
+[@drums.kick-snare]

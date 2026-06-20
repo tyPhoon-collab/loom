@@ -6,4 +6,4 @@ loom::compiler::context
 
   × while compiling track 'Track'
   ├─▶ while compiling template call 'NonExistent'
-  ╰─▶ Template not found: 'NonExistent' while compiling track 'Track', stack [NonExistent]
+  ╰─▶ Template not found: 'NonExistent' while compiling track 'Track', stack [@NonExistent]

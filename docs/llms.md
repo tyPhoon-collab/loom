@@ -83,6 +83,8 @@ Manifest:
 fragments:
   intro: sections/intro.loom
   chorus: sections/chorus.loom
+templates:
+  drums: libraries/drums.loom
 ---
 
 # Piano: 1
@@ -118,6 +120,7 @@ Fragment rules:
 - Fragments must not contain frontmatter, track headers like `# Piano: 1`, track init lines, solo/mute flags, or fragment calls.
 - Each channel may be referenced at most once per fragment.
 - Templates are local to one fragment; same template name may be reused in another fragment.
+- Fragment template calls may use template libraries declared by the manifest.
 - Fragment calls play in manifest order. Missing tracks are silent for that fragment.
 
 ## Track Headers
@@ -365,6 +368,7 @@ Calls:
 ```loom
 # Lead: 1
 [@riff]
+[@drums.fill]
 [@riff +12]
 [@riff x2 /2]
 [@riff vel:80 pan:32]
@@ -388,6 +392,10 @@ Template rules:
 - Template definitions can reference other templates.
 - Circular references are rejected during compilation.
 - Template names use alphanumeric, `-`, and `_` characters.
+- Template library calls use `[@alias.name]`.
+- Template library aliases are declared in frontmatter `templates:` as alias-to-relative-path mappings.
+- Template library paths follow the same path rules as `fragments`.
+- Template library aliases are file-local and are not re-exported.
 - Template calls can appear in track bodies.
 
 Example:

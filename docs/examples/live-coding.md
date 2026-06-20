@@ -30,6 +30,7 @@ Examples focused on templates, modifiers, repeats, and real-time iteration.
 - `examples/live-coding/feature-swing-8.loom`
 - `examples/live-coding/feature-swing-amount.loom`
 - `examples/live-coding/feature-template-holizontal.loom`
+- `examples/live-coding/feature-template-library/song.loom`
 - `examples/live-coding/feature-template-vertical.loom`
 - `examples/live-coding/feature-track-wrap.loom`
 
@@ -488,6 +489,51 @@ C4 | [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] [ ^ ^ ^ ^ ] |
 G3 | ^ |
 E3 | ^ |
 C3 | ^ |
+````
+
+##### `examples/live-coding/feature-template-library/song.loom`
+
+````loom
+---
+bpm: 120
+title: "Template Library"
+templates:
+  drums: libraries/drums.loom
+  bass: libraries/bass.loom
+---
+
+# Bass: 2
+## pc 34
+[@bass.root]
+
+# Drums: 10
+[@drums.kick-snare]
+````
+
+Related template libraries:
+
+````loom
+> examples/live-coding/feature-template-library/libraries/bass.loom
+# @root
+C2 | ^ . . . |
+````
+
+````loom
+> examples/live-coding/feature-template-library/libraries/common.loom
+# @kick
+kick | ^ . ^ . |
+````
+
+````loom
+> examples/live-coding/feature-template-library/libraries/drums.loom
+---
+templates:
+  common: common.loom
+---
+
+# @kick-snare
+[@common.kick]
+snare | . . ^ . |
 ````
 
 ##### `examples/live-coding/feature-template-vertical.loom`

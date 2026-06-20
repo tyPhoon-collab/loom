@@ -22,10 +22,12 @@ fn test_examples() {
         if rel.starts_with("internals") {
             continue;
         }
-        if rel
-            .components()
-            .any(|component| component.as_os_str() == "sections")
-        {
+        if rel.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some("sections" | "libraries")
+            )
+        }) {
             continue;
         }
         files.push(path.to_path_buf());

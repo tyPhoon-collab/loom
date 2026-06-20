@@ -4,8 +4,10 @@ use super::selection::{bar_spans_in_line, char_range, StudioSelection};
 use super::settings::parse_track_header_channel;
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
-use miette::Result;
+use miette::{IntoDiagnostic, Result};
 use ratatui_textarea::CursorMove;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Copy, Debug)]
 enum TemplateMacroKeyAction {
@@ -65,6 +67,9 @@ impl StudioApp {
             self.status_message = "Goto definition needs the cursor on a template call".into();
             return Ok(());
         };
+        if let Some((alias, name)) = call.template_name.split_once('.') {
+            return self.goto_template_library_definition(alias, name);
+        }
 
         let Some(row) = self
             .textarea
@@ -87,6 +92,58 @@ impl StudioApp {
         self.textarea.move_cursor(CursorMove::Jump(row as u16, 2));
         self.status_message = format!("Jumped to @{} definition", call.template_name);
         Ok(())
+    }
+
+    fn goto_template_library_definition(&mut self, alias: &str, name: &str) -> Result<()> {
+        if self.dirty {
+            self.status_message = "Save before changing file".into();
+            return Ok(());
+        }
+
+        let Some((target, row)) = self.resolve_template_library_definition(alias, name)? else {
+            return Ok(());
+        };
+        let manifest_path = self.manifest_path.clone();
+        self.open_file_from_current_at(target, manifest_path, (row, 2))?;
+        self.status_message = format!("Jumped to @{} in template library {}", name, alias);
+        Ok(())
+    }
+
+    fn resolve_template_library_definition(
+        &mut self,
+        alias: &str,
+        name: &str,
+    ) -> Result<Option<(PathBuf, usize)>> {
+        let current_source = self.source();
+        let (source, source_path) = if source_template_mapping(&current_source, alias)?.is_some() {
+            (current_source, self.path.clone())
+        } else if let Some(manifest_path) = &self.manifest_path {
+            if manifest_path != &self.path {
+                (
+                    fs::read_to_string(manifest_path).into_diagnostic()?,
+                    manifest_path.clone(),
+                )
+            } else {
+                (current_source, self.path.clone())
+            }
+        } else {
+            (current_source, self.path.clone())
+        };
+
+        let Some(mapped) = source_template_mapping(&source, alias)? else {
+            self.status_message = format!("Template library alias '{}' not found", alias);
+            return Ok(None);
+        };
+        let Some(target) = resolve_template_library_path(&source_path, &mapped) else {
+            self.status_message = format!("Template library '{}' has invalid path", alias);
+            return Ok(None);
+        };
+        let target_source = fs::read_to_string(&target).into_diagnostic()?;
+        let Some(row) = template_definition_row(&target_source, name) else {
+            self.status_message = format!("Template @{} not found in {}", name, alias);
+            return Ok(None);
+        };
+        Ok(Some((target, row)))
     }
 
     pub(super) fn extract_selected_bars_to_template(&mut self) -> Result<()> {
@@ -202,6 +259,55 @@ struct TemplateExtraction {
     before_lines: Vec<String>,
     template_lines: Vec<String>,
     after_lines: Vec<String>,
+}
+
+fn source_template_mapping(source: &str, alias: &str) -> Result<Option<String>> {
+    let Some(frontmatter) = parse_template_source_frontmatter(source)? else {
+        return Ok(None);
+    };
+    Ok(frontmatter.templates.get(alias).cloned())
+}
+
+fn parse_template_source_frontmatter(
+    source: &str,
+) -> Result<Option<crate::dsl::token::Frontmatter>> {
+    let mut lines = source.lines();
+    if lines.next() != Some("---") {
+        return Ok(None);
+    }
+
+    let mut yaml = String::new();
+    for line in lines {
+        if line == "---" {
+            let metadata = serde_yaml::from_str(&yaml).into_diagnostic()?;
+            return Ok(Some(metadata));
+        }
+        yaml.push_str(line);
+        yaml.push('\n');
+    }
+    Ok(None)
+}
+
+fn resolve_template_library_path(source_path: &Path, mapped: &str) -> Option<PathBuf> {
+    let mapped_path = Path::new(mapped);
+    if mapped_path.is_absolute()
+        || mapped_path
+            .components()
+            .any(|component| component == Component::ParentDir)
+    {
+        return None;
+    }
+    let base_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+    Some(base_dir.join(mapped_path))
+}
+
+fn template_definition_row(source: &str, name: &str) -> Option<usize> {
+    source.lines().enumerate().find_map(|(row, line)| {
+        line.trim()
+            .strip_prefix("# @")
+            .is_some_and(|template_name| template_name.trim() == name)
+            .then_some(row)
+    })
 }
 
 pub(super) fn template_call_spans_in_line(row: usize, line: &str) -> Vec<TemplateCallSpan> {
@@ -446,8 +552,10 @@ fn char_to_byte_index(input: &str, char_index: usize) -> usize {
 mod tests {
     use super::{
         extract_bar_rectangle, insert_template_macro_before_closing_bracket, next_template_name,
-        preferred_template_base_name, template_call_at_or_near_col, template_call_spans_in_line,
+        preferred_template_base_name, resolve_template_library_path, source_template_mapping,
+        template_call_at_or_near_col, template_call_spans_in_line, template_definition_row,
     };
+    use std::path::Path;
 
     #[test]
     fn extracts_selected_bar_rectangle_into_template_slices() {
@@ -501,6 +609,46 @@ mod tests {
         assert_eq!(spans[0].template_name, "riff");
         assert_eq!(spans[0].raw_text, "[@riff +12]*2");
         assert_eq!(spans[1].template_name, "bass");
+    }
+
+    #[test]
+    fn template_call_span_accepts_library_qualified_name() {
+        let spans = template_call_spans_in_line(0, "[@drums.fill +12]*2");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].template_name, "drums.fill");
+        assert_eq!(spans[0].raw_text, "[@drums.fill +12]*2");
+    }
+
+    #[test]
+    fn template_library_mapping_reads_frontmatter_alias() {
+        let source = "---\ntemplates:\n  drums: libraries/drums.loom\n---\n";
+        assert_eq!(
+            source_template_mapping(source, "drums").unwrap().as_deref(),
+            Some("libraries/drums.loom")
+        );
+        assert_eq!(source_template_mapping(source, "bass").unwrap(), None);
+    }
+
+    #[test]
+    fn template_library_path_uses_fragment_path_rules() {
+        assert_eq!(
+            resolve_template_library_path(Path::new("songs/song.loom"), "libraries/drums.loom")
+                .unwrap(),
+            Path::new("songs/libraries/drums.loom")
+        );
+        assert_eq!(
+            resolve_template_library_path(Path::new("songs/song.loom"), "../drums.loom"),
+            None
+        );
+    }
+
+    #[test]
+    fn template_definition_row_finds_matching_header() {
+        assert_eq!(
+            template_definition_row("# @kick\nC4 | ^ |\n", "kick"),
+            Some(0)
+        );
+        assert_eq!(template_definition_row("# @kick\n", "snare"), None);
     }
 
     #[test]

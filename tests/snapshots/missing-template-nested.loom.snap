@@ -8,4 +8,4 @@ loom::compiler::context
   ├─▶ while compiling template call 'A'
   ├─▶ while compiling nested template call 'B'
   ├─▶ while compiling nested template call 'Missing'
-  ╰─▶ Template not found: 'Missing' while compiling track 'Track', stack [A -> B -> Missing]
+  ╰─▶ Template not found: 'Missing' while compiling track 'Track', stack [@A -> @B -> @Missing]

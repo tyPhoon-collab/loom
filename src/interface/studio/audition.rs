@@ -3,7 +3,7 @@ use super::settings::parse_track_header;
 use super::StudioApp;
 use super::{PreviewControls, PreviewTarget};
 use crate::dsl::note::Note;
-use crate::dsl::parser::{self, parse_track_init_command};
+use crate::dsl::parser::parse_track_init_command;
 use crate::dsl::token::TrackInitEvent;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,9 +17,14 @@ pub(super) struct PreviewTrackContext {
 
 impl StudioApp {
     pub(super) fn current_loop_range(&self) -> Option<String> {
-        parser::parse_song(self.source())
-            .ok()
-            .and_then(|song| song.metadata.loop_range)
+        let source = self.source();
+        if source.starts_with("---") {
+            crate::dsl::parser::nom_parsers::parse_frontmatter(&source)
+                .ok()
+                .and_then(|(_, metadata)| metadata.loop_range)
+        } else {
+            None
+        }
     }
 
     pub(super) fn audition_candidate_from_lines(

@@ -1,4 +1,4 @@
-use crate::dsl::parser;
+use crate::dsl::token::Frontmatter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct TrackHeader {
@@ -42,17 +42,27 @@ pub(super) fn loop_range_for_bar_indices(
     start_index: usize,
     end_index: usize,
 ) -> std::result::Result<String, String> {
-    let song = parser::parse_song(source.to_string())
-        .map_err(|e| format!("Cannot set loop range: {}", e))?;
+    let metadata =
+        parse_metadata_only(source).map_err(|e| format!("Cannot set loop range: {}", e))?;
 
-    if song.metadata.unit == "beat" {
-        let beats_per_bar = crate::validation::beats_per_unit("bar", &song.metadata.signature)
+    if metadata.unit == "beat" {
+        let beats_per_bar = crate::validation::beats_per_unit("bar", &metadata.signature)
             .map_err(|message| format!("Cannot set loop range: {}", message))?;
         let start = start_index as f64 * beats_per_bar;
         let end = (end_index + 1) as f64 * beats_per_bar;
         Ok(format_loop_range_number(start, end))
     } else {
         Ok(format!("{}..{}", start_index, end_index + 1))
+    }
+}
+
+fn parse_metadata_only(source: &str) -> std::result::Result<Frontmatter, String> {
+    if source.starts_with("---") {
+        crate::dsl::parser::nom_parsers::parse_frontmatter(source)
+            .map(|(_, metadata)| metadata)
+            .map_err(|_| "Invalid Frontmatter YAML".to_string())
+    } else {
+        Ok(Frontmatter::default())
     }
 }
 

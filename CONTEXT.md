@@ -84,6 +84,18 @@ _Avoid_: Automation, parameter, control
 A named reusable pattern fragment that can be called from a track.
 _Avoid_: Macro, snippet, preset
 
+**Template Library**:
+A collection of templates that can be reused by a song.
+_Avoid_: Library, import, preset pack
+
+**Template Library Alias**:
+A song-local name that identifies a template library for qualified template calls.
+_Avoid_: Namespace, package name, module name
+
+**Template Library Source**:
+The location from which a template library is loaded.
+_Avoid_: Package, dependency, registry entry
+
 **Template Call**:
 A use of a template inside a track, optionally with parameters that transform the reused pattern fragment.
 _Avoid_: Template expansion, macro call

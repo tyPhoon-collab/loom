@@ -25,6 +25,7 @@ pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
             metadata: song.metadata.clone(),
             tracks: vec![track.clone()],
             templates: song.templates.clone(),
+            libraries: song.libraries.clone(),
             fragment_blocks: Vec::new(),
         };
         let compiler_inst = compiler::Compiler::new(&single_song)?;

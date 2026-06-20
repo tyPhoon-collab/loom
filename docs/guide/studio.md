@@ -160,7 +160,7 @@ Typical Select mode operations:
 - `d` or `x` delete selected units or bars
 - `y` yank selected units, bars, or template calls
 - `p` paste yanked content after the current selection
-- `g d` jumps from a selected template call to its definition
+- `g d` jumps from a selected template call to its definition, including library calls such as `[@alias.name]`
 - transpose with `+`, `-`, `[`, `]` also applies to template call selection by editing the call's `+N` parameter
 - `>` / `<` on template call selection adjust the call's `xN` repeat parameter
 - `}` / `{` on template call selection adjust the call's `/N` time-scale parameter
@@ -239,6 +239,7 @@ When the cursor is on a template call in Normal mode:
 - `+`, `-`, `[`, and `]` edit that call's transpose parameter (`+N`)
 - `>` and `<` edit that call's structural repeat parameter (`xN`)
 - `}` and `{` edit that call's time-scale parameter (`/N`)
+- library template calls such as `[@alias.name]` support the same call editing operations
 
 Outside template calls, `<` and `>` keep their usual bar navigation behavior.
 

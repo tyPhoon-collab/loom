@@ -267,6 +267,15 @@ impl StudioApp {
         target: PathBuf,
         manifest_path: Option<PathBuf>,
     ) -> Result<()> {
+        self.open_file_from_current_at(target, manifest_path, (0, 0))
+    }
+
+    pub(super) fn open_file_from_current_at(
+        &mut self,
+        target: PathBuf,
+        manifest_path: Option<PathBuf>,
+        target_cursor: (usize, usize),
+    ) -> Result<()> {
         let cursor = self.textarea.cursor();
         self.file_navigation_stack.push(FileNavigationEntry {
             path: self.path.clone(),
@@ -276,7 +285,7 @@ impl StudioApp {
 
         self.open_file_entry(FileNavigationEntry {
             path: target,
-            cursor: (0, 0),
+            cursor: target_cursor,
             manifest_path,
         })
     }

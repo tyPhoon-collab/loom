@@ -31,6 +31,9 @@ Frontmatter keys:
 - `fragments`: maps fragment call names to relative `.loom` fragment paths.
   - Fragment paths are resolved relative to the manifest file.
   - Absolute paths and parent traversal (`..`) are rejected.
+- `templates`: maps template library aliases to relative `.loom` template library paths.
+  - Template library paths follow the same path rules as `fragments`.
+  - Template library aliases use ASCII letters, digits, `_`, and `-`, starting with an ASCII letter or digit.
 
 ## Song Manifests and Fragments
 
@@ -79,6 +82,7 @@ Fragment rules:
 - A fragment track reference must refer to a manifest-defined channel.
 - Track references may be empty. Empty references emit no events and do not affect fragment length.
 - Templates are local to one fragment. Different fragments may define the same template name.
+- Fragment template calls may use template libraries declared by the song manifest.
 
 Playback rules:
 
@@ -190,7 +194,9 @@ TemplateHeader = "#" , space , "@" , name , newline ;
 
 ```ebnf
 TemplateLine     = TemplateCall , { TemplateCall } , newline ;
-TemplateCall     = "[" , "@" , name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
+TemplateCall     = LocalTemplateCall | LibraryTemplateCall ;
+LocalTemplateCall = "[" , "@" , template-name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
+LibraryTemplateCall = "[" , "@" , library-alias , "." , template-name , { space , TemplateParam } , "]" , [ "*" , digits ] ;
 TemplateParam    = Transpose | StructuralRepeat | TimeScale | Macro ;
 Transpose        = ( "+" | "-" ) , digits ;
 StructuralRepeat = "x" , digits ;
@@ -202,6 +208,11 @@ Rules:
 
 - Multiple template calls on the same line are processed sequentially (`[@a][@b]`).
 - Template calls on different lines in the same section are parallel by line semantics.
+- Template names and template library aliases use ASCII letters, digits, `_`, and `-`, starting with an ASCII letter or digit.
+- A local template call (`[@name]`) resolves only to a local template.
+- A library template call (`[@alias.name]`) resolves through the file-local `templates` frontmatter mapping.
+- A template library file may contain frontmatter, template definitions, comments, and blank lines. Template library frontmatter may contain `templates`, `title`, and `author`.
+- Template library aliases are file-local and are not re-exported.
 - `+N` / `-N`: pitch transposition.
 - `xN`: structural repeat within the same grid span.
 - `/N`: time scale (compress duration to `1/N`).

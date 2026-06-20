@@ -76,6 +76,7 @@ fn render_category(
         out.push('\n');
         out.push_str("````\n\n");
         render_related_fragments(out, Path::new(&path))?;
+        render_related_libraries(out, Path::new(&path))?;
     }
     Ok(())
 }
@@ -83,7 +84,10 @@ fn render_category(
 fn list_category_files(category: &str) -> Result<Vec<String>, String> {
     let mut names = list_loom_files_recursive("examples")?;
     names.retain(|n| n.starts_with(&format!("{}/", category)));
-    names.retain(|n| !n.split('/').any(|part| part == "sections"));
+    names.retain(|n| {
+        !n.split('/')
+            .any(|part| matches!(part, "sections" | "libraries"))
+    });
     names.sort();
     Ok(names)
 }
@@ -115,6 +119,52 @@ fn render_related_fragments(out: &mut String, manifest_path: &Path) -> Result<()
         out.push_str(body.trim_end());
         out.push('\n');
         out.push_str("````\n\n");
+    }
+    Ok(())
+}
+
+fn render_related_libraries(out: &mut String, song_path: &Path) -> Result<(), String> {
+    let Some(parent) = song_path.parent() else {
+        return Ok(());
+    };
+    let libraries_dir = parent.join("libraries");
+    if !libraries_dir.is_dir() {
+        return Ok(());
+    }
+
+    let mut libraries = Vec::new();
+    collect_libraries(&libraries_dir, &mut libraries)?;
+    libraries.sort();
+    if libraries.is_empty() {
+        return Ok(());
+    }
+
+    out.push_str("Related template libraries:\n\n");
+    for library in libraries {
+        let body = fs::read_to_string(&library)
+            .map_err(|e| format!("failed to read {}: {}", library.display(), e))?;
+        out.push_str("````loom\n");
+        out.push_str("> ");
+        out.push_str(&library.to_string_lossy().replace('\\', "/"));
+        out.push('\n');
+        out.push_str(body.trim_end());
+        out.push('\n');
+        out.push_str("````\n\n");
+    }
+    Ok(())
+}
+
+fn collect_libraries(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in
+        fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir.display(), e))?
+    {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_libraries(&path, out)?;
+        } else if path.extension().and_then(|s| s.to_str()) == Some("loom") {
+            out.push(path);
+        }
     }
     Ok(())
 }

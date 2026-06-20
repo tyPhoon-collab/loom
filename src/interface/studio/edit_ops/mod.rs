@@ -69,6 +69,14 @@ mod tests {
     }
 
     #[test]
+    fn template_call_transpose_preserves_library_qualified_name() {
+        assert_eq!(
+            transposed_template_call_text("[@drums.fill arp]*2", 12).as_deref(),
+            Some("[@drums.fill +12 arp]*2")
+        );
+    }
+
+    #[test]
     fn template_call_transpose_updates_existing_param() {
         assert_eq!(
             transposed_template_call_text("[@riff +12 arp]", -1).as_deref(),

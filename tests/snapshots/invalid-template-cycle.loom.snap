@@ -9,4 +9,4 @@ loom::compiler::context
   ├─▶ while compiling nested template call 'B'
   ├─▶ while compiling nested template call 'C'
   ├─▶ while compiling nested template call 'A'
-  ╰─▶ Circular template reference detected: A -> B -> C -> A
+  ╰─▶ Circular template reference detected: @A -> @B -> @C -> @A

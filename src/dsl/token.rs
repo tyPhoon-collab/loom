@@ -183,15 +183,42 @@ impl std::fmt::Display for TemplateParam {
 }
 
 #[derive(Debug, Clone)]
+pub enum TemplateCallTarget {
+    Local { name: String },
+    Library { alias: String, name: String },
+}
+
+impl TemplateCallTarget {
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Local { name } => name.clone(),
+            Self::Library { alias, name } => format!("{}.{}", alias, name),
+        }
+    }
+}
+
+impl std::fmt::Display for TemplateCallTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct TemplateCall {
-    pub name: String,
+    pub target: TemplateCallTarget,
     pub params: Vec<TemplateParam>,
     pub repeat: u32, // *N
 }
 
 impl std::fmt::Display for TemplateCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}{}", Symbol::GroupStart, Symbol::Template, self.name)?;
+        write!(
+            f,
+            "{}{}{}",
+            Symbol::GroupStart,
+            Symbol::Template,
+            self.target
+        )?;
         for param in &self.params {
             write!(f, " {}", param)?;
         }
@@ -222,6 +249,13 @@ pub struct TemplateDef {
 }
 
 #[derive(Debug, Clone)]
+pub struct TemplateLibrary {
+    pub source: String,
+    pub templates: HashMap<String, TemplateDef>,
+    pub libraries: HashMap<String, TemplateLibrary>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Track {
     pub name: String,
     pub channel: u8,
@@ -236,6 +270,7 @@ pub struct FragmentBlock {
     pub name: String,
     pub tracks: Vec<Track>,
     pub templates: HashMap<String, TemplateDef>,
+    pub libraries: HashMap<String, TemplateLibrary>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -375,6 +410,8 @@ pub struct Frontmatter {
     pub humanize: Humanize,
     #[serde(default)]
     pub fragments: HashMap<String, String>,
+    #[serde(default)]
+    pub templates: HashMap<String, String>,
 }
 
 fn default_bpm() -> u32 {
@@ -453,6 +490,7 @@ impl Default for Frontmatter {
             loop_range: None,
             humanize: Humanize::default(),
             fragments: HashMap::new(),
+            templates: HashMap::new(),
         }
     }
 }
@@ -462,6 +500,7 @@ pub struct Song {
     pub metadata: Frontmatter,
     pub tracks: Vec<Track>,
     pub templates: HashMap<String, TemplateDef>,
+    pub libraries: HashMap<String, TemplateLibrary>,
     pub fragment_blocks: Vec<FragmentBlock>,
 }
 

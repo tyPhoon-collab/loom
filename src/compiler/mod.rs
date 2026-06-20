@@ -12,7 +12,8 @@ pub use event::MidiEvent;
 
 use crate::dsl::token::{
     Bar, Block, FragmentBlock, Line, LineEntry, ModifierKind, ModifierValue, Note, Song,
-    TemplateMacro, TemplateParam, Token, Track, TrackInitEvent,
+    TemplateCallTarget, TemplateLibrary, TemplateMacro, TemplateParam, Token, Track,
+    TrackInitEvent,
 };
 use miette::Result;
 
@@ -29,9 +30,90 @@ pub struct Compiler {
 
 struct CompilerContext<'a> {
     events: &'a mut Vec<MidiEvent>,
-    templates: &'a std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
     call_stack: &'a mut Vec<String>,
     swing: Option<(u8, u8)>,
+}
+
+type TemplateMap = std::collections::HashMap<String, crate::dsl::token::TemplateDef>;
+type LibraryMap = std::collections::HashMap<String, TemplateLibrary>;
+
+#[derive(Clone, Copy)]
+struct TemplateScope<'a> {
+    templates: &'a TemplateMap,
+    libraries: &'a LibraryMap,
+}
+
+fn resolve_template_call<'a>(
+    call: &crate::dsl::token::TemplateCall,
+    scope: TemplateScope<'a>,
+    track_name: &str,
+    ctx: &CompilerContext,
+) -> CompileResult<(
+    &'a crate::dsl::token::TemplateDef,
+    TemplateScope<'a>,
+    String,
+)> {
+    match &call.target {
+        TemplateCallTarget::Local { name } => {
+            let display_name = format!("@{}", name);
+            let def = scope
+                .templates
+                .get(name)
+                .ok_or_else(|| CompileError::TemplateNotFound {
+                    template: name.clone(),
+                    context: format!(
+                        "track '{}', stack [{}]",
+                        track_name,
+                        call_stack_with(ctx, &display_name)
+                    ),
+                })?;
+            Ok((def, scope, display_name))
+        }
+        TemplateCallTarget::Library { alias, name } => {
+            let library =
+                scope
+                    .libraries
+                    .get(alias)
+                    .ok_or_else(|| CompileError::TemplateNotFound {
+                        template: format!("{}.{}", alias, name),
+                        context: format!(
+                            "track '{}', template library alias '{}' not found, stack [{}]",
+                            track_name,
+                            alias,
+                            call_stack_with(ctx, &format!("{}.{}", alias, name))
+                        ),
+                    })?;
+            let display_name = format!("{}:@{}", library.source, name);
+            let def =
+                library
+                    .templates
+                    .get(name)
+                    .ok_or_else(|| CompileError::TemplateNotFound {
+                        template: name.clone(),
+                        context: format!(
+                            "track '{}', template library '{}' ({})",
+                            track_name, alias, library.source
+                        ),
+                    })?;
+            Ok((
+                def,
+                TemplateScope {
+                    templates: &library.templates,
+                    libraries: &library.libraries,
+                },
+                display_name,
+            ))
+        }
+    }
+}
+
+fn call_stack_with(ctx: &CompilerContext, name: &str) -> String {
+    ctx.call_stack
+        .iter()
+        .chain(std::iter::once(&name.to_string()))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" -> ")
 }
 
 impl Compiler {
@@ -68,7 +150,10 @@ impl Compiler {
                     track,
                     &mut events,
                     song.metadata.pitch,
-                    &song.templates,
+                    TemplateScope {
+                        templates: &song.templates,
+                        libraries: &song.libraries,
+                    },
                     song.metadata.swing.values(),
                 )
                 .with_compile_context(format!("track '{}'", track.name))?;
@@ -203,10 +288,10 @@ impl Compiler {
         track: &Track,
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
-        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+        scope: TemplateScope,
         swing: Option<(u8, u8)>,
     ) -> CompileResult<()> {
-        self.compile_track_sequence(track, events, pitch_offset, templates, swing, 0.0)?;
+        self.compile_track_sequence(track, events, pitch_offset, scope, swing, 0.0)?;
         Ok(())
     }
 
@@ -215,7 +300,7 @@ impl Compiler {
         track: &Track,
         events: &mut Vec<MidiEvent>,
         pitch_offset: i32,
-        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+        scope: TemplateScope,
         swing: Option<(u8, u8)>,
         start_time: f64,
     ) -> CompileResult<f64> {
@@ -224,7 +309,6 @@ impl Compiler {
         let mut call_stack = Vec::new();
         let mut ctx = CompilerContext {
             events,
-            templates,
             call_stack: &mut call_stack,
             swing,
         };
@@ -257,11 +341,15 @@ impl Compiler {
                             &track.name,
                             track.channel,
                             pitch_offset,
+                            scope,
                             &mut seq_time,
                             &mut ctx,
                             1.0,
                         )
-                        .with_compile_context(format!("template call '{}'", call.name))?;
+                        .with_compile_context(format!(
+                            "template call '{}'",
+                            call.target.display_name()
+                        ))?;
                     }
                     section_max_time = section_max_time.max(seq_time);
                 }
@@ -295,7 +383,10 @@ impl Compiler {
                         track,
                         events,
                         pitch_offset,
-                        &block.templates,
+                        TemplateScope {
+                            templates: &block.templates,
+                            libraries: &block.libraries,
+                        },
                         swing,
                         block_start_time,
                     )
@@ -433,26 +524,19 @@ impl Compiler {
         track_name: &str,
         channel: u8,
         mut pitch_offset: i32,
+        scope: TemplateScope,
         current_time: &mut f64,
         ctx: &mut CompilerContext,
         parent_time_scale: f64,
     ) -> CompileResult<()> {
-        if ctx.call_stack.contains(&call.name) {
-            let trace = ctx.call_stack.join(" -> ") + " -> " + &call.name;
+        let (def, nested_scope, display_name) =
+            resolve_template_call(call, scope, track_name, ctx)?;
+
+        if ctx.call_stack.contains(&display_name) {
+            let trace = ctx.call_stack.join(" -> ") + " -> " + &display_name;
             return Err(CompileError::CircularTemplateReference(trace));
         }
-        ctx.call_stack.push(call.name.clone());
-        let def = ctx
-            .templates
-            .get(&call.name)
-            .ok_or_else(|| CompileError::TemplateNotFound {
-                template: call.name.clone(),
-                context: format!(
-                    "track '{}', stack [{}]",
-                    track_name,
-                    ctx.call_stack.join(" -> ")
-                ),
-            })?;
+        ctx.call_stack.push(display_name);
 
         let mut template_pitch_offset = 0;
         let mut structural_repeat = 1u32;
@@ -542,13 +626,14 @@ impl Compiler {
                                 track_name,
                                 channel,
                                 pitch_offset,
+                                nested_scope,
                                 &mut seq_time,
                                 ctx,
                                 effective_time_scale,
                             )
                             .with_compile_context(format!(
                                 "nested template call '{}'",
-                                call.name
+                                call.target.display_name()
                             ))?;
                         }
                         section_max_time = section_max_time.max(seq_time);

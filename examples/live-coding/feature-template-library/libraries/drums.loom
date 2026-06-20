@@ -1,0 +1,8 @@
+---
+templates:
+  common: common.loom
+---
+
+# @kick-snare
+[@common.kick]
+snare | . . ^ . |

@@ -31,6 +31,7 @@ loom はマークダウンライクなテキストベース作曲用の DSL で�
 - docs/ で loom の公開ドキュメントを管理する
 - docs/ は VitePress によってデプロイされる
 - docs/examples/live-coding/ は loom の言語仕様を網羅するように feature-*.loom ファイルを作成する
+    - 追加機能の実装時などは、feature-*.loom ファイルも作成し、テストを通すこと
     - これは自動的にドキュメントに組み込まれる
     - テストはゴールデンテストを採用している
 - README.md は外部公開向けの loom の説明に留める

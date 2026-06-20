@@ -1,7 +1,7 @@
 use crate::dsl::syntax::Symbol;
 use crate::dsl::token::{
     Bar, Block, Frontmatter, ModifierBlock, ModifierKind, ModifierValue, Note, SwingConfig,
-    TemplateMacro, Token, TrackInitEvent, TrackInitLabel,
+    TemplateCallTarget, TemplateMacro, Token, TrackInitEvent, TrackInitLabel,
 };
 use nom::error::{Error, ErrorKind};
 use nom::{
@@ -469,7 +469,8 @@ fn parse_template_header(input: &str) -> IResult<&str, ParsedLine> {
     let (input, _) = Symbol::TrackHeader.char()(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = Symbol::Template.char()(input)?;
-    let (input, name) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '_')(input)?;
+    let (input, name) =
+        take_while1(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')(input)?;
 
     Ok((
         input,
@@ -483,7 +484,30 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
     let (input, _) = space0.parse(input)?;
     let (input, _) = Symbol::GroupStart.char()(input)?;
     let (input, _) = Symbol::Template.char()(input)?;
-    let (input, name) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '_')(input)?;
+    let (input, first) =
+        take_while1(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')(input)?;
+    let (input, target) = if input.starts_with('.') {
+        let (input, _) = nom::character::complete::char('.')(input)?;
+        let (input, name) =
+            take_while1(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')(input)?;
+        if input.starts_with('.') {
+            return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
+        }
+        (
+            input,
+            TemplateCallTarget::Library {
+                alias: first.to_string(),
+                name: name.to_string(),
+            },
+        )
+    } else {
+        (
+            input,
+            TemplateCallTarget::Local {
+                name: first.to_string(),
+            },
+        )
+    };
 
     let mut params = Vec::new();
     let mut current_input = input;
@@ -563,7 +587,7 @@ fn parse_template(input: &str) -> IResult<&str, crate::dsl::token::TemplateCall>
     Ok((
         final_input,
         crate::dsl::token::TemplateCall {
-            name: name.to_string(),
+            target,
             params,
             repeat,
         },
