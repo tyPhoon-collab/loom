@@ -847,6 +847,10 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use std::collections::HashMap;
 
+    fn source_lines(items: &[&str]) -> Vec<String> {
+        items.iter().map(|line| line.to_string()).collect()
+    }
+
     #[test]
     fn keyboard_note_maps_white_and_black_keys() {
         let keyboard = NoteKeyboard::default();
@@ -1046,33 +1050,18 @@ mod tests {
 
     #[test]
     fn apply_track_program_replaces_existing_pc() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "## pc 12".to_string(),
-            "C4 | ^ |".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "## pc 12", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(42)]),
             Some(1)
         );
-        assert_eq!(
-            lines,
-            vec![
-                "# Lead: 1".to_string(),
-                "## pc 42".to_string(),
-                "C4 | ^ |".to_string(),
-            ]
-        );
+        assert_eq!(lines, source_lines(&["# Lead: 1", "## pc 42", "C4 | ^ |"]));
     }
 
     #[test]
     fn apply_track_program_normalizes_sound_alias() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "## sound 81".to_string(),
-            "C4 | ^ |".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "## sound 81", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(7)]),
@@ -1083,30 +1072,18 @@ mod tests {
 
     #[test]
     fn apply_track_program_inserts_below_header_when_missing() {
-        let mut lines = vec!["# Lead: 1".to_string(), "C4 | ^ |".to_string()];
+        let mut lines = source_lines(&["# Lead: 1", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(33)]),
             Some(1)
         );
-        assert_eq!(
-            lines,
-            vec![
-                "# Lead: 1".to_string(),
-                "## pc 33".to_string(),
-                "C4 | ^ |".to_string(),
-            ]
-        );
+        assert_eq!(lines, source_lines(&["# Lead: 1", "## pc 33", "C4 | ^ |"]));
     }
 
     #[test]
     fn apply_track_program_does_not_cross_track_boundary() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "C4 | ^ |".to_string(),
-            "# Bass: 2".to_string(),
-            "## pc 34".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "C4 | ^ |", "# Bass: 2", "## pc 34"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(&mut lines, 0, &[PreviewInitChange::Program(99)]),
@@ -1118,11 +1095,7 @@ mod tests {
 
     #[test]
     fn apply_preview_init_replaces_existing_shorthand_control() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "## volume 90".to_string(),
-            "C4 | ^ |".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "## volume 90", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(
@@ -1140,11 +1113,7 @@ mod tests {
 
     #[test]
     fn apply_preview_init_normalizes_raw_control() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "## cc 10 50".to_string(),
-            "C4 | ^ |".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "## cc 10 50", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(
@@ -1162,7 +1131,7 @@ mod tests {
 
     #[test]
     fn apply_preview_init_inserts_missing_controls_below_header() {
-        let mut lines = vec!["# Lead: 1".to_string(), "C4 | ^ |".to_string()];
+        let mut lines = source_lines(&["# Lead: 1", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(
@@ -1180,11 +1149,7 @@ mod tests {
 
     #[test]
     fn apply_preview_init_does_not_cross_template_boundary() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "# @arp(x)".to_string(),
-            "## cc 7 50".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "# @arp(x)", "## cc 7 50"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(
@@ -1204,12 +1169,7 @@ mod tests {
 
     #[test]
     fn apply_preview_init_applies_multiple_changes() {
-        let mut lines = vec![
-            "# Lead: 1".to_string(),
-            "## pc 12".to_string(),
-            "## cc 7 70".to_string(),
-            "C4 | ^ |".to_string(),
-        ];
+        let mut lines = source_lines(&["# Lead: 1", "## pc 12", "## cc 7 70", "C4 | ^ |"]);
 
         assert_eq!(
             apply_preview_init_changes_to_lines(
@@ -1231,13 +1191,13 @@ mod tests {
         );
         assert_eq!(
             lines,
-            vec![
-                "# Lead: 1".to_string(),
-                "## mod 20".to_string(),
-                "## pc 42".to_string(),
-                "## volume 100".to_string(),
-                "C4 | ^ |".to_string(),
-            ]
+            source_lines(&[
+                "# Lead: 1",
+                "## mod 20",
+                "## pc 42",
+                "## volume 100",
+                "C4 | ^ |",
+            ])
         );
     }
 }
