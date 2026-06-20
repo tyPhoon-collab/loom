@@ -9,10 +9,9 @@ use filters::{apply_filters, parse_filters};
 use loom::dsl::parser;
 use loom::inspect::collect_track_events;
 use mapper::to_parsed_events;
-use miette::{IntoDiagnostic, Result};
+use miette::Result;
 use render::{print_events, print_summary};
 use sort::sort_events;
-use std::fs;
 use std::path::PathBuf;
 
 pub fn handle_parse(
@@ -22,8 +21,7 @@ pub fn handle_parse(
     filters: &[String],
     summary: bool,
 ) -> Result<()> {
-    let content = fs::read_to_string(&input).into_diagnostic()?;
-    let song = parser::parse_song(content)?;
+    let song = parser::parse_song_from_path(&input)?;
     let track_events = collect_track_events(&song)?;
 
     let mut events = to_parsed_events(track_events);

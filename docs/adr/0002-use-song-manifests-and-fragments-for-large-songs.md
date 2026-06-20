@@ -2,7 +2,7 @@
 
 Loom will support large songs by allowing a song manifest to define song metadata, tracks, track init, and fragment calls, while song fragments hold musical content through track references. We choose this over textual include because the manifest remains the source of truth for track identity and arrangement, fragments stay focused on song structure blocks, and fragment paths can be explicitly mapped in frontmatter instead of being implied by filesystem layout.
 
-The draft language shape is tracked in [Song Manifests and Fragments Draft](../language/manifest-fragments-draft.md). Detailed syntax and validation rules belong in the language specification once the feature is implemented; this ADR records the boundary decision between manifests, fragments, and textual include.
+The implemented language shape is tracked in the [Loom DSL Specification](../language/spec.md). This ADR records the boundary decision between manifests, fragments, and textual include.
 
 **Considered Options**
 

@@ -10,6 +10,10 @@ pub struct TrackEvent {
 }
 
 pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
+    if !song.fragment_blocks.is_empty() {
+        return collect_fragment_track_events(song);
+    }
+
     let mut out = Vec::new();
     let solo_active = song.tracks.iter().any(|track| track.solo);
 
@@ -21,6 +25,7 @@ pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
             metadata: song.metadata.clone(),
             tracks: vec![track.clone()],
             templates: song.templates.clone(),
+            fragment_blocks: Vec::new(),
         };
         let compiler_inst = compiler::Compiler::new(&single_song)?;
         let events = compiler_inst
@@ -34,6 +39,33 @@ pub fn collect_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
     }
 
     Ok(out)
+}
+
+fn collect_fragment_track_events(song: &Song) -> Result<Vec<TrackEvent>> {
+    let compiler_inst = compiler::Compiler::new(song)?;
+    let events = compiler_inst
+        .compile(song)
+        .map_err(|e| miette!("Compiler error: {}", e))?;
+    let track_by_zero_based_channel: std::collections::HashMap<u8, String> = song
+        .tracks
+        .iter()
+        .filter_map(|track| {
+            crate::validation::to_zero_based_channel(track.channel)
+                .ok()
+                .map(|channel| (channel, track.name.clone()))
+        })
+        .collect();
+
+    Ok(events
+        .into_iter()
+        .map(|event| {
+            let track = track_by_zero_based_channel
+                .get(&event.channel())
+                .cloned()
+                .unwrap_or_else(|| format!("Channel {}", event.channel() + 1));
+            TrackEvent { track, event }
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ It is written for AI agents that need to read, edit, or generate Loom files with
 ## What Loom Is
 
 - Loom is a text-first DSL for MIDI composition and live coding.
-- A song is YAML frontmatter plus one or more tracks.
+- A song is either a single `.loom` file or a manifest `.loom` file that calls fragment `.loom` files.
 - Tracks contain lanes, `seq` sugar lines, modifier lines, init lines, comments, template definitions, template calls, and `---` track wrap markers.
 - The compiler emits MIDI `Note`, `ControlChange`, and `ProgramChange` events.
 - Track channels are written as 1-based numbers in source and compiled to 0-based MIDI channels.
@@ -41,6 +41,7 @@ Common keys currently supported:
 - `loop_range`: half-open range like `0..1`, interpreted in the current `unit`
 - `humanize`: `false`, `true`, or a map with `timing`, `velocity`, `seed`
 - `swing`: `false`/omitted, a numeric grid like `8`, or a map like `{ grid: 8, amount: 66 }`
+- `fragments`: manifest-only map from fragment call name to relative `.loom` path
 - `title` and `author`: metadata only
 
 Frontmatter rules:
@@ -51,6 +52,7 @@ Frontmatter rules:
 - `swing: true` behaves like an 8th-note swing with amount `66`.
 - `swing: 8` and `swing: { grid: 8, amount: 66 }` are both valid.
 - `pitch` shifts pitched notes globally before compilation.
+- Fragment paths must be relative and must not contain `..`.
 
 Example:
 
@@ -69,6 +71,54 @@ humanize:
 swing: 8
 ---
 ```
+
+## Manifests and Fragments
+
+Use a manifest for large songs split into sections.
+
+Manifest:
+
+```loom
+---
+fragments:
+  intro: sections/intro.loom
+  chorus: sections/chorus.loom
+---
+
+# Piano: 1
+## pc 4
+
+# Drums: 10
+
+[[intro]]
+[[chorus]]
+```
+
+Fragment:
+
+```loom
+# 1
+C4 | ^ . ^ . |
+
+# 10
+kick  | ^ . . . |
+snare | . . ^ . |
+```
+
+Manifest rules:
+
+- Fragment calls are `[[name]]` alone on a line.
+- Manifest files may contain only frontmatter, track headers, track init lines, fragment calls, comments, and blank lines.
+- Track channels must be unique in a manifest.
+- No patterns, `seq`, modifiers, templates, template calls, or track wraps in a manifest.
+
+Fragment rules:
+
+- `# 1` is a track reference to manifest channel 1, not a track definition.
+- Fragments must not contain frontmatter, track headers like `# Piano: 1`, track init lines, solo/mute flags, or fragment calls.
+- Each channel may be referenced at most once per fragment.
+- Templates are local to one fragment; same template name may be reused in another fragment.
+- Fragment calls play in manifest order. Missing tracks are silent for that fragment.
 
 ## Track Headers
 

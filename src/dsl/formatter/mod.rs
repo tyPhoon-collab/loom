@@ -142,6 +142,12 @@ fn format_meta_line(line: &ParsedLine) -> String {
             let mute_str = if *muted { " x" } else { "" };
             write!(out, "# {}: {}{}{}", name, channel, solo_str, mute_str).unwrap();
         }
+        ParsedLine::TrackReference { channel } => {
+            write!(out, "# {}", channel).unwrap();
+        }
+        ParsedLine::FragmentCall { name } => {
+            write!(out, "[[{}]]", name).unwrap();
+        }
         ParsedLine::Comment(s) => {
             let trimmed = s.trim();
             if trimmed.starts_with(Symbol::Comment.as_char()) {

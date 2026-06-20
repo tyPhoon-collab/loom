@@ -16,6 +16,6 @@ Examples live in the repository `examples/` directory.
 | --- | ---: |
 | [Starter](/examples/starter) | 2 |
 | [Musical](/examples/musical) | 3 |
-| [Live Coding](/examples/live-coding) | 21 |
+| [Live Coding](/examples/live-coding) | 22 |
 
 <!-- AUTO-GENERATED:EXAMPLES-INDEX:END -->

@@ -1,6 +1,5 @@
 use loom::dsl::parser;
 use loom::inspect::{collect_track_events, TrackEvent};
-use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -23,20 +22,31 @@ fn test_examples() {
         if rel.starts_with("internals") {
             continue;
         }
+        if rel
+            .components()
+            .any(|component| component.as_os_str() == "sections")
+        {
+            continue;
+        }
         files.push(path.to_path_buf());
     }
     files.sort();
 
     for path in files {
         let filename = path.file_name().unwrap().to_str().unwrap();
-        let content = fs::read_to_string(&path).expect("Failed to read example file");
+        let rel = path.strip_prefix(examples_dir).expect("strip examples/");
+        let snapshot_name = if filename == "song.loom" {
+            rel.to_string_lossy().replace('/', "__")
+        } else {
+            filename.to_string()
+        };
 
-        println!("Testing example: {}", filename);
+        println!("Testing example: {}", rel.display());
 
-        let song = parser::parse_song(content)
-            .unwrap_or_else(|_| panic!("Failed to parse example: {}", filename));
+        let song = parser::parse_song_from_path(&path)
+            .unwrap_or_else(|_| panic!("Failed to parse example: {}", rel.display()));
         let mut events = collect_track_events(&song)
-            .unwrap_or_else(|_| panic!("Failed to compile example: {}", filename));
+            .unwrap_or_else(|_| panic!("Failed to compile example: {}", rel.display()));
         sort_track_events_for_snapshot(&mut events);
 
         // Snapshot test
@@ -44,7 +54,7 @@ fn test_examples() {
             snapshot_path => "snapshots",
             prepend_module_to_snapshot => false,
         }, {
-            insta::assert_debug_snapshot!(filename, events);
+            insta::assert_debug_snapshot!(snapshot_name, events);
         });
     }
 }

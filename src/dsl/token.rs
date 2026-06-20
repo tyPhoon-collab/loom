@@ -1,5 +1,6 @@
 pub use super::note::Note;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -230,6 +231,13 @@ pub struct Track {
     pub sequence: Sequence,
 }
 
+#[derive(Debug, Clone)]
+pub struct FragmentBlock {
+    pub name: String,
+    pub tracks: Vec<Track>,
+    pub templates: HashMap<String, TemplateDef>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrackInitEvent {
     ProgramChange { program: u8 },
@@ -365,6 +373,8 @@ pub struct Frontmatter {
     pub loop_range: Option<String>,
     #[serde(default)]
     pub humanize: Humanize,
+    #[serde(default)]
+    pub fragments: HashMap<String, String>,
 }
 
 fn default_bpm() -> u32 {
@@ -442,6 +452,7 @@ impl Default for Frontmatter {
             r#loop: false,
             loop_range: None,
             humanize: Humanize::default(),
+            fragments: HashMap::new(),
         }
     }
 }
@@ -450,7 +461,8 @@ impl Default for Frontmatter {
 pub struct Song {
     pub metadata: Frontmatter,
     pub tracks: Vec<Track>,
-    pub templates: std::collections::HashMap<String, TemplateDef>,
+    pub templates: HashMap<String, TemplateDef>,
+    pub fragment_blocks: Vec<FragmentBlock>,
 }
 
 use super::syntax::Symbol;

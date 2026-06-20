@@ -10,7 +10,7 @@ use std::time::Duration;
 static PLAYER_SENDER: OnceLock<Sender<PlayerCommand>> = OnceLock::new();
 
 pub enum PlayerCommand {
-    UpdateSequence(Vec<MidiEvent>, Frontmatter),
+    UpdateSequence(Vec<MidiEvent>, Box<Frontmatter>),
     Play,
     Pause,
     Stop,
@@ -72,7 +72,7 @@ impl LivePlayer {
     pub fn update(&self, events: Vec<MidiEvent>, metadata: Frontmatter) {
         let _ = self
             .command_sender
-            .send(PlayerCommand::UpdateSequence(events, metadata));
+            .send(PlayerCommand::UpdateSequence(events, Box::new(metadata)));
     }
 
     pub fn play(&self) {
@@ -167,7 +167,7 @@ fn run_player_loop(
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
                 PlayerCommand::UpdateSequence(events, metadata) => {
-                    core.load(events, metadata);
+                    core.load(events, *metadata);
                 }
                 PlayerCommand::Play => {
                     core.play();

@@ -14,7 +14,6 @@ loom はマークダウンライクなテキストベース作曲用の DSL で�
     - type は Conventional Commits に従う
 - コード探索や影響調査は MCP の `code-review-graph` を使う
     - トークン削減のために網羅的な検索より、MCP を経由する
-    - グラフが生成されていない場合は、`build_or_update_graph_tool` を使用する
 
 ## Studio
 

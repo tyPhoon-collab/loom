@@ -6,11 +6,11 @@ use crate::dsl::token::{
 use nom::error::{Error, ErrorKind};
 use nom::{
     branch::alt,
-    bytes::complete::{take_until, take_while1},
+    bytes::complete::{tag, take_until, take_while1},
     character::complete::{digit1, line_ending, not_line_ending, space0, space1},
-    combinator::{eof, map, opt, value},
+    combinator::{eof, map, opt, recognize, value},
     multi::many0,
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, pair, preceded, terminated},
     IResult, Parser,
 };
 use std::str::FromStr;
@@ -23,6 +23,12 @@ pub enum ParsedLine {
         channel: u8,
         solo: bool,
         muted: bool,
+    },
+    TrackReference {
+        channel: u8,
+    },
+    FragmentCall {
+        name: String,
     },
     TrackInit {
         event: TrackInitEvent,
@@ -270,6 +276,44 @@ fn parse_track_header(input: &str) -> IResult<&str, ParsedLine> {
             channel,
             solo,
             muted,
+        },
+    ))
+}
+
+fn parse_track_reference(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = Symbol::TrackHeader.char()(input)?;
+    let (input, _) = space1(input)?;
+    let (input, channel_str) = digit1(input)?;
+    let channel = channel_str
+        .parse::<u8>()
+        .map_err(|_| nom::Err::Failure(Error::new(channel_str, ErrorKind::Digit)))?;
+    let (input, _) = space0.parse(input)?;
+    let (input, _) = eof.parse(input)?;
+    Ok((input, ParsedLine::TrackReference { channel }))
+}
+
+fn parse_fragment_name(input: &str) -> IResult<&str, &str> {
+    recognize(pair(
+        take_while1(|c: char| c.is_ascii_alphanumeric()),
+        many0(alt((
+            take_while1(|c: char| c.is_ascii_alphanumeric()),
+            tag("_"),
+            tag("-"),
+        ))),
+    ))
+    .parse(input)
+}
+
+fn parse_fragment_call(input: &str) -> IResult<&str, ParsedLine> {
+    let (input, _) = tag("[[")(input)?;
+    let (input, name) = parse_fragment_name(input)?;
+    let (input, _) = tag("]]")(input)?;
+    let (input, _) = space0.parse(input)?;
+    let (input, _) = eof.parse(input)?;
+    Ok((
+        input,
+        ParsedLine::FragmentCall {
+            name: name.to_string(),
         },
     ))
 }
@@ -812,8 +856,10 @@ fn parse_modifier_line(input: &str) -> IResult<&str, ParsedLine> {
 pub fn parse_line_entry(input: &str) -> IResult<&str, ParsedLine> {
     alt((
         parse_comment,
+        parse_fragment_call,
         parse_track_wrap,
         parse_track_init_line,
+        parse_track_reference,
         parse_track_header,
         parse_template_header,
         parse_template_list,

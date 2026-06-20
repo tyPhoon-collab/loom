@@ -15,15 +15,16 @@ Examples focused on templates, modifiers, repeats, and real-time iteration.
 - `examples/live-coding/feature-loop-basic.loom`
 - `examples/live-coding/feature-loop-range.loom`
 - `examples/live-coding/feature-macros.loom`
+- `examples/live-coding/feature-manifest-fragments/song.loom`
 - `examples/live-coding/feature-modifier-group.loom`
 - `examples/live-coding/feature-modifier.loom`
 - `examples/live-coding/feature-multi-note.loom`
-- `examples/live-coding/feature-solo-mute.loom`
 - `examples/live-coding/feature-nested-tracks.loom`
 - `examples/live-coding/feature-pan.loom`
 - `examples/live-coding/feature-pitch-shift.loom`
 - `examples/live-coding/feature-repeat-complex.loom`
 - `examples/live-coding/feature-repeat.loom`
+- `examples/live-coding/feature-solo-mute.loom`
 - `examples/live-coding/feature-sustain.loom`
 - `examples/live-coding/feature-swing-16.loom`
 - `examples/live-coding/feature-swing-8.loom`
@@ -133,6 +134,80 @@ E3 | ^ |
 C3 | ^ |
 ````
 
+##### `examples/live-coding/feature-manifest-fragments/song.loom`
+
+````loom
+---
+bpm: 118
+title: "Manifest Fragments"
+fragments:
+  intro: sections/intro.loom
+  verse: sections/verse.loom
+  chorus: sections/chorus.loom
+---
+
+# Lead: 1
+## pc 81
+## pan 72
+
+# Bass: 2
+## pc 34
+
+# Drums: 10
+
+[[intro]]
+[[verse]]
+[[chorus]]
+````
+
+Related fragments:
+
+````loom
+> examples/live-coding/feature-manifest-fragments/sections/chorus.loom
+# @lead-chord
+C4,E4,G4 | ^ . ^ . |
+
+# 1
+[@lead-chord]
+
+# 2
+C2 | ^ ^ ^ ^ |
+
+# 10
+kick  | ^ . ^ . |
+snare | . ^ . ^ |
+hh    | ^ ^ ^ ^ |
+````
+
+````loom
+> examples/live-coding/feature-manifest-fragments/sections/intro.loom
+# @lead-hit
+C4,E4 | ^ . . . |
+
+# 1
+[@lead-hit]
+
+# 10
+kick  | ^ . . . |
+snare | . . ^ . |
+hh    | ^ ^ ^ ^ |
+````
+
+````loom
+> examples/live-coding/feature-manifest-fragments/sections/verse.loom
+# 1
+C4 | ^ . ^ . |
+E4 | . ^ . ^ |
+
+# 2
+C2 | ^ . ^ . |
+
+# 10
+kick  | ^ . . ^ |
+snare | . . ^ . |
+hh    | ^ ^ ^ ^ |
+````
+
 ##### `examples/live-coding/feature-modifier-group.loom`
 
 ````loom
@@ -201,29 +276,6 @@ title: "Chord Example"
 g3,b3,d4 |     | ^ . |
 f3,a3,c4 | . ^ |     |
 c3,e3,g3 | ^ . | . ^ |
-````
-
-##### `examples/live-coding/feature-solo-mute.loom`
-
-````loom
----
-bpm: 120
-title: Mute Feature Example
----
-
-# Piano: 1
-C3 | ^ ^ ^ ^ | ^ ^ ^ ^ |
-
-# Bass: 2 s x
-C2 | ^ . ^ . | ^ . ^ . |
-> This track is soloed and muted, so mute wins and it stays silent.
-
-# Drums: 10 s
-kick | ^ . ^ . | ^ . ^ . |
-snare | . ^ . ^ | . ^ . ^ |
-
-# Pad: 3
-C4 | - ^ - ^ | - ^ - ^ |
 ````
 
 ##### `examples/live-coding/feature-nested-tracks.loom`
@@ -304,6 +356,29 @@ C2 | ^ - |: ^ . | ^ . :| ^ - |: ^ . | ^ . :|
 # Track: 1
 D4 |: ^ | ^ :|
 C4 |: ^ . ^ | ^ :|
+````
+
+##### `examples/live-coding/feature-solo-mute.loom`
+
+````loom
+---
+bpm: 120
+title: Mute Feature Example
+---
+
+# Piano: 1
+C3 | ^ ^ ^ ^ | ^ ^ ^ ^ |
+
+# Bass: 2 s x
+C2 | ^ . ^ . | ^ . ^ . |
+> This track is soloed and muted, so mute wins and it stays silent.
+
+# Drums: 10 s
+kick | ^ . ^ . | ^ . ^ . |
+snare | . ^ . ^ | . ^ . ^ |
+
+# Pad: 3
+C4 | - ^ - ^ | - ^ - ^ |
 ````
 
 ##### `examples/live-coding/feature-sustain.loom`

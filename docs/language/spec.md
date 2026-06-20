@@ -3,11 +3,15 @@
 ## Top Level
 
 ```ebnf
-Song        = [ Frontmatter ] { Track } ;
-Frontmatter = "---" , newline , yaml_content , "---" , newline ;
-Track       = TrackHeader , { Line } ;
-TrackHeader = "#" , space , name , ":" , space , channel , { space , TrackFlag } , newline ;
-TrackFlag   = "s" | "x" ;
+Song         = SingleFileSong | SongManifest ;
+SingleFileSong = [ Frontmatter ] { Track } ;
+SongManifest = Frontmatter , { ManifestLine } ;
+Frontmatter  = "---" , newline , yaml_content , "---" , newline ;
+Track        = TrackHeader , { Line } ;
+TrackHeader  = "#" , space , name , ":" , space , channel , { space , TrackFlag } , newline ;
+TrackFlag    = "s" | "x" ;
+ManifestLine = TrackHeader | InitLine | FragmentCall | CommentLine | EmptyLine ;
+FragmentCall = "[[" , fragment_name , "]]" , newline ;
 ```
 
 Frontmatter keys:
@@ -24,6 +28,66 @@ Frontmatter keys:
   - `timing` is the maximum timing offset in beats. Default `0.015`.
   - `velocity` is the maximum MIDI velocity offset. Default `5`.
   - `seed` changes the deterministic variation pattern. Default `0`.
+- `fragments`: maps fragment call names to relative `.loom` fragment paths.
+  - Fragment paths are resolved relative to the manifest file.
+  - Absolute paths and parent traversal (`..`) are rejected.
+
+## Song Manifests and Fragments
+
+A song manifest is a top-level file that contains one or more fragment calls.
+
+```loom
+---
+title: Demo
+fragments:
+  intro: sections/intro.loom
+  chorus: sections/chorus.loom
+---
+
+# Piano: 1
+## pc 4
+
+# Bass: 2
+
+[[intro]]
+[[chorus]]
+```
+
+Manifest rules:
+
+- A manifest may contain frontmatter, track headers, track init lines, fragment calls, comments, and blank lines.
+- A manifest must not contain pattern lanes, `seq` lines, modifier lines, template definitions, template calls, or track wraps.
+- Manifest track channels must be unique.
+- Fragment calls must appear alone on a line.
+- Fragment names use ASCII letters, digits, `_`, and `-`, starting with an ASCII letter or digit.
+- A fragment call without a `fragments` mapping is an error.
+
+A song fragment is evaluated through its manifest context and is not a standalone song.
+
+```ebnf
+SongFragment   = { FragmentLine } ;
+FragmentLine   = TrackReference | PatternLine | SeqLine | ModifierLine | TemplateHeader
+               | TemplateLine | TrackWrap | CommentLine | EmptyLine ;
+TrackReference = "#" , space , channel , newline ;
+```
+
+Fragment rules:
+
+- `# 1` references the manifest-defined track on MIDI channel 1. It does not define a new track.
+- A fragment must not contain frontmatter, track headers, track init lines, solo/mute flags, or fragment calls.
+- Each track reference may appear at most once per fragment.
+- A fragment track reference must refer to a manifest-defined channel.
+- Track references may be empty. Empty references emit no events and do not affect fragment length.
+- Templates are local to one fragment. Different fragments may define the same template name.
+
+Playback rules:
+
+- Fragment calls play in manifest order.
+- Each fragment call forms one song structure block.
+- The next fragment starts after the previous fragment's length.
+- Fragment length is the maximum compiled length of its referenced tracks after track wrap expansion.
+- Tracks not referenced in a fragment are silent for that fragment.
+- Repeated calls to the same fragment are allowed and evaluated independently.
 
 ## Lines
 

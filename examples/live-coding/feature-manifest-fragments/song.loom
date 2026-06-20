@@ -1,0 +1,21 @@
+---
+bpm: 118
+title: "Manifest Fragments"
+fragments:
+  intro: sections/intro.loom
+  verse: sections/verse.loom
+  chorus: sections/chorus.loom
+---
+
+# Lead: 1
+## pc 81
+## pan 72
+
+# Bass: 2
+## pc 34
+
+# Drums: 10
+
+[[intro]]
+[[verse]]
+[[chorus]]

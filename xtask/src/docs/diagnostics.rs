@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 
 pub fn build_diagnostic_codes() -> Result<String, String> {
-    let sources = ["src/dsl/error.rs", "src/compiler.rs"];
+    let sources = ["src/dsl/error.rs", "src/compiler/error.rs"];
     let mut parser_codes = BTreeSet::new();
     let mut compiler_codes = BTreeSet::new();
 

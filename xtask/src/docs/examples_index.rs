@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use super::util::list_loom_files_recursive;
 
@@ -74,6 +75,7 @@ fn render_category(
         out.push_str(body.trim_end());
         out.push('\n');
         out.push_str("````\n\n");
+        render_related_fragments(out, Path::new(&path))?;
     }
     Ok(())
 }
@@ -81,6 +83,59 @@ fn render_category(
 fn list_category_files(category: &str) -> Result<Vec<String>, String> {
     let mut names = list_loom_files_recursive("examples")?;
     names.retain(|n| n.starts_with(&format!("{}/", category)));
+    names.retain(|n| !n.split('/').any(|part| part == "sections"));
     names.sort();
     Ok(names)
+}
+
+fn render_related_fragments(out: &mut String, manifest_path: &Path) -> Result<(), String> {
+    let Some(parent) = manifest_path.parent() else {
+        return Ok(());
+    };
+    let sections_dir = parent.join("sections");
+    if !sections_dir.is_dir() {
+        return Ok(());
+    }
+
+    let mut fragments = Vec::new();
+    collect_section_fragments(&sections_dir, &mut fragments)?;
+    fragments.sort();
+    if fragments.is_empty() {
+        return Ok(());
+    }
+
+    out.push_str("Related fragments:\n\n");
+    for fragment in fragments {
+        let body = fs::read_to_string(&fragment)
+            .map_err(|e| format!("failed to read {}: {}", fragment.display(), e))?;
+        out.push_str("````loom\n");
+        out.push_str("> ");
+        out.push_str(&fragment.to_string_lossy().replace('\\', "/"));
+        out.push('\n');
+        out.push_str(body.trim_end());
+        out.push('\n');
+        out.push_str("````\n\n");
+    }
+    Ok(())
+}
+
+fn collect_section_fragments(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_section_fragments(&path, out)?;
+            continue;
+        }
+        if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext == "loom")
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
 }

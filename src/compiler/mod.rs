@@ -11,8 +11,8 @@ pub use error::{CompileContextExt, CompileError, CompileResult, InvalidModifierS
 pub use event::MidiEvent;
 
 use crate::dsl::token::{
-    Bar, Block, Line, LineEntry, ModifierKind, ModifierValue, Note, Song, TemplateMacro,
-    TemplateParam, Token, Track, TrackInitEvent,
+    Bar, Block, FragmentBlock, Line, LineEntry, ModifierKind, ModifierValue, Note, Song,
+    TemplateMacro, TemplateParam, Token, Track, TrackInitEvent,
 };
 use miette::Result;
 
@@ -58,19 +58,29 @@ impl Compiler {
         let mut events =
             compile_track_init_events(song).with_compile_context("collecting track init events")?;
 
-        let solo_active = song.tracks.iter().any(|track| track.solo);
-        for track in &song.tracks {
-            if !track_is_active(track, solo_active) {
-                continue;
+        if song.fragment_blocks.is_empty() {
+            let solo_active = song.tracks.iter().any(|track| track.solo);
+            for track in &song.tracks {
+                if !track_is_active(track, solo_active) {
+                    continue;
+                }
+                self.compile_track(
+                    track,
+                    &mut events,
+                    song.metadata.pitch,
+                    &song.templates,
+                    song.metadata.swing.values(),
+                )
+                .with_compile_context(format!("track '{}'", track.name))?;
             }
-            self.compile_track(
-                track,
+        } else {
+            self.compile_fragment_blocks(
+                &song.fragment_blocks,
+                &song.tracks,
                 &mut events,
                 song.metadata.pitch,
-                &song.templates,
                 song.metadata.swing.values(),
-            )
-            .with_compile_context(format!("track '{}'", track.name))?;
+            )?;
         }
 
         if let Some(humanize) = song.metadata.humanize.values() {
@@ -196,8 +206,21 @@ impl Compiler {
         templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
         swing: Option<(u8, u8)>,
     ) -> CompileResult<()> {
-        let mut section_start_time = 0.0;
-        let mut section_max_time = 0.0;
+        self.compile_track_sequence(track, events, pitch_offset, templates, swing, 0.0)?;
+        Ok(())
+    }
+
+    fn compile_track_sequence(
+        &self,
+        track: &Track,
+        events: &mut Vec<MidiEvent>,
+        pitch_offset: i32,
+        templates: &std::collections::HashMap<String, crate::dsl::token::TemplateDef>,
+        swing: Option<(u8, u8)>,
+        start_time: f64,
+    ) -> CompileResult<f64> {
+        let mut section_start_time = start_time;
+        let mut section_max_time = start_time;
         let mut call_stack = Vec::new();
         let mut ctx = CompilerContext {
             events,
@@ -246,6 +269,43 @@ impl Compiler {
                     section_start_time = section_max_time;
                 }
             }
+        }
+        Ok(section_max_time)
+    }
+
+    fn compile_fragment_blocks(
+        &self,
+        blocks: &[FragmentBlock],
+        manifest_tracks: &[Track],
+        events: &mut Vec<MidiEvent>,
+        pitch_offset: i32,
+        swing: Option<(u8, u8)>,
+    ) -> CompileResult<()> {
+        let mut block_start_time = 0.0;
+        let solo_active = manifest_tracks.iter().any(|track| track.solo);
+
+        for block in blocks {
+            let mut block_end_time = block_start_time;
+            for track in &block.tracks {
+                if !track_is_active(track, solo_active) {
+                    continue;
+                }
+                let track_end_time = self
+                    .compile_track_sequence(
+                        track,
+                        events,
+                        pitch_offset,
+                        &block.templates,
+                        swing,
+                        block_start_time,
+                    )
+                    .with_compile_context(format!(
+                        "fragment '{}' track '{}'",
+                        block.name, track.name
+                    ))?;
+                block_end_time = block_end_time.max(track_end_time);
+            }
+            block_start_time = block_end_time;
         }
         Ok(())
     }
