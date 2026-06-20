@@ -1,7 +1,7 @@
 pub(super) const ADD_HELP: &str =
     "Add\n  s seq  l lane  t track  P piano-roll  h separator  T template  b bar\n  d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain";
 pub(super) const GOTO_HELP: &str =
-    "Goto: t next track | T previous track | d template definition | Esc cancel";
+    "Goto: t next track | T previous track | d definition | Esc cancel";
 pub(super) const DELETE_HELP: &str =
     "Delete\n  s seq  l lane  t track  h separator  T template  b bar\n  v velocity  p pitch  i init  m macro";
 pub(super) const NOTE_HELP: &str =

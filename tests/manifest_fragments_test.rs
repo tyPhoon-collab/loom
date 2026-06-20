@@ -1,5 +1,6 @@
 use loom::compiler::{Compiler, MidiEvent};
 use loom::dsl::parser;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -146,4 +147,39 @@ fragments:
     assert!(events
         .iter()
         .all(|event| !matches!(event, MidiEvent::Note { .. })));
+}
+
+#[test]
+fn manifest_parse_can_overlay_unsaved_fragment_source() {
+    let dir = temp_dir("overlay");
+    let manifest = dir.join("song.loom");
+    let fragment = dir.join("sections/a.loom");
+    fs::write(
+        &manifest,
+        r#"---
+fragments:
+  a: sections/a.loom
+---
+
+# Lead: 1
+
+[[a]]
+"#,
+    )
+    .unwrap();
+    fs::write(&fragment, "# 1\nC4 | ^ |\n").unwrap();
+
+    let mut overrides = HashMap::new();
+    overrides.insert(fragment, "# 1\nE4 | ^ |\n".to_string());
+    let song = parser::parse_song_from_path_with_fragment_overrides(&manifest, &overrides).unwrap();
+    let events = Compiler::new(&song).unwrap().compile(&song).unwrap();
+    let notes: Vec<u8> = events
+        .iter()
+        .filter_map(|event| match event {
+            MidiEvent::Note { note, .. } => Some(*note),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(notes, vec![76]);
 }

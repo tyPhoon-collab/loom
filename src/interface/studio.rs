@@ -79,6 +79,7 @@ enum KeyAction {
     FormatCurrentSource,
     TogglePlayback,
     RestartPlayback,
+    NavigateBack,
     Undo,
     Redo,
     ExitSelectMode,
@@ -228,6 +229,10 @@ const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
     KeyBinding {
         stroke: KeyStroke::Char('r'),
         action: KeyAction::RestartPlayback,
+    },
+    KeyBinding {
+        stroke: KeyStroke::CtrlChar('o'),
+        action: KeyAction::NavigateBack,
     },
     KeyBinding {
         stroke: KeyStroke::Char('u'),
@@ -475,6 +480,8 @@ const SELECT_FALLBACK_BINDINGS: &[KeyBinding<SelectFallbackAction>] = &[
 pub struct StudioApp {
     should_quit: bool,
     path: PathBuf,
+    manifest_path: Option<PathBuf>,
+    file_navigation_stack: Vec<FileNavigationEntry>,
     mode: StudioMode,
     command_return_mode: Option<StudioMode>,
     command_buffer: String,
@@ -505,6 +512,13 @@ pub struct StudioApp {
 struct SourceUndoEntry {
     source: String,
     cursor: (usize, usize),
+}
+
+#[derive(Clone, Debug)]
+struct FileNavigationEntry {
+    path: PathBuf,
+    cursor: (usize, usize),
+    manifest_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -743,6 +757,8 @@ impl StudioApp {
         let mut app = Self {
             should_quit: false,
             path,
+            manifest_path: None,
+            file_navigation_stack: Vec::new(),
             mode: StudioMode::Normal,
             command_return_mode: None,
             command_buffer: String::new(),
@@ -1112,6 +1128,7 @@ impl StudioApp {
                 }
                 self.status_message = "Restarted from beginning".into();
             }
+            KeyAction::NavigateBack => self.navigate_back_file()?,
             KeyAction::Undo => {
                 if self.textarea.undo() {
                     self.dirty = true;

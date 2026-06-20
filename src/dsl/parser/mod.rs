@@ -18,10 +18,33 @@ pub fn parse_song(source: String) -> Result<Song, ParseError> {
 pub fn parse_song_from_path(path: &Path) -> Result<Song> {
     let source = std::fs::read_to_string(path).into_diagnostic()?;
     let base_dir = path.parent().map(Path::to_path_buf);
-    parse_song_internal(source, base_dir.as_deref()).map_err(Into::into)
+    parse_song_internal_with_fragment_overrides(source, base_dir.as_deref(), &HashMap::new())
+        .map_err(Into::into)
+}
+
+pub fn parse_song_with_base_dir(source: String, base_dir: &Path) -> Result<Song, ParseError> {
+    parse_song_internal_with_fragment_overrides(source, Some(base_dir), &HashMap::new())
+}
+
+pub fn parse_song_from_path_with_fragment_overrides(
+    path: &Path,
+    overrides: &HashMap<PathBuf, String>,
+) -> Result<Song> {
+    let source = std::fs::read_to_string(path).into_diagnostic()?;
+    let base_dir = path.parent().map(Path::to_path_buf);
+    parse_song_internal_with_fragment_overrides(source, base_dir.as_deref(), overrides)
+        .map_err(Into::into)
 }
 
 fn parse_song_internal(source: String, base_dir: Option<&Path>) -> Result<Song, ParseError> {
+    parse_song_internal_with_fragment_overrides(source, base_dir, &HashMap::new())
+}
+
+fn parse_song_internal_with_fragment_overrides(
+    source: String,
+    base_dir: Option<&Path>,
+    fragment_overrides: &HashMap<PathBuf, String>,
+) -> Result<Song, ParseError> {
     let input = source.as_str();
 
     // Frontmatter
@@ -195,7 +218,14 @@ fn parse_song_internal(source: String, base_dir: Option<&Path>) -> Result<Song, 
             fragment_blocks: Vec::new(),
         })
     } else {
-        parse_manifest(&source, input, metadata, manifest_calls, base_dir)
+        parse_manifest(
+            &source,
+            input,
+            metadata,
+            manifest_calls,
+            base_dir,
+            fragment_overrides,
+        )
     }
 }
 
@@ -227,6 +257,7 @@ fn parse_manifest(
     metadata: Frontmatter,
     manifest_calls: Vec<(String, String)>,
     base_dir: Option<&Path>,
+    fragment_overrides: &HashMap<PathBuf, String>,
 ) -> Result<Song, ParseError> {
     let mut builder = SongBuilder::new(source);
 
@@ -291,14 +322,18 @@ fn parse_manifest(
         })?;
         let path = resolve_fragment_path(base_dir, mapped)
             .map_err(|msg| ParseError::from_validation(&call_line, source, msg, None))?;
-        let fragment_source = std::fs::read_to_string(&path).map_err(|err| {
-            ParseError::from_validation(
-                &call_line,
-                source,
-                format!("Cannot read fragment '{}': {}", mapped, err),
-                None,
-            )
-        })?;
+        let fragment_source = if let Some(source) = fragment_overrides.get(&path) {
+            source.clone()
+        } else {
+            std::fs::read_to_string(&path).map_err(|err| {
+                ParseError::from_validation(
+                    &call_line,
+                    source,
+                    format!("Cannot read fragment '{}': {}", mapped, err),
+                    None,
+                )
+            })?
+        };
         fragment_blocks.push(parse_fragment_block(&name, fragment_source, &tracks)?);
     }
 

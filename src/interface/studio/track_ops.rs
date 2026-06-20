@@ -17,7 +17,7 @@ enum GotoKeyAction {
     Cancel,
     NextTrack,
     PreviousTrack,
-    GotoTemplateDefinition,
+    GotoDefinition,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +50,7 @@ const GOTO_KEY_BINDINGS: &[KeyBinding<GotoKeyAction>] = &[
     },
     KeyBinding {
         stroke: KeyStroke::Char('d'),
-        action: GotoKeyAction::GotoTemplateDefinition,
+        action: GotoKeyAction::GotoDefinition,
     },
 ];
 
@@ -112,7 +112,7 @@ impl StudioApp {
             GotoKeyAction::Cancel => self.cancel_pending_input(PendingInput::Goto),
             GotoKeyAction::NextTrack => self.goto_adjacent_track(1),
             GotoKeyAction::PreviousTrack => self.goto_adjacent_track(-1),
-            GotoKeyAction::GotoTemplateDefinition => self.goto_current_template_definition()?,
+            GotoKeyAction::GotoDefinition => self.goto_current_definition()?,
         }
         Ok(())
     }

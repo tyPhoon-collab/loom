@@ -12,7 +12,8 @@ use ratatui::{
 const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save  f format  q quit";
 const FOOTER_NORMAL_HELP: &str =
     "Normal: : command  n/N note  o/O onset  v/V/b/B select  x delete-unit  p paste  s/S grid";
-const FOOTER_NORMAL_PREFIX_HELP: &str = "Prefix: a add  d delete  g goto  P preview-panel";
+const FOOTER_NORMAL_PREFIX_HELP: &str =
+    "Prefix: a add  d delete  g goto  Ctrl-o back  P preview-panel";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
 const FOOTER_COMMAND_HELP: &str =
     "Command: type command  Enter run  Esc cancel  bpm 140 | loop on/off/clear | loop 0 4";
@@ -35,7 +36,8 @@ const OVERLAY_NORMAL_ENTRY_LINES: &[&str] = &[
     "x delete-unit  p paste  s subdivide  S shrink  +/-/[] transpose",
 ];
 const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line-bars"];
-const OVERLAY_NORMAL_PREFIX_LINES: &[&str] = &["a add  d delete  g goto  : command"];
+const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
+    &["a add  d delete  g goto  Ctrl-o previous file  : command"];
 const OVERLAY_ADD_LINES: &[&str] = &[
     "s seq  l lane  t track  P piano-roll  h separator  T template  b bar",
     "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
@@ -49,7 +51,7 @@ const OVERLAY_INIT_LINES: &[&str] = &[
     "v volume  e expression  m mod  s sustain",
 ];
 const OVERLAY_TEMPLATE_CALL_LINES: &[&str] = &[
-    "g d goto-definition",
+    "g d goto-definition/template-or-fragment  Ctrl-o previous file",
     "a m then a/r/s adds arp/rev/strum",
     "+/-/[] transpose  </> repeat  {} time-scale",
 ];

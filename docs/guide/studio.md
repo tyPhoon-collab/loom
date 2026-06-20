@@ -63,7 +63,8 @@ Main bindings:
 | `:` | enter Command mode |
 | `a` | add prefix |
 | `g` | goto prefix |
-| `g d` | jump to template definition under cursor |
+| `g d` | jump to definition: template definition under cursor, or mapped fragment file on a `[[fragment]]` line |
+| `Ctrl-o` | return to the previous Studio file |
 | `P` | open / close preview panel |
 | `p` | paste yanked content after the current unit, bar, or template call |
 | `n` | single note entry |
@@ -103,6 +104,16 @@ Insert mode delegates text editing to the textarea.
 - `Esc` returns to Normal mode
 - leaving Insert mode recompiles the song
 - Studio does not auto-format while you type
+
+### Song Manifests
+
+Studio can open a song manifest directly.
+
+- `g d` on a `[[fragment]]` line opens the mapped fragment file.
+- `Ctrl-o` returns to the previous Studio file and cursor position.
+- Studio refuses file navigation while the current file is dirty. Save with `w` first.
+- When editing a fragment opened from a manifest, compile/playback uses the manifest context and the current fragment buffer.
+- Directly opening a fragment file has no manifest context; open the manifest first when you want full-song compile/playback.
 
 ### Command Mode
 
