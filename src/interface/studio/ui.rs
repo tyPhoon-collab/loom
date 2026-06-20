@@ -1,4 +1,5 @@
 use super::input::PendingInput;
+use super::preview::{PreviewControls, PreviewPanelState, PreviewTarget};
 use super::preview_keyboard::preview_keyboard_deck_text;
 use super::settings::parse_track_header;
 use super::{CompileStatus, StudioApp, StudioMode};
@@ -375,72 +376,62 @@ fn centered_rect(horizontal_percent: u16, vertical_percent: u16, area: Rect) -> 
     .split(vertical[1])[1]
 }
 
-fn preview_control_panel_text(panel: &super::PreviewPanelState, octave: i32) -> Text<'static> {
-    Text::from(vec![
-        Line::from(vec![
-            lcd_span("TRACK", &panel.track_name, 30),
-            Span::raw(" "),
-            badge_span("CH", (panel.channel + 1).to_string(), BadgeTone::Dim),
-            Span::raw(" "),
-            target_badge_span(
-                super::PreviewTarget::Program,
+fn preview_control_panel_text(panel: &PreviewPanelState, octave: i32) -> Text<'static> {
+    let mut status_spans = vec![
+        lcd_span("TRACK", &panel.track_name, 30),
+        Span::raw(" "),
+        badge_span("CH", (panel.channel + 1).to_string(), BadgeTone::Dim),
+    ];
+    append_spaced(
+        &mut status_spans,
+        PreviewTarget::ALL.into_iter().map(|target| match target {
+            PreviewTarget::Program => target_badge_span(
+                target,
                 panel.selected_target,
                 panel.source_program,
                 panel.effective_program(),
             ),
-            Span::raw(" "),
-            control_badge_span(
-                super::PreviewTarget::Volume,
-                panel.selected_target,
-                &panel.controls,
-            ),
-            Span::raw(" "),
-            control_badge_span(
-                super::PreviewTarget::Pan,
-                panel.selected_target,
-                &panel.controls,
-            ),
-            Span::raw(" "),
-            control_badge_span(
-                super::PreviewTarget::Expression,
-                panel.selected_target,
-                &panel.controls,
-            ),
-            Span::raw(" "),
-            control_badge_span(
-                super::PreviewTarget::Mod,
-                panel.selected_target,
-                &panel.controls,
-            ),
-            Span::raw(" "),
+            _ => control_badge_span(target, panel.selected_target, &panel.controls),
+        }),
+    );
+    append_spaced(
+        &mut status_spans,
+        [
             badge_span("OCT", octave.to_string(), BadgeTone::Normal),
-            Span::raw(" "),
             badge_span("VEL", panel.velocity.to_string(), BadgeTone::Normal),
-        ]),
-        Line::from(vec![
-            performance_pad_span("Z", "oct-", Color::Rgb(188, 246, 204)),
-            Span::raw(" "),
-            performance_pad_span("X", "oct+", Color::Rgb(188, 246, 204)),
-            Span::raw(" "),
-            performance_pad_span("1", "pc", Color::Rgb(181, 232, 255)),
-            Span::raw(" "),
-            performance_pad_span("2", "vol", Color::Rgb(181, 232, 255)),
-            Span::raw(" "),
-            performance_pad_span("3", "pan", Color::Rgb(181, 232, 255)),
-            Span::raw(" "),
-            performance_pad_span("4", "exp", Color::Rgb(181, 232, 255)),
-            Span::raw(" "),
-            performance_pad_span("5", "mod", Color::Rgb(181, 232, 255)),
-            Span::raw(" "),
-            performance_pad_span("[", "-1", Color::Rgb(244, 196, 255)),
-            Span::raw(" "),
-            performance_pad_span("]", "+1", Color::Rgb(244, 196, 255)),
-            Span::raw(" "),
-            performance_pad_span("{", "-10", Color::Rgb(244, 196, 255)),
-            Span::raw(" "),
-            performance_pad_span("}", "+10", Color::Rgb(244, 196, 255)),
-        ]),
-    ])
+        ],
+    );
+
+    let pads = [
+        ("Z", "oct-", Color::Rgb(188, 246, 204)),
+        ("X", "oct+", Color::Rgb(188, 246, 204)),
+        ("1", "pc", Color::Rgb(181, 232, 255)),
+        ("2", "vol", Color::Rgb(181, 232, 255)),
+        ("3", "pan", Color::Rgb(181, 232, 255)),
+        ("4", "exp", Color::Rgb(181, 232, 255)),
+        ("5", "mod", Color::Rgb(181, 232, 255)),
+        ("[", "-1", Color::Rgb(244, 196, 255)),
+        ("]", "+1", Color::Rgb(244, 196, 255)),
+        ("{", "-10", Color::Rgb(244, 196, 255)),
+        ("}", "+10", Color::Rgb(244, 196, 255)),
+    ];
+    let mut pad_spans = Vec::new();
+    append_spaced(
+        &mut pad_spans,
+        pads.into_iter()
+            .map(|(key, label, color)| performance_pad_span(key, label, color)),
+    );
+
+    Text::from(vec![Line::from(status_spans), Line::from(pad_spans)])
+}
+
+fn append_spaced(spans: &mut Vec<Span<'static>>, items: impl IntoIterator<Item = Span<'static>>) {
+    for item in items {
+        if !spans.is_empty() {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(item);
+    }
 }
 
 fn preview_panel_brief_help() -> Line<'static> {
@@ -489,8 +480,8 @@ fn badge_span(label: &str, value: String, tone: BadgeTone) -> Span<'static> {
 }
 
 fn target_badge_span(
-    target: super::PreviewTarget,
-    selected_target: super::PreviewTarget,
+    target: PreviewTarget,
+    selected_target: PreviewTarget,
     source_program: Option<u8>,
     preview_program: Option<u8>,
 ) -> Span<'static> {
@@ -514,9 +505,9 @@ fn target_badge_span(
 }
 
 fn control_badge_span(
-    target: super::PreviewTarget,
-    selected_target: super::PreviewTarget,
-    controls: &super::PreviewControls,
+    target: PreviewTarget,
+    selected_target: PreviewTarget,
+    controls: &PreviewControls,
 ) -> Span<'static> {
     let spec = target.control_spec().unwrap();
     let state = controls.get(target).unwrap_or_default();
@@ -557,18 +548,19 @@ fn truncate_with_ellipsis(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::preview::{PreviewPanelState, PreviewTarget};
     use super::preview_control_panel_text;
 
     #[test]
     fn preview_control_panel_emphasizes_changed_preview_program() {
-        let mut panel = super::super::PreviewPanelState {
+        let mut panel = PreviewPanelState {
             track_name: "Lead".to_string(),
             channel: 2,
             source_program: Some(12),
             override_program: Some(42),
-            selected_target: super::super::PreviewTarget::Volume,
+            selected_target: PreviewTarget::Volume,
             velocity: 96,
-            ..super::super::PreviewPanelState::default()
+            ..PreviewPanelState::default()
         };
         panel.controls.volume.source = Some(90);
         panel.controls.volume.override_value = Some(100);

@@ -1,5 +1,6 @@
 use super::input::{NoteInputMode, PendingInput, NOTE_HELP};
 use super::keystroke::{key_stroke_matches, normalized_key_stroke, KeyStroke};
+use super::preview::{ActivePreviewNote, PreviewControlSpec, PreviewTarget};
 use super::settings::parse_track_header;
 use super::StudioApp;
 use crate::config::NoteKeyboardConfig;
@@ -250,11 +251,12 @@ impl StudioApp {
                 self.status_message = "Preview changes reset to source values".to_string();
                 return Ok(());
             }
-            Some(KeyStroke::Char(ch)) if super::PreviewTarget::from_index(ch).is_some() => {
-                let target = super::PreviewTarget::from_index(ch).unwrap();
-                self.preview_panel.selected_target = target;
-                self.status_message = format!("Preview target: {}", target.label());
-                return Ok(());
+            Some(KeyStroke::Char(ch)) => {
+                if let Some(target) = PreviewTarget::from_index(ch) {
+                    self.preview_panel.selected_target = target;
+                    self.status_message = format!("Preview target: {}", target.label());
+                    return Ok(());
+                }
             }
             Some(KeyStroke::Symbol('[')) => {
                 self.adjust_preview_target(-i16::from(PREVIEW_PROGRAM_STEP));
@@ -331,7 +333,7 @@ impl StudioApp {
                     if let Some(program) = self.preview_panel.effective_program() {
                         self.player.preview_program_change(channel, program);
                     }
-                    for target in super::PreviewTarget::ALL {
+                    for target in PreviewTarget::ALL {
                         if let Some(spec) = target.control_spec() {
                             if let Some(value) = self.preview_panel.effective_control_value(target)
                             {
@@ -341,7 +343,7 @@ impl StudioApp {
                     }
                     self.player.preview_note_on(channel, note, 96);
                     self.active_preview_keys
-                        .insert(ch, super::ActivePreviewNote { channel, note });
+                        .insert(ch, ActivePreviewNote { channel, note });
                     self.status_message = match self.preview_panel.effective_program() {
                         Some(program) => {
                             format!("Preview: {} | ch {} | pc {}", token, channel + 1, program)
@@ -391,7 +393,7 @@ impl StudioApp {
         self.preview_panel.source_program = context.source_program;
         self.preview_panel.override_program = None;
         self.preview_panel.controls = context.controls;
-        self.preview_panel.selected_target = super::PreviewTarget::Program;
+        self.preview_panel.selected_target = PreviewTarget::Program;
         self.preview_panel.velocity = 96;
         self.preview_panel.active_keys.clear();
         self.status_message = format!(
@@ -415,7 +417,7 @@ impl StudioApp {
 
     fn adjust_preview_target(&mut self, delta: i16) {
         match self.preview_panel.selected_target {
-            super::PreviewTarget::Program => self.adjust_preview_program(delta),
+            PreviewTarget::Program => self.adjust_preview_program(delta),
             target => self.adjust_preview_control(target, delta),
         }
     }
@@ -434,7 +436,7 @@ impl StudioApp {
         );
     }
 
-    fn adjust_preview_control(&mut self, target: super::PreviewTarget, delta: i16) {
+    fn adjust_preview_control(&mut self, target: PreviewTarget, delta: i16) {
         let Some(spec) = target.control_spec() else {
             return;
         };
@@ -470,7 +472,7 @@ impl StudioApp {
         if let Some(program) = self.preview_panel.override_program {
             changes.push(PreviewInitChange::Program(program));
         }
-        for target in super::PreviewTarget::ALL {
+        for target in PreviewTarget::ALL {
             if let Some(spec) = target.control_spec() {
                 if let Some(state) = self.preview_panel.controls.get(target) {
                     if let Some(value) = state.override_value {
@@ -637,10 +639,7 @@ impl StudioApp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreviewInitChange {
     Program(u8),
-    Control {
-        spec: super::PreviewControlSpec,
-        value: u8,
-    },
+    Control { spec: PreviewControlSpec, value: u8 },
 }
 
 fn apply_preview_init_changes_to_lines(
@@ -700,10 +699,8 @@ fn preview_init_change_for_line(line: &str) -> Option<PreviewInitChange> {
     };
     match event {
         TrackInitEvent::ProgramChange { program } => Some(PreviewInitChange::Program(program)),
-        TrackInitEvent::ControlChange { cc, value } => super::PreviewTarget::ALL
-            .into_iter()
-            .filter_map(super::PreviewTarget::control_spec)
-            .find(|spec| spec.cc == cc)
+        TrackInitEvent::ControlChange { cc, value } => PreviewTarget::from_cc(cc)
+            .and_then(PreviewTarget::control_spec)
             .map(|spec| PreviewInitChange::Control { spec, value }),
         TrackInitEvent::BankSelect { .. } => None,
     }
@@ -729,11 +726,11 @@ fn preview_init_line(change: PreviewInitChange) -> String {
         PreviewInitChange::Control { spec, value } => {
             let event = TrackInitEvent::ControlChange { cc: spec.cc, value };
             let label = match spec.target {
-                super::PreviewTarget::Volume => TrackInitLabel::Volume,
-                super::PreviewTarget::Pan => TrackInitLabel::Pan,
-                super::PreviewTarget::Expression => TrackInitLabel::Expression,
-                super::PreviewTarget::Mod => TrackInitLabel::Mod,
-                super::PreviewTarget::Program => unreachable!(),
+                PreviewTarget::Volume => TrackInitLabel::Volume,
+                PreviewTarget::Pan => TrackInitLabel::Pan,
+                PreviewTarget::Expression => TrackInitLabel::Expression,
+                PreviewTarget::Mod => TrackInitLabel::Mod,
+                PreviewTarget::Program => unreachable!(),
             };
             format!("## {}", event.format_with_label(label))
         }
@@ -846,7 +843,7 @@ mod tests {
         PreviewInitChange, MAX_KEYBOARD_OCTAVE,
     };
     use crate::config::NoteKeyboardConfig;
-    use crate::interface::studio::PreviewTarget;
+    use crate::interface::studio::preview::PreviewTarget;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use std::collections::HashMap;
 

@@ -11,11 +11,7 @@ use keymap::{
 use keystroke::{key_stroke_matches, lookup_key_action, KeyStroke};
 use miette::Result;
 use note_entry::NoteKeyboard;
-#[allow(unused_imports)]
-use preview::PreviewControlState;
-use preview::{
-    ActivePreviewNote, PreviewControlSpec, PreviewControls, PreviewPanelState, PreviewTarget,
-};
+use preview::{ActivePreviewNote, PreviewPanelState};
 use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;

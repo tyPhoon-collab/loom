@@ -1,7 +1,7 @@
+use super::preview::{PreviewControls, PreviewTarget};
 use super::selection::{unit_at_or_near_col, unit_spans_in_line, UnitSpan};
 use super::settings::parse_track_header;
 use super::StudioApp;
-use super::{PreviewControls, PreviewTarget};
 use crate::dsl::note::Note;
 use crate::dsl::parser::parse_track_init_command;
 use crate::dsl::token::TrackInitEvent;
@@ -163,7 +163,7 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
                         context.source_program.get_or_insert(program);
                     }
                     TrackInitEvent::ControlChange { cc, value } => {
-                        if let Some(target) = preview_target_for_cc(cc) {
+                        if let Some(target) = PreviewTarget::from_cc(cc) {
                             if let Some(state) = context.controls.get_mut(target) {
                                 state.source.get_or_insert(value);
                             }
@@ -178,19 +178,9 @@ fn preview_track_context(lines: &[String], row: usize) -> Option<PreviewTrackCon
     Some(context)
 }
 
-pub(super) fn preview_target_for_cc(cc: u8) -> Option<PreviewTarget> {
-    match cc {
-        7 => Some(PreviewTarget::Volume),
-        10 => Some(PreviewTarget::Pan),
-        11 => Some(PreviewTarget::Expression),
-        1 => Some(PreviewTarget::Mod),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::{PreviewControlState, PreviewControls};
+    use super::super::preview::{PreviewControlState, PreviewControls};
     use super::{preview_track_context, PreviewTrackContext};
 
     #[test]

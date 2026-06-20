@@ -72,6 +72,16 @@ impl PreviewTarget {
         }
     }
 
+    pub(super) fn from_cc(cc: u8) -> Option<Self> {
+        match cc {
+            7 => Some(Self::Volume),
+            10 => Some(Self::Pan),
+            11 => Some(Self::Expression),
+            1 => Some(Self::Mod),
+            _ => None,
+        }
+    }
+
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Program => "PC",
