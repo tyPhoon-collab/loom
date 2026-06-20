@@ -17,6 +17,16 @@ struct FormatContext {
     blocks: Vec<BlockGridInfo>,
 }
 
+struct PatternRenderGroup<'a> {
+    pattern: &'a ParsedLine,
+    modifiers: Vec<&'a ParsedLine>,
+}
+
+struct SortedPatternRenderGroup<'a> {
+    group: PatternRenderGroup<'a>,
+    key: String,
+}
+
 // --- Helpers ---
 
 fn modifier_value_width(val: &ModifierValue) -> usize {
@@ -86,23 +96,33 @@ fn lcm(a: usize, b: usize) -> usize {
 
 // --- Core Formatting ---
 
-fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
-    let mut patterns_with_mods: Vec<(&ParsedLine, Vec<&ParsedLine>)> = Vec::new();
-
+fn collect_pattern_render_groups<'a>(
+    patterns: &[&'a ParsedLine],
+) -> (Vec<PatternRenderGroup<'a>>, Vec<&'a ParsedLine>) {
+    let mut groups = Vec::new();
+    let mut standalone_mods = Vec::new();
     for p in patterns {
         match p {
             ParsedLine::Pattern { .. } => {
-                patterns_with_mods.push((p, Vec::new()));
+                groups.push(PatternRenderGroup {
+                    pattern: p,
+                    modifiers: Vec::new(),
+                });
             }
             ParsedLine::Modifier { .. } => {
-                if let Some(last) = patterns_with_mods.last_mut() {
-                    last.1.push(p);
+                if let Some(last) = groups.last_mut() {
+                    last.modifiers.push(p);
+                } else {
+                    standalone_mods.push(*p);
                 }
             }
             _ => {}
         }
     }
+    (groups, standalone_mods)
+}
 
+fn prepare_context(groups: &[PatternRenderGroup], patterns: &[&ParsedLine]) -> FormatContext {
     let max_blocks = patterns
         .iter()
         .map(|p| match p {
@@ -119,7 +139,8 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
         let mut token_counts = Vec::new();
         let mut max_bar_width = 0;
 
-        for (p, mods) in &patterns_with_mods {
+        for group in groups {
+            let p = group.pattern;
             if let ParsedLine::Pattern {
                 blocks: pblocks, ..
             } = p
@@ -129,7 +150,7 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
                     max_bar_width = max_bar_width.max(block.start_bar.to_string().len());
                 }
             }
-            for m in mods {
+            for m in &group.modifiers {
                 if let ParsedLine::Modifier {
                     blocks: mblocks, ..
                 } = m
@@ -171,7 +192,8 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
         let num_cols = g + 2;
         let mut column_widths = vec![1; num_cols];
 
-        for (p, mods) in &patterns_with_mods {
+        for group in groups {
+            let p = group.pattern;
             if let ParsedLine::Pattern {
                 blocks: pblocks, ..
             } = p
@@ -189,7 +211,7 @@ fn prepare_context(patterns: &[&ParsedLine]) -> FormatContext {
                     }
                 }
             }
-            for m in mods {
+            for m in &group.modifiers {
                 if let ParsedLine::Modifier {
                     blocks: mblocks, ..
                 } = m
@@ -300,33 +322,18 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
         return Ok(String::new());
     }
 
-    let context = prepare_context(patterns);
+    let (groups, standalone_mods) = collect_pattern_render_groups(patterns);
+    let context = prepare_context(&groups, patterns);
 
-    let (sorted_patterns, sorted_keys) = sort_patterns_and_mods(patterns)?;
-    let mut max_key_width = calculate_max_key_width(&sorted_keys);
+    let sorted_groups = sort_pattern_groups(groups)?;
+    let mut max_key_width = sorted_groups
+        .iter()
+        .map(|group| group.key.len())
+        .max()
+        .unwrap_or(0);
     for p in patterns {
         if let ParsedLine::Modifier { kind, .. } = p {
             max_key_width = max_key_width.max(kind.to_string().len());
-        }
-    }
-
-    let mut pattern_to_mods: HashMap<*const ParsedLine, Vec<&ParsedLine>> = HashMap::new();
-    let mut standalone_mods: Vec<&ParsedLine> = Vec::new();
-    let mut current_pattern: Option<*const ParsedLine> = None;
-    for p in patterns {
-        match p {
-            ParsedLine::Pattern { .. } => {
-                current_pattern = Some(*p as *const ParsedLine);
-                pattern_to_mods.insert(current_pattern.unwrap(), Vec::new());
-            }
-            ParsedLine::Modifier { .. } => {
-                if let Some(cp) = current_pattern {
-                    pattern_to_mods.get_mut(&cp).unwrap().push(p);
-                } else {
-                    standalone_mods.push(p);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -347,7 +354,8 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
     let mut line_infos = Vec::new();
     let mut max_line_width = 0;
 
-    for (i, p) in sorted_patterns.iter().enumerate() {
+    for sorted_group in &sorted_groups {
+        let p = sorted_group.group.pattern;
         if let ParsedLine::Pattern {
             blocks,
             end_bar,
@@ -356,8 +364,13 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
         } = p
         {
             let mut line_buf = String::new();
-            let sorted_key = &sorted_keys[i];
-            write!(line_buf, "{:width$} ", sorted_key, width = max_key_width).unwrap();
+            write!(
+                line_buf,
+                "{:width$} ",
+                sorted_group.key,
+                width = max_key_width
+            )
+            .unwrap();
 
             for (b_idx, block) in blocks.iter().enumerate() {
                 format_block(&mut line_buf, block, &context, b_idx).unwrap();
@@ -367,27 +380,24 @@ pub fn format_patterns(patterns: &[&ParsedLine]) -> Result<String, ParseError> {
             let mut music_part_width = line_buf.len();
             let mut mods_rendered = Vec::new();
 
-            if let Some(mods) = pattern_to_mods.get(&(*p as *const ParsedLine)) {
-                for m in mods.iter() {
-                    if let ParsedLine::Modifier {
-                        kind,
-                        blocks: mod_blocks,
-                        end_bar: m_end_bar,
-                        trailing_comment: m_comment,
-                        ..
-                    } = m
-                    {
-                        let mut m_line_buf = String::new();
-                        write!(m_line_buf, "{:width$} ", kind, width = max_key_width).unwrap();
-                        for (b_idx, mblock) in mod_blocks.iter().enumerate() {
-                            format_modifier_block(&mut m_line_buf, mblock, &context, b_idx)
-                                .unwrap();
-                        }
-                        write!(m_line_buf, "{}", m_end_bar).unwrap();
-
-                        music_part_width = music_part_width.max(m_line_buf.len());
-                        mods_rendered.push((m_line_buf, m_comment));
+            for m in &sorted_group.group.modifiers {
+                if let ParsedLine::Modifier {
+                    kind,
+                    blocks: mod_blocks,
+                    end_bar: m_end_bar,
+                    trailing_comment: m_comment,
+                    ..
+                } = m
+                {
+                    let mut m_line_buf = String::new();
+                    write!(m_line_buf, "{:width$} ", kind, width = max_key_width).unwrap();
+                    for (b_idx, mblock) in mod_blocks.iter().enumerate() {
+                        format_modifier_block(&mut m_line_buf, mblock, &context, b_idx).unwrap();
                     }
+                    write!(m_line_buf, "{}", m_end_bar).unwrap();
+
+                    music_part_width = music_part_width.max(m_line_buf.len());
+                    mods_rendered.push((m_line_buf, m_comment));
                 }
             }
 
@@ -467,70 +477,54 @@ fn parse_note_strict(note_text: &str, key: &str) -> Result<crate::dsl::note::Not
     })
 }
 
-fn sort_patterns_and_mods<'a>(
-    patterns: &[&'a ParsedLine],
-) -> Result<(Vec<&'a ParsedLine>, Vec<String>), ParseError> {
-    let mut pattern_list: Vec<&ParsedLine> = patterns
-        .iter()
-        .filter(|p| matches!(p, ParsedLine::Pattern { .. }))
-        .copied()
-        .collect();
+fn sort_pattern_groups<'a>(
+    groups: Vec<PatternRenderGroup<'a>>,
+) -> Result<Vec<SortedPatternRenderGroup<'a>>, ParseError> {
+    let mut sorted_groups = Vec::new();
 
-    let mut max_by_ptr: HashMap<*const ParsedLine, u8> = HashMap::new();
-    let mut canonical_key_by_ptr: HashMap<*const ParsedLine, String> = HashMap::new();
-
-    for p in &pattern_list {
-        if let ParsedLine::Pattern { key, .. } = p {
-            if key == "seq" {
-                canonical_key_by_ptr.insert(*p as *const ParsedLine, "seq".to_string());
-                continue;
-            }
-
-            let mut notes = Vec::new();
-            for raw in key.split(',') {
-                notes.push(parse_note_strict(raw, key)?);
-            }
-
-            if let Some(max_midi) = notes.iter().map(|n| n.to_midi()).max() {
-                max_by_ptr.insert(*p as *const ParsedLine, max_midi);
-            }
-
-            let mut sorted_notes = notes;
-            sorted_notes.sort_by_key(|n| n.to_midi());
-            let canonical_key = sorted_notes
-                .iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            canonical_key_by_ptr.insert(*p as *const ParsedLine, canonical_key);
+    for group in groups {
+        if let ParsedLine::Pattern { key, .. } = group.pattern {
+            let (sort_key, canonical_key) = pattern_sort_keys(key)?;
+            sorted_groups.push((
+                sort_key,
+                SortedPatternRenderGroup {
+                    group,
+                    key: canonical_key,
+                },
+            ));
         }
     }
 
-    pattern_list.sort_by(|a, b| {
-        let max_a = max_by_ptr.get(&(*a as *const ParsedLine));
-        let max_b = max_by_ptr.get(&(*b as *const ParsedLine));
-        match (max_a, max_b) {
-            (Some(a), Some(b)) => b.cmp(a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        }
+    sorted_groups.sort_by(|(a, _), (b, _)| match (a, b) {
+        (Some(a), Some(b)) => b.cmp(a),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     });
 
-    let mut sorted_keys = Vec::new();
-    for p in &pattern_list {
-        if let ParsedLine::Pattern { key, .. } = p {
-            let ptr = *p as *const ParsedLine;
-            let canonical = canonical_key_by_ptr
-                .get(&ptr)
-                .cloned()
-                .unwrap_or_else(|| key.clone());
-            sorted_keys.push(canonical);
-        }
-    }
-    Ok((pattern_list, sorted_keys))
+    Ok(sorted_groups
+        .into_iter()
+        .map(|(_, sorted_group)| sorted_group)
+        .collect())
 }
 
-fn calculate_max_key_width(keys: &[String]) -> usize {
-    keys.iter().map(|k| k.len()).max().unwrap_or(0)
+fn pattern_sort_keys(key: &str) -> Result<(Option<u8>, String), ParseError> {
+    if key == "seq" {
+        return Ok((None, "seq".to_string()));
+    }
+
+    let mut notes = Vec::new();
+    for raw in key.split(',') {
+        notes.push(parse_note_strict(raw, key)?);
+    }
+
+    let max_midi = notes.iter().map(|n| n.to_midi()).max();
+    let mut sorted_notes = notes;
+    sorted_notes.sort_by_key(|n| n.to_midi());
+    let canonical_key = sorted_notes
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok((max_midi, canonical_key))
 }
