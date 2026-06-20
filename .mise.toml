@@ -5,4 +5,4 @@ node = "24"
 pnpm = "10"
 
 [hooks]
-postinstall = "just setup"
+postinstall = "just dev::setup"

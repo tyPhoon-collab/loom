@@ -1,71 +1,40 @@
-# Build and run
+mod dev
+mod docs
+
+# List available recipes
 default:
-    @just --list
+    @just --list --list-submodules
 
-# DevOps
+# Run the full CI check
+ci: dev::ci
 
-build:
-    cargo build
-
-check:
-    cargo check
-
-clippy:
-    cargo clippy --all-targets --all-features -- -D warnings
-
-test:
-    cargo test
-
-fmt-rust:
-    cargo fmt
-
-ci: fmt-rust check clippy test
-
-# Loom Commands
-
+# Format a loom file
 fmt-loom file *args:
-    cargo run -- fmt {{file}} {{args}}
+    cargo run -- fmt {{ file }} {{ args }}
 
+# Live-code a loom file
 live file *args:
-    cargo run -- live {{file}} {{args}}
+    cargo run -- live {{ file }} {{ args }}
 
+# Open Studio for a loom file
 studio file *args:
-    cargo run -- studio {{file}} {{args}}
+    cargo run -- studio {{ file }} {{ args }}
 
+# Play a loom file
 play file *args:
-    cargo run -- play {{file}} {{args}}
+    cargo run -- play {{ file }} {{ args }}
 
+# Parse a loom file
 parse file *args:
-    cargo run -- parse {{file}} {{args}}
+    cargo run -- parse {{ file }} {{ args }}
 
+# Save a loom file as MIDI
 save file output="output.mid" *args:
-    cargo run -- save {{file}} {{output}} {{args}}
+    cargo run -- save {{ file }} {{ output }} {{ args }}
 
+# List available MIDI output ports
 ports:
     cargo run -- ports
 
-# Docs
-
-# Install docs dependencies. You NEED "cd docs && pnpm approve-builds" before this.
-docs-install:
-    pnpm -C docs install
-
-# Run docs dev server
-docs-dev:
-    pnpm -C docs docs:dev
-
-# Generate docs from source-of-truth (currently diagnostic codes -> docs/reference/errors.md)
-docs-gen:
-    cargo xtask gen-docs
-
-# Verify generated docs are up-to-date (fails when docs/reference/errors.md needs regeneration)
-docs-check:
-    cargo xtask check-docs
-
 # Pre-commit checks
-precommit:
-    lefthook run pre-commit
-
-# Setup for dev
-setup:
-    lefthook install
+precommit: dev::precommit
