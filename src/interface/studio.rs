@@ -2,14 +2,14 @@ use crate::config::StudioConfig;
 use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
-use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use input::{PendingInput, StudioInputState};
 use keymap::{
     CursorMotion, KeyAction, NormalFallbackAction, SelectFallbackAction, NORMAL_FALLBACK_BINDINGS,
     NORMAL_KEY_BINDINGS, SELECT_FALLBACK_BINDINGS, SELECT_KEY_BINDINGS,
 };
 use keystroke::{key_stroke_matches, lookup_key_action, KeyStroke};
-use miette::{IntoDiagnostic, Result};
+use miette::Result;
 use note_entry::NoteKeyboard;
 #[allow(unused_imports)]
 use preview::PreviewControlState;
@@ -19,13 +19,11 @@ use preview::{
 use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
+use runtime::{load_or_create_studio_file, midi_device_name, poll_key_event};
 use selection::StudioSelection;
 use std::collections::HashMap;
-use std::fs;
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 mod add;
 mod audition;
@@ -38,6 +36,7 @@ mod note_entry;
 mod onset;
 mod preview;
 mod preview_keyboard;
+mod runtime;
 mod selection;
 mod selection_ops;
 mod selection_state;
@@ -225,15 +224,13 @@ impl StudioApp {
                 .draw(|f| self.ui(f))
                 .map_err(|e| miette::miette!("Draw error: {:?}", e))?;
 
-            if event::poll(Duration::from_millis(33)).into_diagnostic()? {
-                if let event::Event::Key(key) = event::read().into_diagnostic()? {
-                    match key.kind {
-                        KeyEventKind::Press | KeyEventKind::Repeat => self.handle_key(key)?,
-                        KeyEventKind::Release if self.preview_panel.open => {
-                            self.handle_key(key)?;
-                        }
-                        _ => {}
+            if let Some(key) = poll_key_event()? {
+                match key.kind {
+                    KeyEventKind::Press | KeyEventKind::Repeat => self.handle_key(key)?,
+                    KeyEventKind::Release if self.preview_panel.open => {
+                        self.handle_key(key)?;
                     }
+                    _ => {}
                 }
             } else {
                 self.handle_tick(Event::Tick);
@@ -653,31 +650,6 @@ impl StudioApp {
     }
 }
 
-fn load_or_create_studio_file(path: &PathBuf) -> Result<(String, bool)> {
-    match fs::read_to_string(path) {
-        Ok(content) => Ok((content, false)),
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    miette::miette!(
-                        "Failed to create parent directory for {}: {}",
-                        path.display(),
-                        e
-                    )
-                })?;
-            }
-            fs::write(path, "")
-                .map_err(|e| miette::miette!("Failed to create {}: {}", path.display(), e))?;
-            Ok((String::new(), true))
-        }
-        Err(err) => Err(miette::miette!(
-            "Failed to read {}: {}",
-            path.display(),
-            err
-        )),
-    }
-}
-
 fn is_escape_key(key: &KeyEvent) -> bool {
     key_stroke_matches(KeyStroke::Code(KeyCode::Esc), key)
 }
@@ -691,21 +663,6 @@ fn configure_textarea_style(textarea: &mut TextArea<'static>) {
     textarea.set_cursor_line_style(Style::default().bg(Color::DarkGray));
     textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::Yellow));
     textarea.set_selection_style(Style::default().bg(Color::Blue));
-}
-
-fn midi_device_name(port_index: usize) -> String {
-    if let Ok(midi_out) = midir::MidiOutput::new("Loom Studio Info") {
-        let ports = midi_out.ports();
-        if let Some(port) = ports.get(port_index) {
-            midi_out
-                .port_name(port)
-                .unwrap_or_else(|_| format!("Port {}", port_index))
-        } else {
-            format!("Port {} (Not Found)", port_index)
-        }
-    } else {
-        format!("Port {}", port_index)
-    }
 }
 
 #[cfg(test)]
