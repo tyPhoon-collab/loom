@@ -1,14 +1,17 @@
 pub mod nom_parsers;
 pub mod song_builder;
 
+mod manifest;
+mod template_library;
+
 pub use nom_parsers::{parse_key, parse_line_entry, parse_track_init_command, ParsedLine};
 
 use crate::dsl::error::ParseError;
-use crate::dsl::token::{FragmentBlock, Frontmatter, Song, TemplateLibrary, Track};
+use crate::dsl::token::{Frontmatter, Song};
 use miette::{IntoDiagnostic, Result};
 use nom_parsers::{parse_frontmatter, validate_swing_config};
 use song_builder::SongBuilder;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub fn parse_song(source: String) -> Result<Song, ParseError> {
@@ -130,9 +133,10 @@ fn parse_song_internal_with_fragment_overrides(
         }
     }
 
-    let libraries = load_template_libraries(&metadata.templates, base_dir, &source)?;
+    let libraries =
+        template_library::load_template_libraries(&metadata.templates, base_dir, &source)?;
 
-    let manifest_calls = collect_fragment_calls(input, &source)?;
+    let manifest_calls = manifest::collect_fragment_calls(input, &source)?;
 
     if manifest_calls.is_empty() {
         let mut builder = SongBuilder::new(&source);
@@ -221,7 +225,7 @@ fn parse_song_internal_with_fragment_overrides(
             fragment_blocks: Vec::new(),
         })
     } else {
-        parse_manifest(
+        manifest::parse_manifest(
             &source,
             input,
             metadata,
@@ -231,148 +235,6 @@ fn parse_song_internal_with_fragment_overrides(
             fragment_overrides,
         )
     }
-}
-
-fn collect_fragment_calls(input: &str, source: &str) -> Result<Vec<(String, String)>, ParseError> {
-    let mut calls = Vec::new();
-    for line_str in input.lines() {
-        let trimmed = line_str.trim();
-        match parse_line_entry(trimmed) {
-            Ok((_, ParsedLine::FragmentCall { name })) => calls.push((name, line_str.to_string())),
-            Ok(_) => {}
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                if trimmed.starts_with("[[") {
-                    return Err(ParseError::from_nom(
-                        line_str,
-                        source,
-                        format!("{:?}", e.code),
-                    ));
-                }
-            }
-            Err(_) => {}
-        }
-    }
-    Ok(calls)
-}
-
-fn parse_manifest(
-    source: &str,
-    input: &str,
-    metadata: Frontmatter,
-    libraries: HashMap<String, TemplateLibrary>,
-    manifest_calls: Vec<(String, String)>,
-    base_dir: Option<&Path>,
-    fragment_overrides: &HashMap<PathBuf, String>,
-) -> Result<Song, ParseError> {
-    let mut builder = SongBuilder::new(source);
-
-    for line_str in input.lines() {
-        let trimmed = line_str.trim();
-        match parse_line_entry(trimmed) {
-            Ok((_, parsed)) => match parsed {
-                ParsedLine::TrackHeader {
-                    name,
-                    channel,
-                    solo,
-                    muted,
-                } => builder.add_track(name, channel, line_str, solo, muted)?,
-                ParsedLine::TrackInit { event, .. } => builder.add_track_init(line_str, event)?,
-                ParsedLine::FragmentCall { .. }
-                | ParsedLine::Comment(_)
-                | ParsedLine::Empty
-                | ParsedLine::Frontmatter(_) => {}
-                ParsedLine::TrackWrap
-                | ParsedLine::TemplateHeader { .. }
-                | ParsedLine::TemplateCalls(_)
-                | ParsedLine::Pattern { .. }
-                | ParsedLine::Modifier { .. }
-                | ParsedLine::TrackReference { .. } => {
-                    return Err(ParseError::from_context(
-                        line_str,
-                        source,
-                        "Manifest with fragments may contain only frontmatter, track headers, track init, comments, blank lines, and fragment calls".to_string(),
-                    ));
-                }
-            },
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                return Err(ParseError::from_nom(
-                    line_str,
-                    source,
-                    format!("{:?}", e.code),
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    let (tracks, templates) = builder.finish();
-    ensure_unique_manifest_channels(&tracks, source)?;
-
-    let mut fragment_blocks = Vec::new();
-    for (name, call_line) in manifest_calls {
-        let mapped = metadata.fragments.get(&name).ok_or_else(|| {
-            ParseError::from_validation(
-                &call_line,
-                source,
-                format!("Missing fragment mapping for '{}'", name),
-                Some("Add `fragments:` frontmatter mapping for this fragment call.".to_string()),
-            )
-        })?;
-        let base_dir = base_dir.ok_or_else(|| {
-            ParseError::from_context(
-                &call_line,
-                source,
-                "Fragment calls require parsing from a file path".to_string(),
-            )
-        })?;
-        let path = resolve_fragment_path(base_dir, mapped)
-            .map_err(|msg| ParseError::from_validation(&call_line, source, msg, None))?;
-        let fragment_source = if let Some(source) = fragment_overrides.get(&path) {
-            source.clone()
-        } else {
-            std::fs::read_to_string(&path).map_err(|err| {
-                ParseError::from_validation(
-                    &call_line,
-                    source,
-                    format!("Cannot read fragment '{}': {}", mapped, err),
-                    None,
-                )
-            })?
-        };
-        fragment_blocks.push(parse_fragment_block(
-            &name,
-            fragment_source,
-            &tracks,
-            libraries.clone(),
-        )?);
-    }
-
-    Ok(Song {
-        metadata,
-        tracks,
-        templates,
-        libraries,
-        fragment_blocks,
-    })
-}
-
-fn ensure_unique_manifest_channels(tracks: &[Track], source: &str) -> Result<(), ParseError> {
-    let mut seen = HashSet::new();
-    for track in tracks {
-        if !seen.insert(track.channel) {
-            let line = source
-                .lines()
-                .find(|line| line.trim_start().starts_with('#') && line.contains(':'))
-                .unwrap_or(source);
-            return Err(ParseError::from_validation(
-                line,
-                source,
-                format!("Duplicate manifest track channel {}", track.channel),
-                Some("Track channels must be unique when fragments are used.".to_string()),
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn resolve_fragment_path(base_dir: &Path, mapped: &str) -> std::result::Result<PathBuf, String> {
@@ -402,308 +264,6 @@ fn resolve_mapped_path(
         return Err(format!("{} paths must not contain parent traversal", label));
     }
     Ok(base_dir.join(mapped_path))
-}
-
-fn load_template_libraries(
-    mappings: &HashMap<String, String>,
-    base_dir: Option<&Path>,
-    source: &str,
-) -> Result<HashMap<String, TemplateLibrary>, ParseError> {
-    if mappings.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let base_dir = base_dir.ok_or_else(|| {
-        ParseError::from_context(
-            source.lines().next().unwrap_or(source),
-            source,
-            "Template libraries require parsing from a file path".to_string(),
-        )
-    })?;
-    let mut stack = Vec::new();
-    load_template_libraries_from_base(mappings, base_dir, source, &mut stack)
-}
-
-fn load_template_libraries_from_base(
-    mappings: &HashMap<String, String>,
-    base_dir: &Path,
-    source: &str,
-    stack: &mut Vec<PathBuf>,
-) -> Result<HashMap<String, TemplateLibrary>, ParseError> {
-    let mut out = HashMap::new();
-    for (alias, mapped) in mappings {
-        validate_template_library_alias(alias, source)?;
-        let path = resolve_template_library_path(base_dir, mapped).map_err(|msg| {
-            ParseError::from_validation(source.lines().next().unwrap_or(source), source, msg, None)
-        })?;
-        out.insert(
-            alias.clone(),
-            load_template_library(&path, mapped, source, stack)?,
-        );
-    }
-    Ok(out)
-}
-
-fn load_template_library(
-    path: &Path,
-    mapped: &str,
-    parent_source: &str,
-    stack: &mut Vec<PathBuf>,
-) -> Result<TemplateLibrary, ParseError> {
-    let normalized = normalize_load_path(path);
-    if stack.contains(&normalized) {
-        let trace = stack
-            .iter()
-            .chain(std::iter::once(&normalized))
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(" -> ");
-        return Err(ParseError::from_validation(
-            parent_source.lines().next().unwrap_or(parent_source),
-            parent_source,
-            format!("Circular template library reference detected: {}", trace),
-            None,
-        ));
-    }
-
-    let source = std::fs::read_to_string(path).map_err(|err| {
-        ParseError::from_validation(
-            parent_source.lines().next().unwrap_or(parent_source),
-            parent_source,
-            format!("Cannot read template library '{}': {}", mapped, err),
-            None,
-        )
-    })?;
-
-    stack.push(normalized);
-    let result = parse_template_library_source(path, &source, stack);
-    stack.pop();
-    result
-}
-
-fn normalize_load_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn validate_template_library_alias(alias: &str, source: &str) -> Result<(), ParseError> {
-    let valid = alias
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphanumeric())
-        && alias
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if valid {
-        return Ok(());
-    }
-    Err(ParseError::from_validation(
-        source.lines().next().unwrap_or(source),
-        source,
-        format!("Invalid template library alias '{}'", alias),
-        Some(
-            "Template library aliases must use ASCII letters, digits, `_`, and `-`, starting with an ASCII letter or digit."
-                .to_string(),
-        ),
-    ))
-}
-
-fn parse_template_library_source(
-    path: &Path,
-    source: &str,
-    stack: &mut Vec<PathBuf>,
-) -> Result<TemplateLibrary, ParseError> {
-    let input = source;
-    let (body, metadata) = if input.starts_with("---") {
-        validate_template_library_frontmatter(input)?;
-        match parse_frontmatter(input) {
-            Ok(res) => res,
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                return Err(ParseError::from_yaml(
-                    e.input,
-                    source,
-                    "Invalid Frontmatter YAML".to_string(),
-                ));
-            }
-            Err(_) => panic!("Incomplete input"),
-        }
-    } else {
-        (input, Frontmatter::default())
-    };
-
-    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let libraries =
-        load_template_libraries_from_base(&metadata.templates, base_dir, source, stack)?;
-
-    let mut builder = SongBuilder::new(source);
-    for line_str in body.lines() {
-        let trimmed = line_str.trim();
-        match parse_line_entry(trimmed) {
-            Ok((_, parsed)) => match parsed {
-                ParsedLine::TemplateHeader { name } => builder.start_template(name),
-                ParsedLine::TemplateCalls(calls) => builder.add_template_calls(calls),
-                ParsedLine::Pattern {
-                    notes,
-                    blocks,
-                    end_bar,
-                    ..
-                } => builder.add_pattern(line_str, notes, blocks, end_bar)?,
-                ParsedLine::Modifier {
-                    kind,
-                    blocks,
-                    end_bar,
-                    trailing_comment,
-                } => builder.add_modifier(line_str, kind, blocks, end_bar, trailing_comment)?,
-                ParsedLine::Comment(_) | ParsedLine::Empty => {}
-                ParsedLine::TrackWrap => builder.add_section(line_str)?,
-                ParsedLine::Frontmatter(_)
-                | ParsedLine::TrackHeader { .. }
-                | ParsedLine::TrackReference { .. }
-                | ParsedLine::TrackInit { .. }
-                | ParsedLine::FragmentCall { .. } => {
-                    return Err(ParseError::from_context(
-                        line_str,
-                        source,
-                        "Template library may contain only frontmatter, template definitions, comments, and blank lines".to_string(),
-                    ));
-                }
-            },
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                return Err(ParseError::from_nom(
-                    line_str,
-                    source,
-                    format!("{:?}", e.code),
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    let (_, templates) = builder.finish();
-    Ok(TemplateLibrary {
-        source: path.display().to_string(),
-        templates,
-        libraries,
-    })
-}
-
-fn validate_template_library_frontmatter(input: &str) -> Result<(), ParseError> {
-    let yaml = input
-        .strip_prefix("---")
-        .and_then(|rest| rest.split_once("---").map(|(yaml, _)| yaml))
-        .unwrap_or("");
-    let value: serde_yaml::Value = serde_yaml::from_str(yaml)
-        .map_err(|_| ParseError::from_yaml(input, input, "Invalid Frontmatter YAML".to_string()))?;
-    let Some(mapping) = value.as_mapping() else {
-        return Ok(());
-    };
-    for key in mapping.keys().filter_map(|key| key.as_str()) {
-        if !matches!(key, "templates" | "title" | "author") {
-            return Err(ParseError::from_validation(
-                input.lines().next().unwrap_or(input),
-                input,
-                format!("Template library frontmatter key '{}' is not allowed", key),
-                Some(
-                    "Template library frontmatter may contain `templates`, `title`, and `author`."
-                        .to_string(),
-                ),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn parse_fragment_block(
-    name: &str,
-    source: String,
-    manifest_tracks: &[Track],
-    libraries: HashMap<String, TemplateLibrary>,
-) -> Result<FragmentBlock, ParseError> {
-    let manifest_by_channel: HashMap<u8, &Track> = manifest_tracks
-        .iter()
-        .map(|track| (track.channel, track))
-        .collect();
-    let mut builder = SongBuilder::new(&source);
-    let mut seen_channels = HashSet::new();
-
-    for line_str in source.lines() {
-        let trimmed = line_str.trim();
-        match parse_line_entry(trimmed) {
-            Ok((_, parsed)) => match parsed {
-                ParsedLine::TrackReference { channel } => {
-                    if let Err(msg) = crate::validation::ensure_channel_1_based(channel) {
-                        return Err(ParseError::from_validation(line_str, &source, msg, None));
-                    }
-                    let manifest_track = manifest_by_channel.get(&channel).ok_or_else(|| {
-                        ParseError::from_validation(
-                            line_str,
-                            &source,
-                            format!("Fragment references undefined manifest channel {}", channel),
-                            None,
-                        )
-                    })?;
-                    if !seen_channels.insert(channel) {
-                        return Err(ParseError::from_validation(
-                            line_str,
-                            &source,
-                            format!("Duplicate track reference for channel {}", channel),
-                            Some(
-                                "Each track reference may appear at most once per fragment."
-                                    .to_string(),
-                            ),
-                        ));
-                    }
-                    builder.add_track(
-                        manifest_track.name.clone(),
-                        channel,
-                        line_str,
-                        manifest_track.solo,
-                        manifest_track.muted,
-                    )?;
-                }
-                ParsedLine::TrackWrap => builder.add_section(line_str)?,
-                ParsedLine::TemplateHeader { name } => builder.start_template(name),
-                ParsedLine::TemplateCalls(calls) => builder.add_template_calls(calls),
-                ParsedLine::Pattern {
-                    notes,
-                    blocks,
-                    end_bar,
-                    ..
-                } => builder.add_pattern(line_str, notes, blocks, end_bar)?,
-                ParsedLine::Modifier {
-                    kind,
-                    blocks,
-                    end_bar,
-                    trailing_comment,
-                } => builder.add_modifier(line_str, kind, blocks, end_bar, trailing_comment)?,
-                ParsedLine::Comment(_) | ParsedLine::Empty => {}
-                ParsedLine::Frontmatter(_)
-                | ParsedLine::TrackHeader { .. }
-                | ParsedLine::TrackInit { .. }
-                | ParsedLine::FragmentCall { .. } => {
-                    return Err(ParseError::from_context(
-                        line_str,
-                        &source,
-                        "Fragment may contain only track references, patterns, seq lines, modifiers, templates, track wraps, comments, and blank lines".to_string(),
-                    ));
-                }
-            },
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                return Err(ParseError::from_nom(
-                    line_str,
-                    &source,
-                    format!("{:?}", e.code),
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    let (tracks, templates) = builder.finish();
-    Ok(FragmentBlock {
-        name: name.to_string(),
-        tracks,
-        templates,
-        libraries,
-    })
 }
 
 #[cfg(test)]
