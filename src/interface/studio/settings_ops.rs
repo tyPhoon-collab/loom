@@ -2,24 +2,9 @@ use super::settings::{
     loop_range_for_bar_indices, score_body_start_row, set_loop_range_frontmatter,
     track_bar_index_at,
 };
+use super::source_text::shifted_score_row_for_sources;
 use super::StudioApp;
 use miette::Result;
-
-fn shifted_score_row(row: usize, before_source: &str, after_source: &str) -> usize {
-    let Ok(before_start) = score_body_start_row(before_source) else {
-        return row;
-    };
-    let Ok(after_start) = score_body_start_row(after_source) else {
-        return row;
-    };
-    let delta = after_start as isize - before_start as isize;
-
-    if row < before_start {
-        row
-    } else {
-        row.saturating_add_signed(delta)
-    }
-}
 
 impl StudioApp {
     pub(super) fn apply_selected_loop_range(&mut self) -> Result<()> {
@@ -59,7 +44,12 @@ impl StudioApp {
                     .iter()
                     .map(|bar| {
                         (
-                            shifted_score_row(bar.row, &source, &updated_source),
+                            shifted_score_row_for_sources(
+                                bar.row,
+                                &source,
+                                &updated_source,
+                                score_body_start_row,
+                            ),
                             bar.index,
                         )
                     })

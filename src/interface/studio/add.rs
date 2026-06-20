@@ -1,12 +1,14 @@
 use super::input::PendingInput;
-use super::keystroke::{
-    key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
-};
+use super::keystroke::{lookup_key_action, KeyBinding, KeyStroke};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, insert_at_col, is_seq_line, replace_char_range,
     unit_at_or_near_col, unit_spans_in_line, UnitSpan,
 };
 use super::settings::{parse_track_header, parse_track_header_channel};
+use super::source_text::slugify_template_name;
+use super::track_init::{
+    current_track_header_row, is_track_init_line, parse_track_init_key, TrackInitKeySpec,
+};
 use super::{StudioApp, StudioMode};
 use crate::dsl::{formatter, token::TrackInitLabel};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -520,19 +522,6 @@ impl TrackInitTemplate {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TrackInitKeySpec {
-    Cancel,
-    Pc,
-    Bank,
-    Cc,
-    Pan,
-    Volume,
-    Expression,
-    Mod,
-    Sustain,
-}
-
 impl TrackInitKeySpec {
     fn init_template(self) -> TrackInitTemplate {
         match self {
@@ -581,27 +570,6 @@ impl TrackInitKeySpec {
     }
 }
 
-fn parse_track_init_key(key: KeyEvent) -> Option<TrackInitKeySpec> {
-    if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
-        return Some(TrackInitKeySpec::Cancel);
-    }
-
-    match normalized_key_stroke(&key) {
-        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => match ch {
-            'p' => Some(TrackInitKeySpec::Pc),
-            'b' => Some(TrackInitKeySpec::Bank),
-            'c' => Some(TrackInitKeySpec::Cc),
-            'n' => Some(TrackInitKeySpec::Pan),
-            'v' => Some(TrackInitKeySpec::Volume),
-            'e' => Some(TrackInitKeySpec::Expression),
-            'm' => Some(TrackInitKeySpec::Mod),
-            's' => Some(TrackInitKeySpec::Sustain),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 fn track_init_insert_row(lines: &[String], cursor_row: usize) -> Option<(usize, usize)> {
     let header_row = current_track_header_row(lines, cursor_row)?;
     let mut insert_row = header_row + 1;
@@ -609,26 +577,6 @@ fn track_init_insert_row(lines: &[String], cursor_row: usize) -> Option<(usize, 
         insert_row += 1;
     }
     Some((header_row, insert_row))
-}
-
-fn current_track_header_row(lines: &[String], cursor_row: usize) -> Option<usize> {
-    (0..=cursor_row)
-        .rev()
-        .find(|&row| {
-            lines
-                .get(row)
-                .and_then(|line| parse_track_header(line))
-                .is_some()
-        })
-        .or_else(|| {
-            lines
-                .iter()
-                .position(|line| parse_track_header(line).is_some())
-        })
-}
-
-fn is_track_init_line(line: &str) -> bool {
-    line.trim_start().starts_with("## ")
 }
 
 fn insert_row_after_cursor(lines: &[String], cursor_row: usize) -> usize {
@@ -766,16 +714,6 @@ fn next_empty_template_name(lines: &[String], cursor_row: usize) -> String {
         }
         index += 1;
     }
-}
-
-fn slugify_template_name(input: &str) -> String {
-    let mut slug = String::new();
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-        }
-    }
-    slug
 }
 
 fn add_rest_bar_to_line(line: &mut String) -> std::result::Result<usize, ()> {
@@ -1007,12 +945,11 @@ fn needs_trailing_blank(lines: &[String], insert_row: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        add_rest_bar_to_line, current_track_header_row, find_nearest_head, insert_row_after_cursor,
-        insert_separator_at_row, line_head, locate_formatted_cursor, meta_data_island,
-        next_empty_template_name, next_track_header, parse_track_init_key, piano_roll_track_lines,
-        place_seq_token_at_slot, track_init_insert_row, FormattedCursorTarget, TrackInitKeySpec,
+        add_rest_bar_to_line, find_nearest_head, insert_row_after_cursor, insert_separator_at_row,
+        line_head, locate_formatted_cursor, meta_data_island, next_empty_template_name,
+        next_track_header, piano_roll_track_lines, place_seq_token_at_slot, track_init_insert_row,
+        FormattedCursorTarget,
     };
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     #[test]
     pub(super) fn add_rest_bar_appends_grid_bar() {
@@ -1086,18 +1023,6 @@ mod tests {
     }
 
     #[test]
-    fn current_track_header_row_finds_enclosing_track() {
-        let lines = vec![
-            "# Piano: 1".to_string(),
-            "## pc 4".to_string(),
-            "seq | C4 |".to_string(),
-            "# Bass: 2".to_string(),
-        ];
-        assert_eq!(current_track_header_row(&lines, 2), Some(0));
-        assert_eq!(current_track_header_row(&lines, 3), Some(3));
-    }
-
-    #[test]
     fn track_init_insert_row_skips_existing_init_lines() {
         let lines = vec![
             "# Piano: 1".to_string(),
@@ -1106,33 +1031,6 @@ mod tests {
             "seq | C4 |".to_string(),
         ];
         assert_eq!(track_init_insert_row(&lines, 3), Some((0, 3)));
-    }
-
-    #[test]
-    fn parse_track_init_key_maps_supported_bindings() {
-        let key = |code, modifiers| KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::empty(),
-        };
-
-        assert_eq!(
-            parse_track_init_key(key(KeyCode::Char('p'), KeyModifiers::NONE)),
-            Some(TrackInitKeySpec::Pc)
-        );
-        assert_eq!(
-            parse_track_init_key(key(KeyCode::Char('n'), KeyModifiers::NONE)),
-            Some(TrackInitKeySpec::Pan)
-        );
-        assert_eq!(
-            parse_track_init_key(key(KeyCode::Char('s'), KeyModifiers::NONE)),
-            Some(TrackInitKeySpec::Sustain)
-        );
-        assert_eq!(
-            parse_track_init_key(key(KeyCode::Char('v'), KeyModifiers::NONE)),
-            Some(TrackInitKeySpec::Volume)
-        );
     }
 
     #[test]

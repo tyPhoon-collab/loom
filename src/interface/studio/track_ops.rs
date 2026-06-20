@@ -1,11 +1,12 @@
 use super::input::PendingInput;
-use super::keystroke::{
-    key_stroke_matches, lookup_key_action, normalized_key_stroke, KeyBinding, KeyStroke,
-};
+use super::keystroke::{lookup_key_action, KeyBinding, KeyStroke};
 use super::selection::{
     bar_at_or_near_col, bar_spans_in_line, is_seq_line, lane_head_token, replace_char_range,
 };
 use super::settings::{format_track_header, parse_track_header};
+use super::track_init::{
+    current_track_header_row, is_track_init_line, parse_track_init_key, TrackInitKeySpec,
+};
 use super::StudioApp;
 use crate::dsl::token::TrackInitLabel;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -483,56 +484,6 @@ impl StudioApp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TrackInitKeySpec {
-    Cancel,
-    Pc,
-    Bank,
-    Cc,
-    Pan,
-    Volume,
-    Expression,
-    Mod,
-    Sustain,
-}
-
-impl TrackInitKeySpec {
-    fn label(self) -> &'static str {
-        match self {
-            TrackInitKeySpec::Cancel => "cancel",
-            TrackInitKeySpec::Pc => "pc",
-            TrackInitKeySpec::Bank => "bank",
-            TrackInitKeySpec::Cc => "cc",
-            TrackInitKeySpec::Pan => "pan",
-            TrackInitKeySpec::Volume => "volume",
-            TrackInitKeySpec::Expression => "expression",
-            TrackInitKeySpec::Mod => "mod",
-            TrackInitKeySpec::Sustain => "sustain",
-        }
-    }
-}
-
-fn parse_track_init_key(key: KeyEvent) -> Option<TrackInitKeySpec> {
-    if key_stroke_matches(KeyStroke::Code(KeyCode::Esc), &key) {
-        return Some(TrackInitKeySpec::Cancel);
-    }
-
-    match normalized_key_stroke(&key) {
-        Some(KeyStroke::Char(ch)) | Some(KeyStroke::ShiftChar(ch)) => match ch {
-            'p' => Some(TrackInitKeySpec::Pc),
-            'b' => Some(TrackInitKeySpec::Bank),
-            'c' => Some(TrackInitKeySpec::Cc),
-            'n' => Some(TrackInitKeySpec::Pan),
-            'v' => Some(TrackInitKeySpec::Volume),
-            'e' => Some(TrackInitKeySpec::Expression),
-            'm' => Some(TrackInitKeySpec::Mod),
-            's' => Some(TrackInitKeySpec::Sustain),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 fn modifier_line_kind(line: &str) -> Option<&'static str> {
     let pipe_col = line.chars().position(|ch| ch == '|')?;
     match line.chars().take(pipe_col).collect::<String>().trim() {
@@ -540,26 +491,6 @@ fn modifier_line_kind(line: &str) -> Option<&'static str> {
         "p" => Some("p"),
         _ => None,
     }
-}
-
-fn current_track_header_row(lines: &[String], cursor_row: usize) -> Option<usize> {
-    (0..=cursor_row)
-        .rev()
-        .find(|&row| {
-            lines
-                .get(row)
-                .and_then(|line| parse_track_header(line))
-                .is_some()
-        })
-        .or_else(|| {
-            lines
-                .iter()
-                .position(|line| parse_track_header(line).is_some())
-        })
-}
-
-fn is_track_init_line(line: &str) -> bool {
-    line.trim_start().starts_with("## ")
 }
 
 fn track_init_label_of_line(line: &str) -> Option<TrackInitLabel> {
@@ -585,17 +516,7 @@ fn find_track_init_row(
     cursor_row: usize,
     spec: TrackInitKeySpec,
 ) -> Option<usize> {
-    let label = match spec {
-        TrackInitKeySpec::Cancel => return None,
-        TrackInitKeySpec::Pc => TrackInitLabel::Pc,
-        TrackInitKeySpec::Bank => TrackInitLabel::Bank,
-        TrackInitKeySpec::Cc => TrackInitLabel::Cc,
-        TrackInitKeySpec::Pan => TrackInitLabel::Pan,
-        TrackInitKeySpec::Volume => TrackInitLabel::Volume,
-        TrackInitKeySpec::Expression => TrackInitLabel::Expression,
-        TrackInitKeySpec::Mod => TrackInitLabel::Mod,
-        TrackInitKeySpec::Sustain => TrackInitLabel::Sustain,
-    };
+    let label = spec.label_kind()?;
 
     let mut init_rows = Vec::new();
     let mut row = header_row + 1;
@@ -759,10 +680,11 @@ fn track_header_cursor_col() -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::super::track_init::TrackInitKeySpec;
     use super::{
         adjacent_track_header_row, current_track_index, find_track_init_row, modifier_line_kind,
         template_call_text_without_macro_at_cursor, template_definition_delete_span,
-        track_delete_span, track_header_rows, track_init_label_of_line, TrackInitKeySpec,
+        track_delete_span, track_header_rows, track_init_label_of_line,
     };
     use crate::interface::studio::settings::{format_track_header, parse_track_header};
     use crate::interface::studio::template_ops::template_call_spans_in_line;

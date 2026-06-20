@@ -2,6 +2,7 @@ use super::input::PendingInput;
 use super::keystroke::{lookup_key_action, KeyBinding, KeyStroke};
 use super::selection::{bar_spans_in_line, char_range, StudioSelection};
 use super::settings::parse_track_header_channel;
+use super::source_text::{char_to_byte_index, slugify_template_name};
 use super::StudioApp;
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::{IntoDiagnostic, Result};
@@ -524,28 +525,6 @@ fn track_template_base_name(track_header: &str) -> Option<String> {
     let (name, _) = body.split_once(':')?;
     let slug = slugify_template_name(name);
     (!slug.is_empty()).then_some(slug)
-}
-
-fn slugify_template_name(input: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_sep = false;
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-            last_was_sep = false;
-        } else if !last_was_sep && !slug.is_empty() {
-            last_was_sep = true;
-        }
-    }
-    slug
-}
-
-fn char_to_byte_index(input: &str, char_index: usize) -> usize {
-    input
-        .char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(input.len())
 }
 
 #[cfg(test)]

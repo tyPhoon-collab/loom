@@ -1,3 +1,4 @@
+use super::source_text::char_to_byte_index;
 use super::template_ops::TemplateCallSpan;
 use crate::dsl::note::Note;
 
@@ -606,14 +607,6 @@ fn push_modifier_span(
 
 fn is_modifier_token_char(ch: char) -> bool {
     ch.is_ascii_digit() || matches!(ch, '!' | '+' | '-' | '.' | ',')
-}
-
-fn char_to_byte_index(input: &str, char_index: usize) -> usize {
-    input
-        .char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(input.len())
 }
 
 #[cfg(test)]

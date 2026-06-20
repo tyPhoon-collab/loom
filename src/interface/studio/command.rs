@@ -4,6 +4,7 @@ use super::settings::{
     clear_loop_settings_frontmatter, loop_range_from_bounds, score_body_start_row,
     set_bpm_frontmatter, set_loop_enabled_frontmatter, set_loop_range_frontmatter,
 };
+use super::source_text::shifted_score_row_for_sources;
 use super::{StudioApp, StudioMode};
 use crossterm::event::{KeyCode, KeyEvent};
 use miette::Result;
@@ -160,7 +161,12 @@ impl StudioApp {
         status_message: String,
     ) -> Result<()> {
         let cursor = self.textarea.cursor();
-        let next_row = shifted_score_row(cursor.0, &before_source, &updated_source);
+        let next_row = shifted_score_row_for_sources(
+            cursor.0,
+            &before_source,
+            &updated_source,
+            score_body_start_row,
+        );
         self.push_source_undo();
         self.replace_source(updated_source);
         let after_source = self.source();
@@ -211,22 +217,6 @@ impl StudioApp {
             }
         }
         self.sync_selection_visual();
-    }
-}
-
-fn shifted_score_row(row: usize, before_source: &str, after_source: &str) -> usize {
-    let Ok(before_start) = score_body_start_row(before_source) else {
-        return row;
-    };
-    let Ok(after_start) = score_body_start_row(after_source) else {
-        return row;
-    };
-    let delta = after_start as isize - before_start as isize;
-
-    if row < before_start {
-        row
-    } else {
-        row.saturating_add_signed(delta)
     }
 }
 
