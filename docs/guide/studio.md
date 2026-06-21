@@ -104,6 +104,18 @@ Insert mode delegates text editing to the textarea.
 - `Esc` returns to Normal mode
 - leaving Insert mode recompiles the song
 - Studio does not auto-format while you type
+- `[@` opens Template Call completion
+- `[[` opens Fragment Call completion when editing a song manifest
+
+Completion uses a small popup near the cursor:
+
+- `Ctrl-n` or `Down` selects the next candidate
+- `Ctrl-p` or `Up` selects the previous candidate
+- `Enter` accepts the selected candidate
+- `Esc` closes completion and keeps Insert mode active
+- candidates use fuzzy matching, so `k4b` can match `kick.4beat`
+
+Template Call completion includes local templates and mapped template libraries. When editing a fragment opened from a manifest, template library candidates come from the manifest context. Fragment Call completion is available only while editing the manifest itself.
 
 ### Song Manifests
 

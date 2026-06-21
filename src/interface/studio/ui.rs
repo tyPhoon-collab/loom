@@ -16,6 +16,8 @@ const FOOTER_NORMAL_HELP: &str =
 const FOOTER_NORMAL_PREFIX_HELP: &str =
     "Prefix: a add  d delete  g goto  Ctrl-o back  P preview-panel";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
+const FOOTER_COMPLETION_HELP: &str =
+    "Completion: Ctrl-n/Down next  Ctrl-p/Up prev  Enter accept  Esc close";
 const FOOTER_COMMAND_HELP: &str =
     "Command: type command  Enter run  Esc cancel  bpm 140 | loop on/off/clear | loop 0 4";
 const FOOTER_SELECT_HELP: &str =
@@ -120,6 +122,7 @@ impl StudioApp {
         f.render_widget(&self.textarea, inner);
         self.update_textarea_scroll_top(inner);
         self.render_selection_overlay(inner, f.buffer_mut());
+        self.render_completion_popup(inner, f);
 
         let beat_val = *self.current_beat.lock().unwrap();
         let compile_line = match &self.compile_status {
@@ -178,6 +181,8 @@ impl StudioApp {
 
         let detail = if self.preview_panel.open {
             FOOTER_PREVIEW_PANEL_HELP.to_string()
+        } else if self.completion.is_some() {
+            FOOTER_COMPLETION_HELP.to_string()
         } else {
             match self.input_state.pending() {
                 Some(pending) => format!("Pending:\n{}", pending.prompt(self.note_keyboard_octave)),
@@ -246,6 +251,77 @@ impl StudioApp {
             Paragraph::new(preview_panel_brief_help()).alignment(Alignment::Center),
             sections[2],
         );
+    }
+
+    fn render_completion_popup(&self, score_area: Rect, f: &mut ratatui::Frame) {
+        let Some(completion) = &self.completion else {
+            return;
+        };
+        let candidates = completion.visible_candidates();
+        if candidates.is_empty() || score_area.width < 8 || score_area.height < 3 {
+            return;
+        }
+
+        let row = self.textarea.cursor().0 as i32 - self.textarea_viewport.top_row as i32;
+        if row < 0 || row >= score_area.height as i32 {
+            return;
+        }
+        let line_number_width = self.textarea.lines().len().max(1).to_string().len() as u16 + 2;
+        let cursor_col = self.textarea.cursor().1 as i32 + line_number_width as i32
+            - self.textarea_viewport.top_col as i32;
+        let content_width = candidates
+            .iter()
+            .map(|candidate| candidate.insert_text.len() + candidate.label.len() + 4)
+            .max()
+            .unwrap_or(8)
+            .min(48) as u16;
+        let width = (content_width + 2).min(score_area.width);
+        let height = (candidates.len() as u16 + 2).min(score_area.height);
+        let x_offset = cursor_col
+            .max(0)
+            .min(score_area.width.saturating_sub(width) as i32) as u16;
+        let below_y = row as u16 + 1;
+        let y_offset = if below_y + height <= score_area.height {
+            below_y
+        } else {
+            (row as u16).saturating_sub(height)
+        };
+        let area = Rect {
+            x: score_area.x + x_offset,
+            y: score_area.y + y_offset,
+            width,
+            height,
+        };
+
+        let lines = candidates
+            .iter()
+            .enumerate()
+            .map(|(index, candidate)| {
+                let selected = index == completion.selected_index();
+                let style = if selected {
+                    Style::default().fg(Color::Black).bg(Color::Cyan)
+                } else {
+                    Style::default().fg(Color::White).bg(Color::Rgb(28, 30, 34))
+                };
+                Line::from(vec![
+                    Span::styled(if selected { "> " } else { "  " }, style),
+                    Span::styled(candidate.insert_text.clone(), style),
+                    Span::styled("  ", style),
+                    Span::styled(candidate.label, style.fg(Color::DarkGray)),
+                ])
+            })
+            .collect::<Vec<_>>();
+
+        let title = if completion.query().is_empty() {
+            completion.title().to_string()
+        } else {
+            format!("{}{} ", completion.title(), completion.query())
+        };
+        let popup = Paragraph::new(Text::from(lines))
+            .block(Block::default().title(title).borders(Borders::ALL))
+            .style(Style::default().bg(Color::Rgb(28, 30, 34)));
+        f.render_widget(Clear, area);
+        f.render_widget(popup, area);
     }
 
     fn full_help_text(&self) -> String {

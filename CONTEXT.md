@@ -120,6 +120,10 @@ _Avoid_: Editor, interface
 Editing that operates on Loom concepts such as units, bars, tracks, and template calls instead of only raw text ranges.
 _Avoid_: Structure-aware editing, smart editing, semantic editing
 
+**Completion**:
+A Studio input aid that proposes Loom constructs while editing source text in Insert mode.
+_Avoid_: Suggestion, autocomplete, snippet
+
 **Selection**:
 A Studio editing target that identifies one or more Loom structures for an operation.
 _Avoid_: Range, region, highlight

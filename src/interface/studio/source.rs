@@ -338,7 +338,7 @@ fn resolve_fragment_target(
     Ok(Some(base_dir.join(mapped_path)))
 }
 
-fn parse_source_frontmatter(source: &str) -> Result<Option<Frontmatter>> {
+pub(super) fn parse_source_frontmatter(source: &str) -> Result<Option<Frontmatter>> {
     let mut lines = source.lines();
     if lines.next() != Some("---") {
         return Ok(None);

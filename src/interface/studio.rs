@@ -2,6 +2,7 @@ use crate::config::StudioConfig;
 use crate::event::Event;
 use crate::live_player::LivePlayer;
 use crate::sequencer::PlaybackState;
+use completion::CompletionState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use input::{PendingInput, StudioInputState};
 use keymap::{
@@ -24,6 +25,7 @@ use std::sync::{Arc, Mutex};
 mod add;
 mod audition;
 mod command;
+mod completion;
 mod edit_ops;
 mod input;
 mod keymap;
@@ -75,6 +77,7 @@ pub struct StudioApp {
     command_buffer: String,
     show_help_overlay: bool,
     input_state: StudioInputState,
+    completion: Option<CompletionState>,
     status_message: String,
     compile_status: CompileStatus,
     dirty: bool,
@@ -173,6 +176,7 @@ impl StudioApp {
             command_buffer: String::new(),
             show_help_overlay: false,
             input_state: StudioInputState::default(),
+            completion: None,
             status_message: if created_new_file {
                 "Created new file".to_string()
             } else {
@@ -499,6 +503,7 @@ impl StudioApp {
             }
             KeyAction::EnterInsertMode => {
                 self.mode = StudioMode::Insert;
+                self.completion = None;
                 self.status_message = "Insert mode".into();
             }
             KeyAction::EnterCommandMode => self.begin_command_mode(),
@@ -614,8 +619,13 @@ impl StudioApp {
     }
 
     fn handle_insert_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.handle_completion_key(&key)? {
+            return Ok(());
+        }
+
         if is_escape_key(&key) {
             self.mode = StudioMode::Normal;
+            self.completion = None;
             self.compile_and_update_current_source()?;
             self.status_message = format!("Normal mode: {}", self.cursor_label());
             return Ok(());
@@ -623,6 +633,7 @@ impl StudioApp {
 
         if self.textarea.input(key) {
             self.dirty = true;
+            self.refresh_completion_after_text_input();
         }
         Ok(())
     }
