@@ -62,6 +62,7 @@ Main bindings:
 | `i` | enter Insert mode |
 | `:` | enter Command mode |
 | `a` | add prefix |
+| `c` | change prefix |
 | `g` | goto prefix |
 | `g d` | jump to definition: template definition under cursor, or mapped fragment file on a `[[fragment]]` line |
 | `Ctrl-o` | return to the previous Studio file |
@@ -243,6 +244,14 @@ Useful add commands:
 | `a n` | place a nearby or default note into the current `seq` slot |
 | `a .` | place rest in the current `seq` slot |
 | `a -` | place sustain in the current `seq` slot |
+
+Useful change commands:
+
+| Key | Behavior |
+| --- | --- |
+| `c n` | rename the local template definition or local template call under the cursor |
+
+Template rename updates the matching `# @name` definition and local `[@name ...]` calls in the current file. Library template calls such as `[@alias.name]` are not renamed by this operation.
 
 Modifier lines are selectable as units, so `v` / `p` lines support unit navigation plus Select-mode delete and yank / paste operations.
 

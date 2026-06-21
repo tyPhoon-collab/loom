@@ -14,7 +14,7 @@ const FOOTER_GLOBAL_HELP: &str = "Global: ? help  space play  r restart  w save 
 const FOOTER_NORMAL_HELP: &str =
     "Normal: : command  n/N note  o/O onset  v/V/b/B select  x delete-unit  p paste  s/S grid";
 const FOOTER_NORMAL_PREFIX_HELP: &str =
-    "Prefix: a add  d delete  g goto  Ctrl-o back  P preview-panel";
+    "Prefix: a add  c change  d delete  g goto  Ctrl-o back  P preview-panel";
 const FOOTER_INSERT_HELP: &str = "Insert: type text  Esc normal  compile on exit";
 const FOOTER_COMPLETION_HELP: &str =
     "Completion: Ctrl-n/Down next  Ctrl-p/Up prev  Enter accept  Esc close";
@@ -40,7 +40,7 @@ const OVERLAY_NORMAL_ENTRY_LINES: &[&str] = &[
 ];
 const OVERLAY_NORMAL_SELECTION_LINES: &[&str] = &["v unit  V line  b bar  B line-bars"];
 const OVERLAY_NORMAL_PREFIX_LINES: &[&str] =
-    &["a add  d delete  g goto  Ctrl-o previous file  : command"];
+    &["a add  c change  d delete  g goto  Ctrl-o previous file  : command"];
 const OVERLAY_ADD_LINES: &[&str] = &[
     "s seq  l lane  t track  P piano-roll  h separator  T template  b bar",
     "d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain",
@@ -177,6 +177,13 @@ impl StudioApp {
     fn footer_help_text(&self) -> String {
         if matches!(self.mode, StudioMode::Command) {
             return format!("Command: {}\n{}", self.command_buffer, FOOTER_COMMAND_HELP);
+        }
+        if let Some(rename) = &self.rename_state {
+            return format!(
+                "{}\n{} | Enter accept  Esc cancel",
+                FOOTER_GLOBAL_HELP,
+                rename.prompt()
+            );
         }
 
         let detail = if self.preview_panel.open {

@@ -13,6 +13,7 @@ Studio should prefer a Vim-like mental model where it fits the product.
 In particular:
 
 - Prefer operator-style commands over unrelated mnemonic shortcuts.
+- Reserve `c` for change-oriented structured edits.
 - Reserve `d` for delete-oriented behavior and delete prefixes.
 - Keep `x` as a direct small-scope delete when it improves speed.
 - Treat duplication as distinct from delete.
@@ -35,8 +36,20 @@ Vim already gives many users a strong mental model:
 
 Reusing that model should reduce keybinding surprise in Studio.
 
+Studio distinguishes raw text editing from structured changes:
+
+- `i` enters Insert mode for direct source editing.
+- `c` should change an existing Loom structure while preserving that structure's role.
+- `a` adds structures.
+- `d` deletes structures.
+- `g` moves to related structures.
+
+Rename should follow that split. Name changes belong under the change prefix, not the goto prefix. The intended shape is `c n` for changing the name under the cursor, starting with local template rename before broader cross-file or manifest-aware rename workflows.
+
 ## Consequences
 
+- Future change-oriented Studio operations should prefer the `c` prefix.
+- Rename workflows should start from `c n` and operate on the named Loom structure under the cursor.
 - Future Studio keybinding changes should move toward `d` as the main delete operator.
 - Studio should use `y` / `p` semantics for copy-like edits instead of a dedicated duplicate key.
 - Dedicated duplicate bindings should not return unless `y` / `p` proves insufficient.

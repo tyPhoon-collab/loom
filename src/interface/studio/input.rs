@@ -2,6 +2,7 @@ pub(super) const ADD_HELP: &str =
     "Add\n  s seq  l lane  t track  P piano-roll  h separator  T template  b bar\n  d drums  v velocity  p pitch  i init  m macro  n note  . rest  - sustain";
 pub(super) const GOTO_HELP: &str =
     "Goto: t next track | T previous track | d definition | Esc cancel";
+pub(super) const CHANGE_HELP: &str = "Change: n rename name under cursor | Esc cancel";
 pub(super) const DELETE_HELP: &str =
     "Delete\n  s seq  l lane  t track  h separator  T template  b bar\n  v velocity  p pitch  i init  m macro";
 pub(super) const NOTE_HELP: &str =
@@ -27,6 +28,7 @@ pub(super) enum NoteInputMode {
 pub(super) enum PendingInput {
     Add,
     Goto,
+    Change,
     DeleteStructure,
     TemplateMacro,
     TrackInitAdd,
@@ -45,6 +47,7 @@ impl PendingInput {
         match self {
             PendingInput::Add => ADD_HELP.to_string(),
             PendingInput::Goto => GOTO_HELP.to_string(),
+            PendingInput::Change => CHANGE_HELP.to_string(),
             PendingInput::DeleteStructure => DELETE_HELP.to_string(),
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP.to_string(),
             PendingInput::TrackInitAdd => TRACK_INIT_ADD_HELP.to_string(),
@@ -60,6 +63,7 @@ impl PendingInput {
         match self {
             PendingInput::Add => ADD_HELP,
             PendingInput::Goto => GOTO_HELP,
+            PendingInput::Change => CHANGE_HELP,
             PendingInput::DeleteStructure => DELETE_HELP,
             PendingInput::TemplateMacro => TEMPLATE_MACRO_HELP,
             PendingInput::TrackInitAdd => TRACK_INIT_ADD_HELP,
@@ -75,6 +79,7 @@ impl PendingInput {
         match self {
             PendingInput::Add => "Add cancelled",
             PendingInput::Goto => "Goto cancelled",
+            PendingInput::Change => "Change cancelled",
             PendingInput::DeleteStructure => "Delete cancelled",
             PendingInput::TemplateMacro => "Template macro cancelled",
             PendingInput::TrackInitAdd => "Track init add cancelled",
@@ -90,6 +95,7 @@ impl PendingInput {
         let label = match self {
             PendingInput::Add => "add command",
             PendingInput::Goto => "goto command",
+            PendingInput::Change => "change command",
             PendingInput::DeleteStructure => "delete command",
             PendingInput::TemplateMacro => "template macro command",
             PendingInput::TrackInitAdd => "track init add command",

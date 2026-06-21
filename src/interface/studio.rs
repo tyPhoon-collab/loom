@@ -16,6 +16,7 @@ use preview::{ActivePreviewNote, PreviewPanelState};
 use ratatui::style::{Color, Style};
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
+use rename::RenameState;
 use runtime::{load_or_create_studio_file, midi_device_name, poll_key_event};
 use selection::StudioSelection;
 use std::collections::HashMap;
@@ -34,6 +35,7 @@ mod note_entry;
 mod onset;
 mod preview;
 mod preview_keyboard;
+mod rename;
 mod runtime;
 mod selection;
 mod selection_ops;
@@ -78,6 +80,7 @@ pub struct StudioApp {
     show_help_overlay: bool,
     input_state: StudioInputState,
     completion: Option<CompletionState>,
+    rename_state: Option<RenameState>,
     status_message: String,
     compile_status: CompileStatus,
     dirty: bool,
@@ -177,6 +180,7 @@ impl StudioApp {
             show_help_overlay: false,
             input_state: StudioInputState::default(),
             completion: None,
+            rename_state: None,
             status_message: if created_new_file {
                 "Created new file".to_string()
             } else {
@@ -264,6 +268,10 @@ impl StudioApp {
 
         if matches!(self.mode, StudioMode::Command) {
             return self.handle_command_key(key);
+        }
+
+        if self.rename_state.is_some() {
+            return self.handle_rename_key(key);
         }
 
         if is_help_key(&key) {
@@ -442,6 +450,7 @@ impl StudioApp {
         match pending {
             PendingInput::Add => self.handle_add_key(key),
             PendingInput::Goto => self.handle_goto_key(key),
+            PendingInput::Change => self.handle_change_key(key),
             PendingInput::DeleteStructure => self.handle_delete_structure_key(key),
             PendingInput::TemplateMacro => self.handle_template_macro_key(key),
             PendingInput::TrackInitAdd => self.handle_track_init_add_key(key),
@@ -465,6 +474,7 @@ impl StudioApp {
                     self.dispatch_pending_input(pending, key)
                 }
                 PendingInput::Add
+                | PendingInput::Change
                 | PendingInput::TemplateMacro
                 | PendingInput::TrackInitAdd
                 | PendingInput::TrackInitDelete => self.dispatch_pending_input(pending, key),

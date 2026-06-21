@@ -92,6 +92,10 @@ pub(super) const NORMAL_KEY_BINDINGS: &[KeyBinding<KeyAction>] = &[
         action: KeyAction::BeginPending(PendingInput::Goto),
     },
     KeyBinding {
+        stroke: KeyStroke::Char('c'),
+        action: KeyAction::BeginPending(PendingInput::Change),
+    },
+    KeyBinding {
         stroke: KeyStroke::ShiftChar('p'),
         action: KeyAction::TogglePreviewPanel,
     },
