@@ -112,6 +112,10 @@ _Avoid_: Message, output, command
 A composition workflow where changes to a song are reflected during playback.
 _Avoid_: Hot reload, live mode, watch mode
 
+**Playground**:
+A browser-based Loom workflow for trying, editing, playing, and sharing Loom songs without installing local tools.
+_Avoid_: Web Studio, demo, editor
+
 **Studio**:
 The integrated TUI editor for editing and playing Loom songs.
 _Avoid_: Editor, interface

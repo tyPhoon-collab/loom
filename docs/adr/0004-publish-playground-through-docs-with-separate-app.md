@@ -1,0 +1,3 @@
+# Publish Playground through docs with a separate app
+
+Loom will publish Playground as part of the documentation site under `/playground/`, while keeping its implementation in `apps/playground/` instead of embedding it directly into VitePress. We choose this boundary because Playground should serve as a documentation entry point and demo surface, but its editor, wasm, audio, sharing, and future app-level dependencies should remain separate from the docs build; the `apps/` directory also leaves room for future user-facing Loom apps beyond Playground without making those products part of the documentation source.
