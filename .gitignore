@@ -7,6 +7,8 @@ memo*.md
 /docs/.vitepress/cache
 /docs/.vitepress/.temp
 /docs/.vitepress/dist
+/apps/playground/node_modules
+/apps/playground/dist
 /.pnpm-store
 /.wrangler
 

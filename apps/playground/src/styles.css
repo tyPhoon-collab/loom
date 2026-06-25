@@ -1,0 +1,178 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #3c3c43;
+  background: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --loom-bg: #ffffff;
+  --loom-bg-soft: #f6f6f7;
+  --loom-bg-mute: #f0f0f1;
+  --loom-text: #3c3c43;
+  --loom-text-muted: rgba(60, 60, 67, 0.68);
+  --loom-border: #e2e2e3;
+  --loom-brand: #3451b2;
+  --loom-radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 960px;
+  min-height: 100vh;
+  background: var(--loom-bg);
+}
+
+button {
+  cursor: pointer;
+}
+
+.playground-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(420px, 1fr) 340px;
+  min-height: 100vh;
+  background: var(--loom-bg);
+}
+
+.workspace-panel,
+.diagnostics-panel {
+  min-width: 0;
+  background: var(--loom-bg-soft);
+}
+
+.workspace-panel {
+  border-right: 1px solid var(--loom-border);
+}
+
+.diagnostics-panel {
+  border-left: 1px solid var(--loom-border);
+}
+
+.editor-panel {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 72px;
+  padding: 1rem;
+  border-bottom: 1px solid var(--loom-border);
+}
+
+.panel-header.compact {
+  min-height: 64px;
+}
+
+.panel-header h1,
+.panel-header h2,
+.eyebrow {
+  margin: 0;
+}
+
+.panel-header h1 {
+  font-size: 1.1rem;
+}
+
+.panel-header h2 {
+  font-size: 1rem;
+}
+
+.eyebrow {
+  color: var(--loom-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.file-list {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+
+.file-item {
+  justify-content: flex-start;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item.active {
+  border-color: var(--loom-brand);
+  color: var(--loom-brand);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 56px;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--loom-border);
+  background: var(--loom-bg);
+}
+
+textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 1rem;
+  border: 0;
+  outline: 0;
+  resize: none;
+  color: var(--loom-text);
+  background: var(--loom-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--loom-border);
+  border-radius: 999px;
+  color: var(--loom-text-muted);
+  background: var(--loom-bg);
+  font-size: 0.75rem;
+}
+
+.diagnostics-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  list-style: none;
+}
+
+.diagnostics-list li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--loom-border);
+  border-radius: var(--loom-radius);
+  background: var(--loom-bg);
+}
+
+.diagnostics-list strong {
+  color: var(--loom-brand);
+  font-size: 0.85rem;
+}
+
+.diagnostics-list span {
+  color: var(--loom-text-muted);
+  font-size: 0.9rem;
+}

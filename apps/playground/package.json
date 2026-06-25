@@ -1,0 +1,18 @@
+{
+  "name": "@loom/playground",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@knadh/oat": "0.6.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vite": "7.3.6"
+  }
+}

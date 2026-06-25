@@ -1,5 +1,6 @@
 mod dev
 mod docs
+mod playground
 
 # List available recipes
 default:
