@@ -1,6 +1,6 @@
 # Playground
 
-Playground は loom のブラウザ用 editor shell である。表示は薄いが、workspace state をまたいで editing / compile / format / playback / share / import / export が動くため、状態遷移と副作用の境界を優先して保つ。
+Playground は loom のブラウザ用 editor shell である。編集、compile、format、再生、共有、import/export を扱うため、状態遷移と副作用の境界を明確に保つ。
 
 ## 設計方針
 
@@ -24,37 +24,44 @@ Playground は loom のブラウザ用 editor shell である。表示は薄い�
 
 ## フォルダ構造
 
-- `src/main.tsx`
-    - Preact mount entrypoint。
-    - app の起動だけを書く。
-- `src/app/`
-    - Preact components と UI adapter。
-    - `App.tsx`: shell, toolbar, file list, diagnostics。
-    - `Editor.tsx`: CodeMirror lifecycle adapter。
-    - `runtime.ts`: `Model -> Message -> [Model, Command[]]` を実行する小さな runtime。
-- `src/domain/`
-    - UI から独立した状態と状態遷移。
-    - `model.ts`: public entrypoint。`update`, `initModel`, re-export, Message routing だけを書く。
-    - `types.ts`: `Model`, `Message`, `Command`, `Effects` などの型定義。
-    - `selectors.ts`: `Model` から値を取り出す読み取り helper。
-    - `commands.ts`: `Effects` を使う副作用 command。
-    - `playback.ts`: 再生 option の純粋な計算 helper。
-    - `reducers/`: `Message` の責務別 union と対応する状態遷移。
-        - `compiler.ts`: `CompilerMessage`
-        - `editor.ts`: `EditorMessage`
-        - `file.ts`: `FileMessage`
-        - `workspace.ts`: `WorkspaceMessage`
-        - `playback.ts`: `PlaybackMessage`
-        - `state.ts`: reducer 間で共有する `markDirty`, `fail`, `workspaceDiagnostic` など。
-    - `model.test.ts`: state transition のテスト。
-- `src/effects/`
-    - browser API や wasm などの副作用 adapter。
-    - `effects.ts`: `Effects` の実装。
-- `src/data/`
-    - 静的データ。
-    - `examples.ts`: Playground 初期 example workspace。
-- `src/audio/`, `src/compiler/`, `src/share/`, `src/workspace/`
-    - 既存の独立 helper。必要以上に app/domain へ寄せない。
+```text
+src
+├── main.tsx
+├── app
+│   ├── App.tsx
+│   ├── Editor.tsx
+│   └── runtime.ts
+├── domain
+│   ├── model.ts
+│   ├── types.ts
+│   ├── selectors.ts
+│   ├── commands.ts
+│   ├── playback.ts
+│   ├── reducers
+│   │   ├── compiler.ts
+│   │   ├── editor.ts
+│   │   ├── file.ts
+│   │   ├── workspace.ts
+│   │   ├── playback.ts
+│   │   └── state.ts
+│   └── model.test.ts
+├── effects
+│   └── effects.ts
+├── data
+│   └── examples.ts
+├── audio
+├── compiler
+├── share
+├── workspace
+└── generated
+```
+
+- `main.tsx` は Preact mount entrypoint。app の起動だけを書く。
+- `app/` は Preact components と UI adapter を置く。CodeMirror は `app/Editor.tsx` に閉じ込める。
+- `domain/` は UI から独立した状態、状態遷移、Command 定義を置く。`model.ts` は public entrypoint として `update`, `initModel`, re-export, Message routing を持つ。
+- `effects/` は browser API / wasm / audio / ZIP などの副作用実装を置く。
+- `audio/`, `compiler/`, `share/`, `workspace/` は独立 helper として扱い、必要以上に `app/` や `domain/` へ寄せない。
+- `generated/` は生成物なので手で編集しない。
 
 ## Message / Command の扱い
 
@@ -65,7 +72,8 @@ Playground は loom のブラウザ用 editor shell である。表示は薄い�
     - file
     - workspace
     - playback
-- reducer 実装は `Message` の責務別 union に対応する `domain/reducers/*.ts` に置く。
+- `CompilerMessage`, `EditorMessage`, `FileMessage`, `WorkspaceMessage`, `PlaybackMessage` などの責務別 Message 型に合わせて `domain/reducers/*.ts` を分ける。
+- `domain/reducers/state.ts` だけは例外として、reducer 間で共有する純粋な状態 helper を置く。
 - `domain/model.ts` の `update()` は Message routing を一覧できる場所として維持し、case の実装詳細を増やさない。
 - `domain/reducers/*.ts` から `domain/model.ts` を import しない。必要な型や helper は `types.ts`, `selectors.ts`, `commands.ts`, `playback.ts`, `reducers/state.ts` から import する。
 - component は `dispatch(message)` だけ行う。
