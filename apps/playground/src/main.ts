@@ -125,9 +125,20 @@ if (!appRoot) {
 }
 
 const app = appRoot;
+const dom = {
+  activePath: requireElement<HTMLElement>("[data-active-path]"),
+  diagnosticsBody: requireElement<HTMLElement>("[data-diagnostics-body]"),
+  editorHost: requireElement<HTMLElement>("[data-editor-host]"),
+  exampleDescription: requireElement<HTMLElement>("[data-example-description]"),
+  exampleSelect: requireElement<HTMLSelectElement>('[data-action="load-example"]'),
+  fileList: requireElement<HTMLElement>("[data-file-list]"),
+  status: requireElement<HTMLSpanElement>("[data-status-pill]"),
+  zipInput: requireElement<HTMLInputElement>("[data-zip-input]"),
+};
 let editorView: EditorView | null = null;
 let playbackStatusTimer: number | null = null;
 
+bindEvents();
 void boot();
 
 async function boot(): Promise<void> {
@@ -152,202 +163,185 @@ async function boot(): Promise<void> {
 
 function render(): void {
   const activeFile = currentFile();
+
+  renderExamplePicker();
+  renderFileList();
+  refreshToolbarState();
+  refreshCompilePanel();
+
   editorView?.destroy();
   editorView = null;
-  app.innerHTML = `
-    <main class="playground-shell">
-      <aside class="workspace-panel" aria-label="Workspace files">
-        <header class="panel-header">
-          <div>
-            <p class="eyebrow">Workspace</p>
-            <h1>Loom Playground</h1>
-          </div>
-          <button type="button" class="small" data-action="new-file">New</button>
-        </header>
-        <div class="example-picker">
-          <label for="example-select">Example</label>
-          <select id="example-select" data-action="load-example">
-            ${
-              currentExample()
-                ? ""
-                : '<option value="custom" selected>Custom workspace</option>'
-            }
-            ${examples
-              .map(
-                (example) => `
-                  <option value="${escapeAttribute(example.id)}" ${
-                    example.id === state.currentExampleId ? "selected" : ""
-                  }>${escapeHtml(example.name)}</option>
-                `,
-              )
-              .join("")}
-          </select>
-          <p>${escapeHtml(currentExample()?.description ?? "Custom workspace")}</p>
-        </div>
-        <nav class="file-list" aria-label="Files">
-          ${state.files
-            .map(
-              (file) => `
-                <button type="button" class="file-item ${
-                  file.path === state.activePath ? "active" : ""
-                }" data-file-path="${escapeAttribute(file.path)}">
-                  <span>${escapeHtml(file.path)}</span>
-                  ${file.path === state.entryPath ? '<em title="Entry file">entry</em>' : ""}
-                </button>
-              `,
-            )
-            .join("")}
-        </nav>
-      </aside>
-
-      <section class="editor-panel" aria-label="Loom source editor">
-        <div class="toolbar" role="toolbar" aria-label="Playground actions">
-          <button type="button" data-action="play" ${playDisabled() ? "disabled" : ""}>Play</button>
-          <button type="button" data-action="stop" ${state.isPlaying ? "" : "disabled"}>Stop</button>
-          <button type="button" data-action="compile" ${state.compileStatus === "loading" ? "disabled" : ""}>Compile</button>
-          <button type="button" data-action="format" ${state.compileStatus === "loading" ? "disabled" : ""}>Format</button>
-          <button type="button" data-action="new-fragment" ${state.activePath === state.entryPath ? "" : "disabled"}>New Fragment</button>
-          <button type="button" data-action="set-entry" ${state.activePath === state.entryPath ? "disabled" : ""}>Set Entry</button>
-          <button type="button" data-action="rename-file">Rename</button>
-          <button type="button" data-action="delete-file" ${state.files.length <= 1 ? "disabled" : ""}>Delete</button>
-          <button type="button" data-action="share">Share</button>
-          <button type="button" data-action="export-zip">Export ZIP</button>
-          <button type="button" data-action="import-zip">Import ZIP</button>
-          <span class="active-path">${escapeHtml(state.activePath)}${state.dirty ? " *" : ""}</span>
-        </div>
-        <input type="file" data-zip-input accept=".zip,application/zip" hidden />
-        <div class="editor-host" data-editor-host aria-label="${escapeAttribute(
-          state.activePath,
-        )} source"></div>
-      </section>
-
-      <aside class="diagnostics-panel" aria-label="Diagnostics">
-        <header class="panel-header compact">
-          <div>
-            <p class="eyebrow">Compile</p>
-            <h2>Diagnostics</h2>
-          </div>
-          <span class="status-pill ${statusClass()}">${statusLabel()}</span>
-        </header>
-        <div data-diagnostics-body>
-          ${renderDiagnostics()}
-        </div>
-      </aside>
-    </main>
-  `;
-
-  bindEvents();
   mountEditor(activeFile);
   applyPendingCursor();
 }
 
-function renderDiagnostics(): string {
-  if (state.diagnostics.length === 0) {
-    const message =
-      state.compileStatus === "ok"
-        ? `${state.eventCount} MIDI events compiled.`
-        : "No diagnostics.";
-    return `<div class="empty-state">${escapeHtml(message)}</div>`;
+function renderExamplePicker(): void {
+  dom.exampleSelect.replaceChildren();
+  if (!currentExample()) {
+    dom.exampleSelect.append(new Option("Custom workspace", "custom", true, true));
   }
 
-  return `
-    <ol class="diagnostics-list">
-      ${state.diagnostics
-        .map(
-          (diagnostic, index) => `
-            <li>
-              <button type="button" data-diagnostic-index="${index}">
-                <strong>${escapeHtml(diagnosticLocation(diagnostic))}</strong>
-                <span>${escapeHtml(diagnostic.message)}</span>
-                ${diagnostic.help ? `<small>${escapeHtml(diagnostic.help)}</small>` : ""}
-              </button>
-            </li>
-          `,
-        )
-        .join("")}
-    </ol>
-  `;
+  for (const example of examples) {
+    dom.exampleSelect.append(
+      new Option(
+        example.name,
+        example.id,
+        example.id === state.currentExampleId,
+        example.id === state.currentExampleId,
+      ),
+    );
+  }
+
+  dom.exampleDescription.textContent = currentExample()?.description ?? "Custom workspace";
+}
+
+function renderFileList(): void {
+  dom.fileList.replaceChildren(...state.files.map(fileButton));
+}
+
+function fileButton(file: PlaygroundFile): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `file-item${file.path === state.activePath ? " active" : ""}`;
+  button.dataset.filePath = file.path;
+
+  const path = document.createElement("span");
+  path.textContent = file.path;
+  button.append(path);
+
+  if (file.path === state.entryPath) {
+    const entry = document.createElement("em");
+    entry.title = "Entry file";
+    entry.textContent = "entry";
+    button.append(entry);
+  }
+
+  return button;
+}
+
+function renderDiagnostics(): void {
+  if (state.diagnostics.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent =
+      state.compileStatus === "ok" ? `${state.eventCount} MIDI events compiled.` : "No diagnostics.";
+    dom.diagnosticsBody.replaceChildren(empty);
+    return;
+  }
+
+  const list = document.createElement("ol");
+  list.className = "diagnostics-list";
+  list.append(...state.diagnostics.map(diagnosticItem));
+  dom.diagnosticsBody.replaceChildren(list);
+}
+
+function diagnosticItem(diagnostic: Diagnostic, index: number): HTMLLIElement {
+  const item = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.diagnosticIndex = String(index);
+
+  const location = document.createElement("strong");
+  location.textContent = diagnosticLocation(diagnostic);
+  const message = document.createElement("span");
+  message.textContent = diagnostic.message;
+  button.append(location, message);
+
+  if (diagnostic.help) {
+    const help = document.createElement("small");
+    help.textContent = diagnostic.help;
+    button.append(help);
+  }
+
+  item.append(button);
+  return item;
 }
 
 function bindEvents(): void {
-  app.querySelectorAll<HTMLButtonElement>("[data-file-path]").forEach((button) => {
-    button.addEventListener("click", () => {
+  dom.fileList.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const button = event.target.closest<HTMLButtonElement>("[data-file-path]");
+    if (button) {
       const path = button.dataset.filePath;
       if (!path) {
         return;
       }
       state.activePath = path;
       render();
-    });
+    }
   });
 
-  app.querySelector<HTMLSelectElement>('[data-action="load-example"]')?.addEventListener("change", (event) => {
-    const target = event.currentTarget as HTMLSelectElement;
-    loadExample(target.value);
+  dom.exampleSelect.addEventListener("change", () => {
+    loadExample(dom.exampleSelect.value);
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="play"]')?.addEventListener("click", () => {
+  onAction("play", () => {
     void playWorkspace();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="stop"]')?.addEventListener("click", () => {
+  onAction("stop", () => {
     stopPlayback();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="compile"]')?.addEventListener("click", () => {
+  onAction("compile", () => {
     runCompile();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="format"]')?.addEventListener("click", () => {
+  onAction("format", () => {
     runFormat();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="new-file"]')?.addEventListener("click", () => {
+  onAction("new-file", () => {
     createFile();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="new-fragment"]')?.addEventListener("click", () => {
+  onAction("new-fragment", () => {
     createFragment();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="rename-file"]')?.addEventListener("click", () => {
+  onAction("rename-file", () => {
     renameActiveFile();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="delete-file"]')?.addEventListener("click", () => {
+  onAction("delete-file", () => {
     deleteActiveFile();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="set-entry"]')?.addEventListener("click", () => {
+  onAction("set-entry", () => {
     state.entryPath = state.activePath;
     state.currentExampleId = "custom";
     markDirty();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="share"]')?.addEventListener("click", () => {
+  onAction("share", () => {
     void shareWorkspace();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="export-zip"]')?.addEventListener("click", () => {
+  onAction("export-zip", () => {
     exportZip();
   });
 
-  app.querySelector<HTMLButtonElement>('[data-action="import-zip"]')?.addEventListener("click", () => {
-    app.querySelector<HTMLInputElement>("[data-zip-input]")?.click();
+  onAction("import-zip", () => {
+    dom.zipInput.click();
   });
 
-  app.querySelector<HTMLInputElement>("[data-zip-input]")?.addEventListener("change", (event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = "";
+  dom.zipInput.addEventListener("change", () => {
+    const file = dom.zipInput.files?.[0];
+    dom.zipInput.value = "";
     if (!file) {
       return;
     }
     void importZip(file);
   });
 
-  app.querySelectorAll<HTMLButtonElement>("[data-diagnostic-index]").forEach((button) => {
-    button.addEventListener("click", () => {
+  dom.diagnosticsBody.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const button = event.target.closest<HTMLButtonElement>("[data-diagnostic-index]");
+    if (button) {
       const index = Number(button.dataset.diagnosticIndex);
       const diagnostic = state.diagnostics[index];
       if (!diagnostic?.path || !findFile(diagnostic.path)) {
@@ -360,7 +354,7 @@ function bindEvents(): void {
         column: diagnostic.column ?? 1,
       };
       render();
-    });
+    }
   });
 }
 
@@ -550,38 +544,40 @@ function loadExample(exampleId: string): void {
 }
 
 function refreshCompilePanel(): void {
-  const status = app.querySelector<HTMLSpanElement>(".status-pill");
-  if (status) {
-    status.className = `status-pill ${statusClass()}`;
-    status.textContent = statusLabel();
-  }
-
-  const diagnosticsBody = app.querySelector<HTMLElement>("[data-diagnostics-body]");
-  if (diagnosticsBody) {
-    diagnosticsBody.innerHTML = renderDiagnostics();
-  }
+  dom.status.className = `status-pill ${statusClass()}`;
+  dom.status.textContent = statusLabel();
+  renderDiagnostics();
 }
 
 function refreshToolbarState(): void {
-  const activePath = app.querySelector<HTMLElement>(".active-path");
-  if (activePath) {
-    activePath.textContent = `${state.activePath}${state.dirty ? " *" : ""}`;
-  }
+  dom.activePath.textContent = `${state.activePath}${state.dirty ? " *" : ""}`;
 
-  const playButton = app.querySelector<HTMLButtonElement>('[data-action="play"]');
-  if (playButton) {
-    playButton.disabled = playDisabled();
+  setActionDisabled("play", playDisabled());
+  setActionDisabled("stop", !state.isPlaying);
+  setActionDisabled("compile", state.compileStatus === "loading");
+  setActionDisabled("format", state.compileStatus === "loading");
+  setActionDisabled("new-fragment", state.activePath !== state.entryPath);
+  setActionDisabled("set-entry", state.activePath === state.entryPath);
+  setActionDisabled("delete-file", state.files.length <= 1);
+}
+
+function setActionDisabled(action: string, disabled: boolean): void {
+  const button = app.querySelector<HTMLButtonElement>(`[data-action="${action}"]`);
+  if (button) {
+    button.disabled = disabled;
   }
 }
 
+function onAction(action: string, handler: () => void): void {
+  requireElement<HTMLButtonElement>(`[data-action="${action}"]`).addEventListener("click", handler);
+}
+
 function mountEditor(file: PlaygroundFile): void {
-  const parent = app.querySelector<HTMLElement>("[data-editor-host]");
-  if (!parent) {
-    return;
-  }
+  dom.editorHost.setAttribute("aria-label", `${file.path} source`);
+  dom.editorHost.replaceChildren();
 
   editorView = new EditorView({
-    parent,
+    parent: dom.editorHost,
     state: EditorState.create({
       doc: file.content,
       extensions: [
@@ -1045,14 +1041,10 @@ function playDisabled(): boolean {
   return state.compileStatus === "loading" || state.compileStatus === "err" || state.isPlaying;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function escapeAttribute(value: string): string {
-  return escapeHtml(value).replaceAll("'", "&#39;");
+function requireElement<T extends Element>(selector: string): T {
+  const element = app.querySelector<T>(selector);
+  if (!element) {
+    throw new Error(`Missing element: ${selector}`);
+  }
+  return element;
 }

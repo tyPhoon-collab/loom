@@ -6,7 +6,57 @@
     <title>Loom Playground</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="playground-shell">
+        <aside class="workspace-panel" aria-label="Workspace files">
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Workspace</p>
+              <h1>Loom Playground</h1>
+            </div>
+            <button type="button" class="small" data-action="new-file">New</button>
+          </header>
+
+          <div class="example-picker">
+            <label for="example-select">Example</label>
+            <select id="example-select" data-action="load-example"></select>
+            <p data-example-description>Custom workspace</p>
+          </div>
+
+          <nav class="file-list" aria-label="Files" data-file-list></nav>
+        </aside>
+
+        <section class="editor-panel" aria-label="Loom source editor">
+          <div class="toolbar" role="toolbar" aria-label="Playground actions">
+            <button type="button" data-action="play">Play</button>
+            <button type="button" data-action="stop">Stop</button>
+            <button type="button" data-action="compile">Compile</button>
+            <button type="button" data-action="format">Format</button>
+            <button type="button" data-action="new-fragment">New Fragment</button>
+            <button type="button" data-action="set-entry">Set Entry</button>
+            <button type="button" data-action="rename-file">Rename</button>
+            <button type="button" data-action="delete-file">Delete</button>
+            <button type="button" data-action="share">Share</button>
+            <button type="button" data-action="export-zip">Export ZIP</button>
+            <button type="button" data-action="import-zip">Import ZIP</button>
+            <span class="active-path" data-active-path></span>
+          </div>
+          <input type="file" data-zip-input accept=".zip,application/zip" hidden />
+          <div class="editor-host" data-editor-host></div>
+        </section>
+
+        <aside class="diagnostics-panel" aria-label="Diagnostics">
+          <header class="panel-header compact">
+            <div>
+              <p class="eyebrow">Compile</p>
+              <h2>Diagnostics</h2>
+            </div>
+            <span class="status-pill" data-status-pill>Loading</span>
+          </header>
+          <div data-diagnostics-body></div>
+        </aside>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
