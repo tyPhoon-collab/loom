@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { playgroundEffects } from "../effects/effects";
-import type { Command, Dispatch, Effects, Message, Model, UpdateResult } from "../domain/model";
+import type { Command, Dispatch, Message, Model, UpdateResult } from "../domain/model";
 import { update } from "../domain/model";
 
 export function useElmish(initial: UpdateResult): readonly [Model, Dispatch] {
@@ -18,13 +18,9 @@ export function useElmish(initial: UpdateResult): readonly [Model, Dispatch] {
 
   useEffect(() => {
     for (const command of snapshot.commands) {
-      runCommand(command, playgroundEffects, dispatch);
+      void command(playgroundEffects, dispatch);
     }
   }, [snapshot.commands, dispatch]);
 
   return [snapshot.model, dispatch];
-}
-
-function runCommand(command: Command, effects: Effects, dispatch: Dispatch): void {
-  void command(effects, dispatch);
 }

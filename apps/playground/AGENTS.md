@@ -4,22 +4,13 @@ Playground は loom のブラウザ用 editor shell である。編集、compile
 
 ## 設計方針
 
-- UI framework は Preact を使う。
-    - Preact は component rendering のために使い、application state の置き場にはしない。
+- Preact は view layer に限定し、application state の置き場にしない。
 - 状態管理は Redux / XState / router framework などを入れず、小さな Elmish runtime で扱う。
     - 基本形は `Model -> Message -> [Model, Command[]]`。
 - CSS / visual base は Oat と `src/styles.css` を使う。
-    - Oat は見た目の土台であり、状態管理 framework ではない。
-- Preact は view layer に限定する。
 - 状態変更は `domain/model.ts` の `update(model, message)` を通す。
 - component 内で `dirty`, `compileStatus`, `compiledEvents`, `diagnostics`, `files` などを直接更新しない。
-- 副作用は `effects/effects.ts` に閉じ込める。
-    - wasm compile / format
-    - WebAudio playback
-    - clipboard
-    - ZIP import / export
-    - `window.prompt` / `window.confirm`
-    - playback timer
+- wasm / audio / clipboard / ZIP / prompt / timer などの副作用は `effects/effects.ts` に閉じ込める。
 - `app/runtime.ts` は小さな Elmish runtime として扱う。framework 化しない。
 
 ## フォルダ構造
@@ -57,7 +48,7 @@ src
 ```
 
 - `main.tsx` は Preact mount entrypoint。app の起動だけを書く。
-- `app/` は Preact components と UI adapter を置く。CodeMirror は `app/Editor.tsx` に閉じ込める。
+- `app/` は Preact components と UI adapter を置く。
 - `domain/` は UI から独立した状態、状態遷移、Command 定義を置く。`model.ts` は public entrypoint として `update`, `initModel`, re-export, Message routing を持つ。
 - `effects/` は browser API / wasm / audio / ZIP などの副作用実装を置く。
 - `audio/`, `compiler/`, `share/`, `workspace/` は独立 helper として扱い、必要以上に `app/` や `domain/` へ寄せない。
@@ -66,12 +57,7 @@ src
 ## Message / Command の扱い
 
 - `Message` は user intent と effect result を表す。
-- `Message` を増やす時は、まず既存の責務別 union に追加できるか確認する。
-    - compiler
-    - editor
-    - file
-    - workspace
-    - playback
+- `Message` を増やす時は、まず既存の責務別 union (`compiler`, `editor`, `file`, `workspace`, `playback`) に追加できるか確認する。
 - `CompilerMessage`, `EditorMessage`, `FileMessage`, `WorkspaceMessage`, `PlaybackMessage` などの責務別 Message 型に合わせて `domain/reducers/*.ts` を分ける。
 - `domain/reducers/state.ts` だけは例外として、reducer 間で共有する純粋な状態 helper を置く。
 - `domain/model.ts` の `update()` は Message routing を一覧できる場所として維持し、case の実装詳細を増やさない。
