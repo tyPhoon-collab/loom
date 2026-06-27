@@ -34,7 +34,18 @@ Playground は loom のブラウザ用 editor shell である。表示は薄い�
     - `runtime.ts`: `Model -> Message -> [Model, Command[]]` を実行する小さな runtime。
 - `src/domain/`
     - UI から独立した状態と状態遷移。
-    - `model.ts`: `Model`, `Message`, `Command`, `Effects`, `update`, `initModel`。
+    - `model.ts`: public entrypoint。`update`, `initModel`, re-export, Message routing だけを書く。
+    - `types.ts`: `Model`, `Message`, `Command`, `Effects` などの型定義。
+    - `selectors.ts`: `Model` から値を取り出す読み取り helper。
+    - `commands.ts`: `Effects` を使う副作用 command。
+    - `playback.ts`: 再生 option の純粋な計算 helper。
+    - `reducers/`: `Message` の責務別 union と対応する状態遷移。
+        - `compiler.ts`: `CompilerMessage`
+        - `editor.ts`: `EditorMessage`
+        - `file.ts`: `FileMessage`
+        - `workspace.ts`: `WorkspaceMessage`
+        - `playback.ts`: `PlaybackMessage`
+        - `state.ts`: reducer 間で共有する `markDirty`, `fail`, `workspaceDiagnostic` など。
     - `model.test.ts`: state transition のテスト。
 - `src/effects/`
     - browser API や wasm などの副作用 adapter。
@@ -54,6 +65,9 @@ Playground は loom のブラウザ用 editor shell である。表示は薄い�
     - file
     - workspace
     - playback
+- reducer 実装は `Message` の責務別 union に対応する `domain/reducers/*.ts` に置く。
+- `domain/model.ts` の `update()` は Message routing を一覧できる場所として維持し、case の実装詳細を増やさない。
+- `domain/reducers/*.ts` から `domain/model.ts` を import しない。必要な型や helper は `types.ts`, `selectors.ts`, `commands.ts`, `playback.ts`, `reducers/state.ts` から import する。
 - component は `dispatch(message)` だけ行う。
 - prompt / confirm のような分岐は component に書かず、`Command` + `Effects` に寄せる。
 - `Command` は副作用を実行して、必要なら result message を dispatch する。
