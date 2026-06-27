@@ -1,4 +1,4 @@
-import type { PlaygroundFile } from "./workspace/types";
+import type { PlaygroundFile } from "../workspace/types";
 
 export type PlaygroundExample = {
   id: string;

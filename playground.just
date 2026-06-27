@@ -14,6 +14,10 @@ wasm-build:
 app-build:
     npm --prefix apps/playground run build
 
+# Run Playground TypeScript tests
+test:
+    npm --prefix apps/playground run test
+
 # Check Rust wasm API
 wasm-check:
     cargo check --lib --no-default-features --features wasm --target wasm32-unknown-unknown
@@ -31,7 +35,7 @@ audit:
     npm --prefix apps/playground audit --audit-level=high
 
 # Run Playground quality checks
-check: wasm-check wasm-smoke build audit
+check: wasm-check wasm-smoke test build audit
 
 # Build Playground
 build: wasm-build app-build
