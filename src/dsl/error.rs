@@ -100,4 +100,84 @@ impl ParseError {
             help,
         }))
     }
+
+    pub fn with_source_name(self, name: impl AsRef<str>) -> Self {
+        match self {
+            Self::NomError { src, span, kind } => Self::NomError {
+                src: NamedSource::new(name.as_ref(), src.inner().clone()),
+                span,
+                kind,
+            },
+            Self::YamlError { src, span, msg } => Self::YamlError {
+                src: NamedSource::new(name.as_ref(), src.inner().clone()),
+                span,
+                msg,
+            },
+            Self::ContextError(data) => {
+                let data = *data;
+                Self::ContextError(Box::new(ContextErrorData {
+                    src: NamedSource::new(name.as_ref(), data.src.inner().clone()),
+                    span: data.span,
+                    msg: data.msg,
+                }))
+            }
+            Self::ValidationError(data) => {
+                let data = *data;
+                Self::ValidationError(Box::new(ValidationErrorData {
+                    src: NamedSource::new(name.as_ref(), data.src.inner().clone()),
+                    span: data.span,
+                    msg: data.msg,
+                    help: data.help,
+                }))
+            }
+        }
+    }
+
+    pub fn with_source_name_if_default(self, name: impl AsRef<str>) -> Self {
+        if self.source_name() == "input" {
+            self.with_source_name(name)
+        } else {
+            self
+        }
+    }
+
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::NomError { src, .. } | Self::YamlError { src, .. } => src.name(),
+            Self::ContextError(data) => data.src.name(),
+            Self::ValidationError(data) => data.src.name(),
+        }
+    }
+
+    pub fn source_text(&self) -> &str {
+        match self {
+            Self::NomError { src, .. } | Self::YamlError { src, .. } => src.inner(),
+            Self::ContextError(data) => data.src.inner(),
+            Self::ValidationError(data) => data.src.inner(),
+        }
+    }
+
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Self::NomError { span, .. } | Self::YamlError { span, .. } => *span,
+            Self::ContextError(data) => data.span,
+            Self::ValidationError(data) => data.span,
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Self::NomError { kind, .. } => format!("Parse error: {}", kind),
+            Self::YamlError { msg, .. } => format!("YAML Frontmatter error: {}", msg),
+            Self::ContextError(data) => data.msg.clone(),
+            Self::ValidationError(data) => data.msg.clone(),
+        }
+    }
+
+    pub fn help(&self) -> Option<&str> {
+        match self {
+            Self::ValidationError(data) => data.help.as_deref(),
+            _ => None,
+        }
+    }
 }

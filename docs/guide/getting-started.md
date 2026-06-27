@@ -10,6 +10,8 @@ cargo build --release
 
 ## Basic Commands
 
+You can also try Loom in the browser with Playground from the site navigation.
+
 Start a MIDI synth first. See [Playback](/guide/playback) for the recommended
 FluidSynth setup.
 
@@ -32,6 +34,7 @@ loom save examples/starter/melody-simple.loom
 
 ## Next
 
+- Try Playground from the site navigation
 - Learn the [CLI](/guide/cli)
 - Learn [Studio](/guide/studio)
 - Set up [Playback](/guide/playback)

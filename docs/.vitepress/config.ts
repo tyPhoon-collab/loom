@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import { siteUrls } from "./site";
 
 export default defineConfig({
   title: "Loom",
@@ -9,7 +10,8 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Language", link: "/language/spec" },
       { text: "Reference", link: "/reference/config" },
-      { text: "Examples", link: "/examples/" }
+      { text: "Examples", link: "/examples/" },
+      { text: "Playground", link: siteUrls.playground }
     ],
     sidebar: [
       {
@@ -52,6 +54,12 @@ export default defineConfig({
           { text: "Starter", link: "/examples/starter" },
           { text: "Musical", link: "/examples/musical" },
           { text: "Live Coding", link: "/examples/live-coding" }
+        ]
+      },
+      {
+        text: "Tools",
+        items: [
+          { text: "Playground", link: siteUrls.playground }
         ]
       }
     ]

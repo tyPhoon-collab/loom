@@ -22,7 +22,6 @@
 
 body {
   margin: 0;
-  min-width: 960px;
   min-height: 100vh;
   background: var(--loom-bg);
 }
@@ -100,17 +99,58 @@ button {
   padding: 0.75rem;
 }
 
+.example-picker {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--loom-border);
+}
+
+.example-picker label {
+  color: var(--loom-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.example-picker select {
+  width: 100%;
+  min-width: 0;
+}
+
+.example-picker p {
+  margin: 0;
+  color: var(--loom-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .file-item {
-  justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
 }
 
 .file-item.active {
   border-color: var(--loom-brand);
   color: var(--loom-brand);
+}
+
+.file-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item em {
+  flex: 0 0 auto;
+  color: var(--loom-text-muted);
+  font-size: 0.72rem;
+  font-style: normal;
 }
 
 .toolbar {
@@ -123,19 +163,55 @@ button {
   background: var(--loom-bg);
 }
 
-textarea {
+.active-path {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--loom-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-host {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 1rem;
-  border: 0;
-  outline: 0;
-  resize: none;
-  color: var(--loom-text);
   background: var(--loom-bg);
+}
+
+.cm-editor {
+  height: 100%;
+  color: var(--loom-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.95rem;
   line-height: 1.55;
+}
+
+.cm-scroller {
+  font-family: inherit;
+}
+
+.cm-content {
+  padding: 1rem;
+}
+
+.cm-gutters {
+  border-right-color: var(--loom-border);
+  background: var(--loom-bg-soft);
+  color: var(--loom-text-muted);
+}
+
+.cm-focused {
+  outline: 0;
+}
+
+.cm-diagnostic-line {
+  background: rgba(213, 57, 62, 0.08);
+}
+
+.cm-diagnostic-mark {
+  border-bottom: 2px solid rgba(213, 57, 62, 0.8);
 }
 
 .status-pill {
@@ -150,6 +226,32 @@ textarea {
   font-size: 0.75rem;
 }
 
+.status-ok {
+  border-color: #2e8555;
+  color: #2e8555;
+}
+
+.status-err {
+  border-color: #d5393e;
+  color: #d5393e;
+}
+
+.status-dirty {
+  border-color: #a05a00;
+  color: #a05a00;
+}
+
+.status-playing {
+  border-color: var(--loom-brand);
+  color: var(--loom-brand);
+}
+
+.empty-state {
+  padding: 1rem;
+  color: var(--loom-text-muted);
+  font-size: 0.9rem;
+}
+
 .diagnostics-list {
   display: grid;
   gap: 0.5rem;
@@ -158,13 +260,15 @@ textarea {
   list-style: none;
 }
 
-.diagnostics-list li {
+.diagnostics-list button {
   display: grid;
   gap: 0.25rem;
+  width: 100%;
   padding: 0.75rem;
   border: 1px solid var(--loom-border);
   border-radius: var(--loom-radius);
   background: var(--loom-bg);
+  text-align: left;
 }
 
 .diagnostics-list strong {
@@ -175,4 +279,24 @@ textarea {
 .diagnostics-list span {
   color: var(--loom-text-muted);
   font-size: 0.9rem;
+}
+
+.diagnostics-list small {
+  color: var(--loom-text-muted);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 980px) {
+  .playground-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-panel,
+  .diagnostics-panel {
+    border: 0;
+  }
+
+  .editor-panel {
+    min-height: 70vh;
+  }
 }

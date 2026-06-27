@@ -1,4 +1,4 @@
-use super::{parse_line_entry, resolve_fragment_path, ParsedLine};
+use super::{parse_line_entry, resolve_fragment_path, ParsedLine, SourceResolver};
 use crate::dsl::error::ParseError;
 use crate::dsl::token::{FragmentBlock, Frontmatter, Song, TemplateLibrary, Track};
 use miette::Result;
@@ -30,15 +30,31 @@ pub(super) fn collect_fragment_calls(
     Ok(calls)
 }
 
-pub(super) fn parse_manifest(
-    source: &str,
-    input: &str,
-    metadata: Frontmatter,
-    libraries: HashMap<String, TemplateLibrary>,
-    manifest_calls: Vec<(String, String)>,
-    base_dir: Option<&Path>,
-    fragment_overrides: &HashMap<PathBuf, String>,
+pub(super) struct ManifestParseInput<'a, R: SourceResolver + ?Sized> {
+    pub source: &'a str,
+    pub input: &'a str,
+    pub metadata: Frontmatter,
+    pub libraries: HashMap<String, TemplateLibrary>,
+    pub manifest_calls: Vec<(String, String)>,
+    pub base_dir: Option<&'a Path>,
+    pub fragment_overrides: &'a HashMap<PathBuf, String>,
+    pub resolver: &'a R,
+}
+
+pub(super) fn parse_manifest<R: SourceResolver + ?Sized>(
+    parse_input: ManifestParseInput<'_, R>,
 ) -> Result<Song, ParseError> {
+    let ManifestParseInput {
+        source,
+        input,
+        metadata,
+        libraries,
+        manifest_calls,
+        base_dir,
+        fragment_overrides,
+        resolver,
+    } = parse_input;
+
     let mut builder = super::song_builder::SongBuilder::new(source);
 
     for line_str in input.lines() {
@@ -85,9 +101,10 @@ pub(super) fn parse_manifest(
 
     let mut fragment_blocks = Vec::new();
     for (name, call_line) in manifest_calls {
+        let call_line_source = find_source_line(source, &call_line);
         let mapped = metadata.fragments.get(&name).ok_or_else(|| {
             ParseError::from_validation(
-                &call_line,
+                call_line_source,
                 source,
                 format!("Missing fragment mapping for '{}'", name),
                 Some("Add `fragments:` frontmatter mapping for this fragment call.".to_string()),
@@ -95,31 +112,29 @@ pub(super) fn parse_manifest(
         })?;
         let base_dir = base_dir.ok_or_else(|| {
             ParseError::from_context(
-                &call_line,
+                call_line_source,
                 source,
                 "Fragment calls require parsing from a file path".to_string(),
             )
         })?;
         let path = resolve_fragment_path(base_dir, mapped)
-            .map_err(|msg| ParseError::from_validation(&call_line, source, msg, None))?;
+            .map_err(|msg| ParseError::from_validation(call_line_source, source, msg, None))?;
         let fragment_source = if let Some(source) = fragment_overrides.get(&path) {
             source.clone()
         } else {
-            std::fs::read_to_string(&path).map_err(|err| {
+            resolver.read_to_string(&path).map_err(|err| {
                 ParseError::from_validation(
-                    &call_line,
+                    call_line_source,
                     source,
                     format!("Cannot read fragment '{}': {}", mapped, err),
                     None,
                 )
             })?
         };
-        fragment_blocks.push(parse_fragment_block(
-            &name,
-            fragment_source,
-            &tracks,
-            libraries.clone(),
-        )?);
+        fragment_blocks.push(
+            parse_fragment_block(&name, fragment_source, &tracks, libraries.clone())
+                .map_err(|err| err.with_source_name_if_default(path.display().to_string()))?,
+        );
     }
 
     Ok(Song {
@@ -129,6 +144,13 @@ pub(super) fn parse_manifest(
         libraries,
         fragment_blocks,
     })
+}
+
+fn find_source_line<'a>(source: &'a str, needle: &str) -> &'a str {
+    source
+        .lines()
+        .find(|line| *line == needle)
+        .unwrap_or_else(|| source.lines().next().unwrap_or(source))
 }
 
 fn ensure_unique_manifest_channels(tracks: &[Track], source: &str) -> Result<(), ParseError> {

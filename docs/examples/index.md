@@ -2,6 +2,8 @@
 
 Examples live in the repository `examples/` directory.
 
+Open Playground from the site navigation to edit, play, share, import, and export small Loom workspaces in the browser.
+
 ## Categories
 
 - [Starter](/examples/starter): first-run examples

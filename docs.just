@@ -13,3 +13,7 @@ gen:
 # Verify generated docs are up-to-date (fails when docs/reference/errors.md needs regeneration)
 check:
     cargo xtask check-docs
+
+# Build docs site
+build:
+    pnpm -C docs docs:build

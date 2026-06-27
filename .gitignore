@@ -9,6 +9,7 @@ memo*.md
 /docs/.vitepress/dist
 /apps/playground/node_modules
 /apps/playground/dist
+/apps/playground/src/generated
 /.pnpm-store
 /.wrangler
 

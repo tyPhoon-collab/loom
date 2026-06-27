@@ -1,4 +1,6 @@
-use super::{parse_frontmatter, parse_line_entry, resolve_template_library_path, ParsedLine};
+use super::{
+    parse_frontmatter, parse_line_entry, resolve_template_library_path, ParsedLine, SourceResolver,
+};
 use crate::dsl::error::ParseError;
 use crate::dsl::token::{Frontmatter, TemplateLibrary};
 use miette::Result;
@@ -9,6 +11,7 @@ pub(super) fn load_template_libraries(
     mappings: &HashMap<String, String>,
     base_dir: Option<&Path>,
     source: &str,
+    resolver: &(impl SourceResolver + ?Sized),
 ) -> Result<HashMap<String, TemplateLibrary>, ParseError> {
     if mappings.is_empty() {
         return Ok(HashMap::new());
@@ -21,7 +24,7 @@ pub(super) fn load_template_libraries(
         )
     })?;
     let mut stack = Vec::new();
-    load_template_libraries_from_base(mappings, base_dir, source, &mut stack)
+    load_template_libraries_from_base(mappings, base_dir, source, &mut stack, resolver)
 }
 
 fn load_template_libraries_from_base(
@@ -29,6 +32,7 @@ fn load_template_libraries_from_base(
     base_dir: &Path,
     source: &str,
     stack: &mut Vec<PathBuf>,
+    resolver: &(impl SourceResolver + ?Sized),
 ) -> Result<HashMap<String, TemplateLibrary>, ParseError> {
     let mut out = HashMap::new();
     for (alias, mapped) in mappings {
@@ -38,7 +42,7 @@ fn load_template_libraries_from_base(
         })?;
         out.insert(
             alias.clone(),
-            load_template_library(&path, mapped, source, stack)?,
+            load_template_library(&path, mapped, source, stack, resolver)?,
         );
     }
     Ok(out)
@@ -49,8 +53,9 @@ fn load_template_library(
     mapped: &str,
     parent_source: &str,
     stack: &mut Vec<PathBuf>,
+    resolver: &(impl SourceResolver + ?Sized),
 ) -> Result<TemplateLibrary, ParseError> {
-    let normalized = normalize_load_path(path);
+    let normalized = resolver.normalize_load_path(path);
     if stack.contains(&normalized) {
         let trace = stack
             .iter()
@@ -66,7 +71,7 @@ fn load_template_library(
         ));
     }
 
-    let source = std::fs::read_to_string(path).map_err(|err| {
+    let source = resolver.read_to_string(path).map_err(|err| {
         ParseError::from_validation(
             parent_source.lines().next().unwrap_or(parent_source),
             parent_source,
@@ -76,13 +81,10 @@ fn load_template_library(
     })?;
 
     stack.push(normalized);
-    let result = parse_template_library_source(path, &source, stack);
+    let result = parse_template_library_source(path, &source, stack, resolver)
+        .map_err(|err| err.with_source_name_if_default(path.display().to_string()));
     stack.pop();
     result
-}
-
-fn normalize_load_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn validate_template_library_alias(alias: &str, source: &str) -> Result<(), ParseError> {
@@ -111,6 +113,7 @@ fn parse_template_library_source(
     path: &Path,
     source: &str,
     stack: &mut Vec<PathBuf>,
+    resolver: &(impl SourceResolver + ?Sized),
 ) -> Result<TemplateLibrary, ParseError> {
     let input = source;
     let (body, metadata) = if input.starts_with("---") {
@@ -132,7 +135,7 @@ fn parse_template_library_source(
 
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let libraries =
-        load_template_libraries_from_base(&metadata.templates, base_dir, source, stack)?;
+        load_template_libraries_from_base(&metadata.templates, base_dir, source, stack, resolver)?;
 
     let mut builder = super::song_builder::SongBuilder::new(source);
     for line_str in body.lines() {

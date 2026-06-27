@@ -7,7 +7,7 @@ default:
     @just --list --list-submodules
 
 # Run the full CI check
-ci: dev::ci
+ci: dev::ci docs::check playground::check docs::build
 
 # Format a loom file
 fmt-loom file *args:

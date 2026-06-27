@@ -12,7 +12,41 @@ use miette::{IntoDiagnostic, Result};
 use nom_parsers::{parse_frontmatter, validate_swing_config};
 use song_builder::SongBuilder;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+pub(super) trait SourceResolver {
+    fn read_to_string(&self, path: &Path) -> std::result::Result<String, String>;
+
+    fn normalize_load_path(&self, path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+}
+
+struct FsSourceResolver;
+
+impl SourceResolver for FsSourceResolver {
+    fn read_to_string(&self, path: &Path) -> std::result::Result<String, String> {
+        std::fs::read_to_string(path).map_err(|err| err.to_string())
+    }
+}
+
+struct VirtualSourceResolver {
+    files: HashMap<PathBuf, String>,
+}
+
+impl SourceResolver for VirtualSourceResolver {
+    fn read_to_string(&self, path: &Path) -> std::result::Result<String, String> {
+        let normalized = normalize_virtual_path(path).map_err(|err| err.to_string())?;
+        self.files
+            .get(&normalized)
+            .cloned()
+            .ok_or_else(|| "file not found in workspace".to_string())
+    }
+
+    fn normalize_load_path(&self, path: &Path) -> PathBuf {
+        normalize_virtual_path(path).unwrap_or_else(|_| path.to_path_buf())
+    }
+}
 
 pub fn parse_song(source: String) -> Result<Song, ParseError> {
     parse_song_internal(source, None)
@@ -27,6 +61,54 @@ pub fn parse_song_from_path(path: &Path) -> Result<Song> {
 
 pub fn parse_song_with_base_dir(source: String, base_dir: &Path) -> Result<Song, ParseError> {
     parse_song_internal_with_fragment_overrides(source, Some(base_dir), &HashMap::new())
+}
+
+pub fn parse_song_from_virtual_workspace(
+    entry_path: &str,
+    active_path: &str,
+    files: &HashMap<String, String>,
+) -> Result<Song> {
+    let entry_path =
+        normalize_virtual_path(Path::new(entry_path)).map_err(|err| miette::miette!(err))?;
+    let active_path =
+        normalize_virtual_path(Path::new(active_path)).map_err(|err| miette::miette!(err))?;
+    let mut normalized_files = HashMap::new();
+    for (path, source) in files {
+        let path = normalize_virtual_path(Path::new(path)).map_err(|err| miette::miette!(err))?;
+        if normalized_files
+            .insert(path.clone(), source.clone())
+            .is_some()
+        {
+            return Err(miette::miette!(
+                "Duplicate workspace file path '{}'",
+                path.display()
+            ));
+        }
+    }
+    if !normalized_files.contains_key(&entry_path) {
+        return Err(miette::miette!(
+            "Workspace entry path '{}' is missing",
+            entry_path.display()
+        ));
+    }
+    if !normalized_files.contains_key(&active_path) {
+        return Err(miette::miette!(
+            "Workspace active path '{}' is missing",
+            active_path.display()
+        ));
+    }
+
+    let source = normalized_files
+        .get(&entry_path)
+        .expect("entry path existence was validated")
+        .clone();
+    let resolver = VirtualSourceResolver {
+        files: normalized_files,
+    };
+    let base_dir = entry_path.parent();
+    parse_song_internal_with_resolver(source, base_dir, &HashMap::new(), &resolver)
+        .map_err(|err| err.with_source_name_if_default(entry_path.display().to_string()))
+        .map_err(Into::into)
 }
 
 pub fn parse_song_from_path_with_fragment_overrides(
@@ -47,6 +129,16 @@ fn parse_song_internal_with_fragment_overrides(
     source: String,
     base_dir: Option<&Path>,
     fragment_overrides: &HashMap<PathBuf, String>,
+) -> Result<Song, ParseError> {
+    let resolver = FsSourceResolver;
+    parse_song_internal_with_resolver(source, base_dir, fragment_overrides, &resolver)
+}
+
+fn parse_song_internal_with_resolver<R: SourceResolver + ?Sized>(
+    source: String,
+    base_dir: Option<&Path>,
+    fragment_overrides: &HashMap<PathBuf, String>,
+    resolver: &R,
 ) -> Result<Song, ParseError> {
     let input = source.as_str();
 
@@ -133,8 +225,12 @@ fn parse_song_internal_with_fragment_overrides(
         }
     }
 
-    let libraries =
-        template_library::load_template_libraries(&metadata.templates, base_dir, &source)?;
+    let libraries = template_library::load_template_libraries(
+        &metadata.templates,
+        base_dir,
+        &source,
+        resolver,
+    )?;
 
     let manifest_calls = manifest::collect_fragment_calls(input, &source)?;
 
@@ -225,16 +321,47 @@ fn parse_song_internal_with_fragment_overrides(
             fragment_blocks: Vec::new(),
         })
     } else {
-        manifest::parse_manifest(
-            &source,
+        manifest::parse_manifest(manifest::ManifestParseInput {
+            source: &source,
             input,
             metadata,
             libraries,
             manifest_calls,
             base_dir,
             fragment_overrides,
-        )
+            resolver,
+        })
     }
+}
+
+fn normalize_virtual_path(path: &Path) -> std::result::Result<PathBuf, &'static str> {
+    if path.as_os_str().is_empty() {
+        return Err("Workspace paths must not be empty");
+    }
+
+    let raw = path.to_string_lossy();
+    if raw.contains('\\') {
+        return Err("Workspace paths must use `/` separators");
+    }
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => normalized.push(part),
+            Component::CurDir => return Err("Workspace paths must not contain `.` components"),
+            Component::ParentDir => {
+                return Err("Workspace paths must not contain parent traversal")
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err("Workspace paths must be relative")
+            }
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        return Err("Workspace paths must not be empty");
+    }
+    Ok(normalized)
 }
 
 fn resolve_fragment_path(base_dir: &Path, mapped: &str) -> std::result::Result<PathBuf, String> {
