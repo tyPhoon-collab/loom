@@ -44,6 +44,8 @@ button {
 }
 
 .workspace-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-right: 1px solid var(--loom-border);
 }
 
@@ -93,12 +95,6 @@ button {
   text-transform: uppercase;
 }
 
-.file-list {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.75rem;
-}
-
 .example-picker {
   display: grid;
   gap: 0.4rem;
@@ -122,6 +118,44 @@ button {
   color: var(--loom-text-muted);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.file-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.75rem 0;
+  color: var(--loom-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.section-heading button {
+  text-transform: none;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.file-list {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.75rem;
 }
 
 .file-item {
@@ -153,6 +187,24 @@ button {
   font-style: normal;
 }
 
+.file-actions,
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--loom-border);
+}
+
+.file-actions button,
+.workspace-actions button {
+  flex: 1 1 auto;
+}
+
+.workspace-actions {
+  background: var(--loom-bg);
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -161,6 +213,17 @@ button {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--loom-border);
   background: var(--loom-bg);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-group + .toolbar-group {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--loom-border);
 }
 
 .active-path {
@@ -294,6 +357,22 @@ button {
   .workspace-panel,
   .diagnostics-panel {
     border: 0;
+  }
+
+  .workspace-panel {
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .file-list {
+    max-height: 12rem;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .active-path {
+    margin-left: 0;
   }
 
   .editor-panel {

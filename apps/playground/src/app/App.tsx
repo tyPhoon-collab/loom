@@ -1,3 +1,4 @@
+import type { RefObject } from "preact";
 import { useRef } from "preact/hooks";
 import { examples } from "../data/examples";
 import { Editor } from "./Editor";
@@ -17,43 +18,85 @@ type Props = {
 
 export function App({ model, dispatch }: Props) {
   const zipInput = useRef<HTMLInputElement>(null);
-  const example = currentExample(model);
 
   return (
     <main class="playground-shell">
-      <aside class="workspace-panel" aria-label="Workspace files">
-        <header class="panel-header">
-          <div>
-            <p class="eyebrow">Workspace</p>
-            <h1>Loom Playground</h1>
-          </div>
-          <button type="button" class="small" onClick={() => dispatch({ type: "new-file-requested" })}>
-            New
-          </button>
-        </header>
+      <WorkspacePanel model={model} dispatch={dispatch} zipInput={zipInput} />
 
-        <div class="example-picker">
-          <label for="example-select">Example</label>
-          <select
-            id="example-select"
-            value={model.currentExampleId}
-            onChange={(event) => {
-              dispatch({
-                type: "load-example-requested",
-                exampleId: event.currentTarget.value,
-              });
-            }}
-          >
-            {!example && <option value="custom">Custom workspace</option>}
-            {examples.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.name}
-              </option>
-            ))}
-          </select>
-          <p>{example?.description ?? "Custom workspace"}</p>
+      <section class="editor-panel" aria-label="Loom source editor">
+        <EditorToolbar model={model} dispatch={dispatch} />
+        <Editor
+          file={currentFile(model)}
+          diagnostics={model.diagnostics}
+          pendingCursor={model.pendingCursor}
+          dispatch={dispatch}
+        />
+      </section>
+
+      <DiagnosticsPanel model={model} dispatch={dispatch} />
+    </main>
+  );
+}
+
+function WorkspacePanel({
+  model,
+  dispatch,
+  zipInput,
+}: {
+  model: Model;
+  dispatch: Dispatch;
+  zipInput: RefObject<HTMLInputElement>;
+}) {
+  const example = currentExample(model);
+
+  return (
+    <aside class="workspace-panel" aria-label="Workspace files">
+      <header class="panel-header">
+        <div>
+          <p class="eyebrow">Workspace</p>
+          <h1>Loom Playground</h1>
         </div>
+      </header>
 
+      <div class="example-picker">
+        <label for="example-select">Example</label>
+        <select
+          id="example-select"
+          value={model.currentExampleId}
+          onChange={(event) => {
+            dispatch({
+              type: "load-example-requested",
+              exampleId: event.currentTarget.value,
+            });
+          }}
+        >
+          {!example && <option value="custom">Custom workspace</option>}
+          {examples.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.name}
+            </option>
+          ))}
+        </select>
+        <p>{example?.description ?? "Custom workspace"}</p>
+      </div>
+
+      <section class="file-section" aria-label="Workspace file management">
+        <div class="section-heading">
+          <span>Files</span>
+          <div class="section-actions">
+            <button type="button" class="small" onClick={() => dispatch({ type: "new-file-requested" })}>
+              New File
+            </button>
+            <button
+              type="button"
+              class="small"
+              disabled={model.activePath !== model.entryPath}
+              onClick={() => dispatch({ type: "fragment-requested" })}
+            >
+              New Fragment
+            </button>
+          </div>
+        </div>
         <nav class="file-list" aria-label="Files">
           {model.files.map((file) => (
             <button
@@ -67,41 +110,7 @@ export function App({ model, dispatch }: Props) {
             </button>
           ))}
         </nav>
-      </aside>
-
-      <section class="editor-panel" aria-label="Loom source editor">
-        <div class="toolbar" role="toolbar" aria-label="Playground actions">
-          <button type="button" disabled={playDisabled(model)} onClick={() => dispatch({ type: "play-requested" })}>
-            Play
-          </button>
-          <button
-            type="button"
-            disabled={!model.isPlaying && !model.isPlaybackLoading}
-            onClick={() => dispatch({ type: "stop-requested" })}
-          >
-            Stop
-          </button>
-          <button
-            type="button"
-            disabled={model.compileStatus === "loading"}
-            onClick={() => dispatch({ type: "compile-requested", reason: "manual" })}
-          >
-            Compile
-          </button>
-          <button
-            type="button"
-            disabled={model.compileStatus === "loading"}
-            onClick={() => dispatch({ type: "format-requested" })}
-          >
-            Format
-          </button>
-          <button
-            type="button"
-            disabled={model.activePath !== model.entryPath}
-            onClick={() => dispatch({ type: "fragment-requested" })}
-          >
-            New Fragment
-          </button>
+        <div class="file-actions" role="toolbar" aria-label="File actions">
           <button
             type="button"
             disabled={model.activePath === model.entryPath}
@@ -115,20 +124,16 @@ export function App({ model, dispatch }: Props) {
           <button type="button" disabled={model.files.length <= 1} onClick={() => dispatch({ type: "delete-requested" })}>
             Delete
           </button>
-          <button type="button" onClick={() => dispatch({ type: "share-requested" })}>
-            Share
-          </button>
-          <button type="button" onClick={() => dispatch({ type: "export-zip-requested" })}>
-            Export ZIP
-          </button>
-          <button type="button" onClick={() => zipInput.current?.click()}>
-            Import ZIP
-          </button>
-          <span class="active-path">
-            {model.activePath}
-            {model.dirty ? " *" : ""}
-          </span>
         </div>
+      </section>
+
+      <div class="workspace-actions" role="toolbar" aria-label="Workspace actions">
+        <button type="button" onClick={() => dispatch({ type: "export-zip-requested" })}>
+          Export ZIP
+        </button>
+        <button type="button" onClick={() => zipInput.current?.click()}>
+          Import ZIP
+        </button>
         <input
           ref={zipInput}
           type="file"
@@ -142,25 +147,67 @@ export function App({ model, dispatch }: Props) {
             }
           }}
         />
-        <Editor
-          file={currentFile(model)}
-          diagnostics={model.diagnostics}
-          pendingCursor={model.pendingCursor}
-          dispatch={dispatch}
-        />
-      </section>
+      </div>
+    </aside>
+  );
+}
 
-      <aside class="diagnostics-panel" aria-label="Diagnostics">
-        <header class="panel-header compact">
-          <div>
-            <p class="eyebrow">Compile</p>
-            <h2>Diagnostics</h2>
-          </div>
-          <span class={`status-pill ${statusClass(model)}`}>{statusLabel(model)}</span>
-        </header>
-        <Diagnostics diagnostics={model.diagnostics} eventCount={model.eventCount} compileStatus={model.compileStatus} dispatch={dispatch} />
-      </aside>
-    </main>
+function EditorToolbar({ model, dispatch }: Props) {
+  return (
+    <div class="toolbar" role="toolbar" aria-label="Editor and playback actions">
+      <div class="toolbar-group" aria-label="Playback actions">
+        <button type="button" disabled={playDisabled(model)} onClick={() => dispatch({ type: "play-requested" })}>
+          Play
+        </button>
+        <button
+          type="button"
+          disabled={!model.isPlaying && !model.isPlaybackLoading}
+          onClick={() => dispatch({ type: "stop-requested" })}
+        >
+          Stop
+        </button>
+      </div>
+
+      <div class="toolbar-group" aria-label="Source actions">
+        <button
+          type="button"
+          disabled={model.compileStatus === "loading"}
+          onClick={() => dispatch({ type: "compile-requested", reason: "manual" })}
+        >
+          Compile
+        </button>
+        <button
+          type="button"
+          disabled={model.compileStatus === "loading"}
+          onClick={() => dispatch({ type: "format-requested" })}
+        >
+          Format
+        </button>
+      </div>
+
+      <span class="active-path">
+        {model.activePath}
+        {model.dirty ? " *" : ""}
+      </span>
+      <button type="button" onClick={() => dispatch({ type: "share-requested" })}>
+        Share
+      </button>
+    </div>
+  );
+}
+
+function DiagnosticsPanel({ model, dispatch }: Props) {
+  return (
+    <aside class="diagnostics-panel" aria-label="Diagnostics">
+      <header class="panel-header compact">
+        <div>
+          <p class="eyebrow">Compile</p>
+          <h2>Diagnostics</h2>
+        </div>
+        <span class={`status-pill ${statusClass(model)}`}>{statusLabel(model)}</span>
+      </header>
+      <Diagnostics diagnostics={model.diagnostics} eventCount={model.eventCount} compileStatus={model.compileStatus} dispatch={dispatch} />
+    </aside>
   );
 }
 
