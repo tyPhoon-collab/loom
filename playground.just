@@ -18,6 +18,10 @@ app-build:
 test:
     npm --prefix apps/playground run test
 
+# Generate GM-lite browser preview samples from a local VCSL checkout
+gm-lite-sounds vcsl_root:
+    node apps/playground/scripts/build-gm-lite-sounds.mjs {{ quote(vcsl_root) }}
+
 # Check Rust wasm API
 wasm-check:
     cargo check --lib --no-default-features --features wasm --target wasm32-unknown-unknown

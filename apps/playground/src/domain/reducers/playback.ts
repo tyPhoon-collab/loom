@@ -20,23 +20,27 @@ export function playRequested(model: Model): UpdateResult {
     return [fail(model, "Nothing to play: no note events were compiled."), []];
   }
 
-  return [model, [playCommand(model.compiledEvents, playbackOptions(model))]];
+  return [{ ...model, isPlaybackLoading: true }, [playCommand(model.compiledEvents, playbackOptions(model))]];
+}
+
+export function playbackLoading(model: Model): UpdateResult {
+  return [{ ...model, isPlaybackLoading: true, playbackPosition: undefined }, []];
 }
 
 export function playbackStarted(model: Model): UpdateResult {
-  return [{ ...model, isPlaying: true }, []];
+  return [{ ...model, isPlaying: true, isPlaybackLoading: false }, []];
 }
 
 export function playbackEnded(model: Model): UpdateResult {
-  return [{ ...model, isPlaying: false, playbackPosition: undefined }, []];
+  return [{ ...model, isPlaying: false, isPlaybackLoading: false, playbackPosition: undefined }, []];
 }
 
 export function playbackFailed(model: Model, message: string): UpdateResult {
-  return [fail({ ...model, isPlaying: false, playbackPosition: undefined }, message), []];
+  return [fail({ ...model, isPlaying: false, isPlaybackLoading: false, playbackPosition: undefined }, message), []];
 }
 
 export function stopRequested(model: Model): UpdateResult {
-  return [{ ...model, isPlaying: false, playbackPosition: undefined }, [stopPlaybackCommand]];
+  return [{ ...model, isPlaying: false, isPlaybackLoading: false, playbackPosition: undefined }, [stopPlaybackCommand]];
 }
 
 export function playbackTick(model: Model, position: PlaybackPosition | undefined): UpdateResult {

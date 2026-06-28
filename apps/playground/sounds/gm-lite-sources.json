@@ -1,0 +1,82 @@
+{
+  "source": {
+    "name": "VCSL",
+    "version": "1.2.2 RC",
+    "homepage": "https://github.com/sgossner/VCSL",
+    "license": "CC0 1.0 Universal"
+  },
+  "instruments": {
+    "piano": {
+      "output": "instruments/piano-c4.wav",
+      "source": "Chordophones/Zithers/Upright Piano, Yamaha/Sustains/Upright1_Sus_C4_vl2_rr1.wav",
+      "rootNote": 60,
+      "mode": "pitched"
+    },
+    "bass": {
+      "output": "instruments/bass-c2.wav",
+      "source": "Electrophones/TX81Z/FM Piano/FMPiano_C2_vl2.wav",
+      "rootNote": 36,
+      "mode": "pitched"
+    },
+    "pad": {
+      "output": "instruments/pad-c4.wav",
+      "source": "Aerophones/Edge-blown Aerophones/Renaissance Organ/8'/RenOrgan_8foot_Room_C4_rr1.wav",
+      "rootNote": 60,
+      "mode": "pitched"
+    },
+    "lead": {
+      "output": "instruments/lead-c5.wav",
+      "source": "Aerophones/Edge-blown Aerophones/Baroque Alto Recorder/Sustain/AltRecorder_Sus_C5_rr1_Main.wav",
+      "rootNote": 72,
+      "mode": "pitched"
+    },
+    "pluck": {
+      "output": "instruments/pluck-c3.wav",
+      "source": "Chordophones/Composite Chordophones/Concert Harp/KSHarp_C3_mf3.wav",
+      "rootNote": 48,
+      "mode": "pitched"
+    }
+  },
+  "drums": {
+    "kick": {
+      "output": "drums/kick.wav",
+      "source": "Membranophones/Struck Membranophones/Bass Drum 1/BDrumNew_hit_v5_rr1_Sum.wav",
+      "mode": "one-shot"
+    },
+    "snare": {
+      "output": "drums/snare.wav",
+      "source": "Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v5_rr1_Mid.wav",
+      "mode": "one-shot"
+    },
+    "closed-hat": {
+      "output": "drums/closed-hat.wav",
+      "source": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav",
+      "mode": "one-shot"
+    },
+    "open-hat": {
+      "output": "drums/open-hat.wav",
+      "source": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav",
+      "mode": "one-shot"
+    },
+    "low-tom": {
+      "output": "drums/low-tom.wav",
+      "source": "Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v3_rr1_Mid.wav",
+      "mode": "one-shot"
+    },
+    "high-tom": {
+      "output": "drums/high-tom.wav",
+      "source": "Membranophones/Struck Membranophones/Tom 1/Stick/TomH_HitS_v3_rr1_Mid.wav",
+      "mode": "one-shot"
+    },
+    "crash": {
+      "output": "drums/crash.wav",
+      "source": "Idiophones/Struck Idiophones/Clash Cymbals 1/cymbal_crash1_mf1.wav",
+      "mode": "one-shot"
+    },
+    "ride": {
+      "output": "drums/ride.wav",
+      "source": "Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_stick_mp1.wav",
+      "mode": "one-shot"
+    }
+  }
+}

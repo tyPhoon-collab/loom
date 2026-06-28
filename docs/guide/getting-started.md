@@ -11,6 +11,8 @@ cargo build --release
 ## Basic Commands
 
 You can also try Loom in the browser with Playground from the site navigation.
+Playground uses a GM-lite browser preview for quick sound without local MIDI
+setup; it is not a complete General MIDI synth.
 
 Start a MIDI synth first. See [Playback](/guide/playback) for the recommended
 FluidSynth setup.

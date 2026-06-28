@@ -26,6 +26,7 @@ import {
 import {
   playbackEnded,
   playbackFailed,
+  playbackLoading,
   playbackStarted,
   playbackTick,
   playRequested,
@@ -87,6 +88,7 @@ export function initModel(location: Pick<Location, "hash" | "search">): UpdateRe
     compiledEvents: [],
     metadata: undefined,
     isPlaying: false,
+    isPlaybackLoading: false,
     playbackPosition: undefined,
     currentExampleId: restoredWorkspace ? "custom" : initialExample.id,
     dirty: false,
@@ -155,6 +157,8 @@ export function update(model: Model, message: Message): UpdateResult {
       return workspaceError(model, message.message);
     case "play-requested":
       return playRequested(model);
+    case "playback-loading":
+      return playbackLoading(model);
     case "playback-started":
       return playbackStarted(model);
     case "playback-ended":

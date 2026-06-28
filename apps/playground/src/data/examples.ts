@@ -124,6 +124,80 @@ hh    | ^ ^ ^ ^ |
     ],
   },
   {
+    id: "gm-lite-sounds",
+    name: "GM-lite Sounds",
+    description: "A Playground-only preview for built-in browser instruments and drums.",
+    entryPath: "song.loom",
+    activePath: "song.loom",
+    files: [
+      {
+        path: "song.loom",
+        content: `---
+bpm: 96
+signature: 4/4
+unit: bar
+title: "GM-lite Sound Preview"
+---
+
+# Piano: 1
+## pc 0
+## volume 96
+## pan 48
+
+C4,E4,G4 | ^ . . . | . . . . | . . . . | . . . . |
+E4,G4,C5 | . ^ . . | . . . . | . . . . | . . . . |
+G4,C5,E5 | . . ^ . | . . . . | . . . . | . . . . |
+
+# Pluck: 2
+## pc 24
+## volume 92
+## pan 80
+
+C4 | . . . . | ^ . ^ . | . . . . | . . . . |
+G4 | . . . . | . ^ . ^ | . . . . | . . . . |
+
+# Bass: 3
+## pc 34
+## volume 110
+## pan 56
+
+C2 | . . . . | . . . . | ^ . . . | . . . . |
+G2 | . . . . | . . . . | . . ^ . | . . . . |
+
+# Pad: 4
+## pc 48
+## volume 86
+## pan 72
+
+C3,E3,G3 | . . . . | . . . . | . . . . | ^ . . . |
+F3,A3,C4 | . . . . | . . . . | . . . . | . . ^ . |
+
+# Lead: 5
+## pc 81
+## volume 92
+## pan 88
+
+C5 | . . . . | . . . . | . . . . | . ^ . . |
+D5 | . . . . | . . . . | . . . . | . . ^ . |
+E5 | . . . . | . . . . | . . . . | . . . ^ |
+
+# Drums: 10
+## volume 96
+
+kick  | ^ . . . | . . . . | ^ . . . | ^ . . . |
+snare | . . ^ . | . . . . | . . ^ . | . . ^ . |
+hh    | ^ ^ ^ ^ | . . . . | ^ ^ ^ ^ | . . . . |
+oh    | . . . ^ | . . . . | . . . ^ | . . . . |
+lt    | . . . . | . . . . | . . . . | ^ . . . |
+mt    | . . . . | . . . . | . . . . | . ^ . . |
+ht    | . . . . | . . . . | . . . . | . . ^ . |
+crash | ^ . . . | . . . . | . . . . | ^ . . . |
+ride  | . . . . | . . . . | . ^ . ^ | . . . . |
+`,
+      },
+    ],
+  },
+  {
     id: "template-library",
     name: "Template Library",
     description: "A song that calls templates from library files.",

@@ -1,7 +1,12 @@
 # Playback
 
-Loom does not include a synthesizer. It sends MIDI events to an output port, and
-another app turns those MIDI events into sound.
+Loom's CLI and Studio do not include a synthesizer. They send MIDI events to an
+output port, and another app turns those MIDI events into sound.
+
+Playground is different: it uses a small GM-lite browser preview built on
+WebAudio samples. That preview is useful for quick browser feedback, but it is
+not a complete General MIDI sound source. Use MIDI playback or MIDI export when
+you need accurate playback through your own synth.
 
 The recommended local setup is FluidSynth with a General MIDI SoundFont.
 

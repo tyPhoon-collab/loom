@@ -38,6 +38,7 @@ export function loadExample(model: Model, exampleId: string): UpdateResult {
     metadata: undefined,
     compileStatus: "ready",
     isPlaying: false,
+    isPlaybackLoading: false,
     playbackPosition: undefined,
   };
   return [
@@ -63,6 +64,7 @@ export function applyImportedWorkspace(model: Model, workspace: ZipWorkspace): U
     metadata: undefined,
     compileStatus: "ready",
     isPlaying: false,
+    isPlaybackLoading: false,
     playbackPosition: undefined,
   };
   return [

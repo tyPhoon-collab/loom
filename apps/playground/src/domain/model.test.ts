@@ -88,6 +88,26 @@ describe("playground model", () => {
       { type: "compile-finished", reason: "play" },
     ]);
   });
+
+  test("play request enters sample loading state for fresh output", () => {
+    const [next, commands] = update(compileOk(initialModel()), { type: "play-requested" });
+
+    expect(next.isPlaybackLoading).toBe(true);
+    expect(next.isPlaying).toBe(false);
+    expect(commands).toHaveLength(1);
+  });
+
+  test("playback failure clears sample loading state", () => {
+    const loading = {
+      ...compileOk(initialModel()),
+      isPlaybackLoading: true,
+    };
+    const [next] = update(loading, { type: "playback-failed", message: "decode failed" });
+
+    expect(next.isPlaybackLoading).toBe(false);
+    expect(next.isPlaying).toBe(false);
+    expect(next.diagnostics[0]?.message).toBe("decode failed");
+  });
 });
 
 async function dispatchedBy(command: (effects: Effects, dispatch: (message: Message) => void) => void | Promise<void>) {

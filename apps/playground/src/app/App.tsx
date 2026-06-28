@@ -74,7 +74,11 @@ export function App({ model, dispatch }: Props) {
           <button type="button" disabled={playDisabled(model)} onClick={() => dispatch({ type: "play-requested" })}>
             Play
           </button>
-          <button type="button" disabled={!model.isPlaying} onClick={() => dispatch({ type: "stop-requested" })}>
+          <button
+            type="button"
+            disabled={!model.isPlaying && !model.isPlaybackLoading}
+            onClick={() => dispatch({ type: "stop-requested" })}
+          >
             Stop
           </button>
           <button
@@ -195,10 +199,14 @@ function Diagnostics({
 }
 
 function playDisabled(model: Model): boolean {
-  return model.compileStatus === "loading" || model.compileStatus === "err" || model.isPlaying;
+  return model.compileStatus === "loading" || model.compileStatus === "err" || model.isPlaying || model.isPlaybackLoading;
 }
 
 function statusLabel(model: Model): string {
+  if (model.isPlaybackLoading) {
+    return "Loading samples";
+  }
+
   if (model.isPlaying) {
     const position = model.playbackPosition;
     if (!position) {
@@ -224,7 +232,7 @@ function statusLabel(model: Model): string {
 }
 
 function statusClass(model: Model): string {
-  if (model.isPlaying) {
+  if (model.isPlaying || model.isPlaybackLoading) {
     return "status-playing";
   }
 

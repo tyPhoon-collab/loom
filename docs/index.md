@@ -2,6 +2,10 @@
 
 Loom is a text-first DSL for composing and playing MIDI.
 
+Try Playground from the site navigation for a browser editor with GM-lite sample
+preview, or use the CLI and Studio with your own MIDI synth for accurate
+playback.
+
 ## Start Here
 
 - [Getting Started](/guide/getting-started)

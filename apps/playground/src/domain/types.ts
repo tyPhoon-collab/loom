@@ -60,6 +60,7 @@ export type Model = {
   compiledEvents: MidiEvent[];
   metadata?: PlaygroundMetadata;
   isPlaying: boolean;
+  isPlaybackLoading: boolean;
   playbackPosition?: PlaybackPosition;
   currentExampleId: string;
   dirty: boolean;
@@ -110,6 +111,7 @@ type WorkspaceMessage =
 
 type PlaybackMessage =
   | { type: "play-requested" }
+  | { type: "playback-loading" }
   | { type: "playback-started" }
   | { type: "playback-ended" }
   | { type: "playback-failed"; message: string }

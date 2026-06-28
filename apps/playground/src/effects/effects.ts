@@ -94,8 +94,8 @@ async function play(
   options: PlaybackOptions,
   dispatch: Dispatch,
 ): Promise<void> {
-  const notes = events.flatMap((event) => ("Note" in event ? [event.Note] : []));
-  await playNotePreview(notes, options, () => {
+  dispatch({ type: "playback-loading" });
+  await playNotePreview(events, options, () => {
     stopPlaybackStatusTimer();
     dispatch({ type: "playback-ended" });
   });

@@ -11,6 +11,7 @@ export function markDirty(model: Model): Model {
     metadata: undefined,
     dirty: true,
     isPlaying: false,
+    isPlaybackLoading: false,
     playbackPosition: undefined,
   };
 }

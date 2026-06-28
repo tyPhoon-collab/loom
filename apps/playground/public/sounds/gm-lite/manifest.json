@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "instruments": {
+    "piano": {
+      "path": "instruments/piano-c4.wav",
+      "mode": "pitched",
+      "rootNote": 60
+    },
+    "bass": {
+      "path": "instruments/bass-c2.wav",
+      "mode": "pitched",
+      "rootNote": 36
+    },
+    "pad": {
+      "path": "instruments/pad-c4.wav",
+      "mode": "pitched",
+      "rootNote": 60
+    },
+    "lead": {
+      "path": "instruments/lead-c5.wav",
+      "mode": "pitched",
+      "rootNote": 72
+    },
+    "pluck": {
+      "path": "instruments/pluck-c3.wav",
+      "mode": "pitched",
+      "rootNote": 48
+    }
+  },
+  "drums": {
+    "kick": {
+      "path": "drums/kick.wav",
+      "mode": "one-shot"
+    },
+    "snare": {
+      "path": "drums/snare.wav",
+      "mode": "one-shot"
+    },
+    "closed-hat": {
+      "path": "drums/closed-hat.wav",
+      "mode": "one-shot"
+    },
+    "open-hat": {
+      "path": "drums/open-hat.wav",
+      "mode": "one-shot"
+    },
+    "low-tom": {
+      "path": "drums/low-tom.wav",
+      "mode": "one-shot"
+    },
+    "high-tom": {
+      "path": "drums/high-tom.wav",
+      "mode": "one-shot"
+    },
+    "crash": {
+      "path": "drums/crash.wav",
+      "mode": "one-shot"
+    },
+    "ride": {
+      "path": "drums/ride.wav",
+      "mode": "one-shot"
+    }
+  }
+}

@@ -21,7 +21,7 @@ export function compilerLoadFailed(model: Model, message: string): UpdateResult 
 
 export function compileRequested(model: Model, reason: CompileReason): UpdateResult {
   return [
-    { ...model, isPlaying: false, playbackPosition: undefined },
+    { ...model, isPlaying: false, isPlaybackLoading: false, playbackPosition: undefined },
     [
       stopPlaybackCommand,
       compileCommand(reason, currentWorkspace(model)),
