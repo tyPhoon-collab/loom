@@ -1,5 +1,24 @@
 import type { RefObject } from "preact";
-import { useRef } from "preact/hooks";
+import {
+  AlignLeft,
+  CodeXml,
+  Download,
+  FilePlus,
+  LogIn,
+  Moon,
+  PanelLeft,
+  PanelRight,
+  Pencil,
+  Play,
+  Share2,
+  Split,
+  Square,
+  Sun,
+  Trash2,
+  Upload,
+  type LucideIcon,
+} from "lucide-preact";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { examples } from "../data/examples";
 import { Editor } from "./Editor";
 import {
@@ -18,13 +37,37 @@ type Props = {
 
 export function App({ model, dispatch }: Props) {
   const zipInput = useRef<HTMLInputElement>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(true);
+  const [colorScheme, setColorScheme] = useColorScheme();
 
   return (
-    <main class="playground-shell">
-      <WorkspacePanel model={model} dispatch={dispatch} zipInput={zipInput} />
+    <main
+      class={`playground-shell ${workspaceOpen ? "" : "workspace-collapsed"} ${
+        diagnosticsOpen ? "" : "diagnostics-collapsed"
+      }`}
+    >
+      <WorkspacePanel
+        model={model}
+        dispatch={dispatch}
+        zipInput={zipInput}
+        open={workspaceOpen}
+        toggleOpen={() => setWorkspaceOpen((current) => !current)}
+      />
 
       <section class="editor-panel" aria-label="Loom source editor">
-        <EditorToolbar model={model} dispatch={dispatch} />
+        <EditorToolbar
+          model={model}
+          dispatch={dispatch}
+          workspaceOpen={workspaceOpen}
+          diagnosticsOpen={diagnosticsOpen}
+          colorScheme={colorScheme}
+          toggleWorkspace={() => setWorkspaceOpen((current) => !current)}
+          toggleDiagnostics={() => setDiagnosticsOpen((current) => !current)}
+          toggleColorScheme={() => {
+            setColorScheme((current) => (current === "dark" ? "light" : "dark"));
+          }}
+        />
         <Editor
           file={currentFile(model)}
           diagnostics={model.diagnostics}
@@ -33,7 +76,12 @@ export function App({ model, dispatch }: Props) {
         />
       </section>
 
-      <DiagnosticsPanel model={model} dispatch={dispatch} />
+      <DiagnosticsPanel
+        model={model}
+        dispatch={dispatch}
+        open={diagnosticsOpen}
+        toggleOpen={() => setDiagnosticsOpen((current) => !current)}
+      />
     </main>
   );
 }
@@ -42,20 +90,50 @@ function WorkspacePanel({
   model,
   dispatch,
   zipInput,
+  open,
+  toggleOpen,
 }: {
   model: Model;
   dispatch: Dispatch;
   zipInput: RefObject<HTMLInputElement>;
+  open: boolean;
+  toggleOpen: () => void;
 }) {
   const example = currentExample(model);
+  const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const close = () => setContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [contextMenu]);
 
   return (
-    <aside class="workspace-panel" aria-label="Workspace files">
+    <aside class="workspace-panel" aria-label="Workspace files" aria-hidden={!open}>
       <header class="panel-header">
         <div>
           <p class="eyebrow">Workspace</p>
           <h1>Loom Playground</h1>
         </div>
+        <IconButton
+          icon="panelLeft"
+          label="Collapse workspace"
+          onClick={toggleOpen}
+        />
       </header>
 
       <div class="example-picker">
@@ -84,16 +162,21 @@ function WorkspacePanel({
         <div class="section-heading">
           <span>Files</span>
           <div class="section-actions">
-            <button type="button" class="small" onClick={() => dispatch({ type: "new-file-requested" })}>
-              New File
-            </button>
+            <IconButton
+              icon="filePlus"
+              label="New file"
+              disabled={!open}
+              onClick={() => dispatch({ type: "new-file-requested" })}
+            />
             <button
               type="button"
-              class="small"
+              class="icon small"
+              aria-label="New fragment"
+              data-tooltip="New fragment"
               disabled={model.activePath !== model.entryPath}
               onClick={() => dispatch({ type: "fragment-requested" })}
             >
-              New Fragment
+              <Icon name="fragment" />
             </button>
           </div>
         </div>
@@ -104,36 +187,81 @@ function WorkspacePanel({
               type="button"
               class={`file-item ${file.path === model.activePath ? "active" : ""}`}
               onClick={() => dispatch({ type: "file-selected", path: file.path })}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                dispatch({ type: "file-selected", path: file.path });
+                setContextMenu({ path: file.path, x: event.clientX, y: event.clientY });
+              }}
             >
               <span>{file.path}</span>
               {file.path === model.entryPath && <em title="Entry file">entry</em>}
             </button>
           ))}
         </nav>
+        {contextMenu && (
+          <div
+            class="file-context-menu"
+            role="menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={contextMenu.path === model.entryPath}
+              onClick={() => {
+                dispatch({ type: "set-entry-requested" });
+                setContextMenu(null);
+              }}
+            >
+              <Icon name="entry" />
+              Set Entry
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                dispatch({ type: "rename-requested" });
+                setContextMenu(null);
+              }}
+            >
+              <Icon name="rename" />
+              Rename
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={model.files.length <= 1}
+              onClick={() => {
+                dispatch({ type: "delete-requested" });
+                setContextMenu(null);
+              }}
+            >
+              <Icon name="trash" />
+              Delete
+            </button>
+          </div>
+        )}
         <div class="file-actions" role="toolbar" aria-label="File actions">
-          <button
-            type="button"
+          <IconButton
+            icon="entry"
+            label="Set entry"
             disabled={model.activePath === model.entryPath}
             onClick={() => dispatch({ type: "set-entry-requested" })}
-          >
-            Set Entry
-          </button>
-          <button type="button" onClick={() => dispatch({ type: "rename-requested" })}>
-            Rename
-          </button>
-          <button type="button" disabled={model.files.length <= 1} onClick={() => dispatch({ type: "delete-requested" })}>
-            Delete
-          </button>
+          />
+          <IconButton icon="rename" label="Rename" onClick={() => dispatch({ type: "rename-requested" })} />
+          <IconButton
+            icon="trash"
+            label="Delete"
+            disabled={model.files.length <= 1}
+            onClick={() => dispatch({ type: "delete-requested" })}
+          />
         </div>
       </section>
 
       <div class="workspace-actions" role="toolbar" aria-label="Workspace actions">
-        <button type="button" onClick={() => dispatch({ type: "export-zip-requested" })}>
-          Export ZIP
-        </button>
-        <button type="button" onClick={() => zipInput.current?.click()}>
-          Import ZIP
-        </button>
+        <IconButton icon="download" label="Export ZIP" onClick={() => dispatch({ type: "export-zip-requested" })} />
+        <IconButton icon="upload" label="Import ZIP" onClick={() => zipInput.current?.click()} />
         <input
           ref={zipInput}
           type="file"
@@ -152,59 +280,103 @@ function WorkspacePanel({
   );
 }
 
-function EditorToolbar({ model, dispatch }: Props) {
+function EditorToolbar({
+  model,
+  dispatch,
+  workspaceOpen,
+  diagnosticsOpen,
+  colorScheme,
+  toggleWorkspace,
+  toggleDiagnostics,
+  toggleColorScheme,
+}: Props & {
+  workspaceOpen: boolean;
+  diagnosticsOpen: boolean;
+  colorScheme: ColorScheme;
+  toggleWorkspace: () => void;
+  toggleDiagnostics: () => void;
+  toggleColorScheme: () => void;
+}) {
   return (
     <div class="toolbar" role="toolbar" aria-label="Editor and playback actions">
+      <IconButton
+        icon="panelLeft"
+        label={workspaceOpen ? "Collapse workspace" : "Show workspace"}
+        onClick={toggleWorkspace}
+      />
       <div class="toolbar-group" aria-label="Playback actions">
-        <button type="button" disabled={playDisabled(model)} onClick={() => dispatch({ type: "play-requested" })}>
-          Play
-        </button>
-        <button
-          type="button"
+        <IconButton
+          icon="play"
+          label="Play"
+          disabled={playDisabled(model)}
+          onClick={() => dispatch({ type: "play-requested" })}
+        />
+        <IconButton
+          icon="stop"
+          label="Stop"
           disabled={!model.isPlaying && !model.isPlaybackLoading}
           onClick={() => dispatch({ type: "stop-requested" })}
-        >
-          Stop
-        </button>
+        />
       </div>
 
       <div class="toolbar-group" aria-label="Source actions">
-        <button
-          type="button"
+        <IconButton
+          icon="compile"
+          label="Compile"
           disabled={model.compileStatus === "loading"}
           onClick={() => dispatch({ type: "compile-requested", reason: "manual" })}
-        >
-          Compile
-        </button>
-        <button
-          type="button"
+        />
+        <IconButton
+          icon="format"
+          label="Format"
           disabled={model.compileStatus === "loading"}
           onClick={() => dispatch({ type: "format-requested" })}
-        >
-          Format
-        </button>
+        />
       </div>
 
       <span class="active-path">
         {model.activePath}
         {model.dirty ? " *" : ""}
       </span>
-      <button type="button" onClick={() => dispatch({ type: "share-requested" })}>
-        Share
-      </button>
+      <IconButton icon="share" label="Share" onClick={() => dispatch({ type: "share-requested" })} />
+      <IconButton
+        icon={colorScheme === "dark" ? "sun" : "moon"}
+        label={colorScheme === "dark" ? "Use light mode" : "Use dark mode"}
+        onClick={toggleColorScheme}
+      />
+      <IconButton
+        icon="panelRight"
+        label={diagnosticsOpen ? "Collapse diagnostics" : "Show diagnostics"}
+        onClick={toggleDiagnostics}
+      />
     </div>
   );
 }
 
-function DiagnosticsPanel({ model, dispatch }: Props) {
+function DiagnosticsPanel({
+  model,
+  dispatch,
+  open,
+  toggleOpen,
+}: Props & {
+  open: boolean;
+  toggleOpen: () => void;
+}) {
   return (
-    <aside class="diagnostics-panel" aria-label="Diagnostics">
+    <aside class="diagnostics-panel" aria-label="Diagnostics" aria-hidden={!open}>
       <header class="panel-header compact">
         <div>
           <p class="eyebrow">Compile</p>
           <h2>Diagnostics</h2>
         </div>
-        <span class={`status-pill ${statusClass(model)}`}>{statusLabel(model)}</span>
+        <div class="panel-header-actions">
+          <span class={`status-pill ${statusClass(model)}`}>{statusLabel(model)}</span>
+          <IconButton
+            icon="panelRight"
+            label="Collapse diagnostics"
+            onClick={toggleOpen}
+          />
+        </div>
       </header>
       <Diagnostics diagnostics={model.diagnostics} eventCount={model.eventCount} compileStatus={model.compileStatus} dispatch={dispatch} />
     </aside>
@@ -291,3 +463,94 @@ function formatTime(seconds: number): string {
   const remainingSeconds = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${remainingSeconds}`;
 }
+
+type ColorScheme = "light" | "dark";
+
+const colorSchemeStorageKey = "loom.playground.colorScheme";
+
+function useColorScheme(): [ColorScheme, (update: (current: ColorScheme) => ColorScheme) => void] {
+  const [colorScheme, setColorSchemeState] = useState<ColorScheme>(readInitialColorScheme);
+
+  useEffect(() => {
+    document.documentElement.style.colorScheme = colorScheme;
+    localStorage.setItem(colorSchemeStorageKey, colorScheme);
+  }, [colorScheme]);
+
+  return [colorScheme, setColorSchemeState];
+}
+
+function readInitialColorScheme(): ColorScheme {
+  const stored = localStorage.getItem(colorSchemeStorageKey);
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function IconButton({
+  icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      class="icon small"
+      aria-label={label}
+      data-tooltip={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon name={icon} />
+    </button>
+  );
+}
+
+type IconName =
+  | "compile"
+  | "download"
+  | "entry"
+  | "filePlus"
+  | "format"
+  | "fragment"
+  | "panelLeft"
+  | "panelRight"
+  | "play"
+  | "rename"
+  | "share"
+  | "moon"
+  | "stop"
+  | "sun"
+  | "trash"
+  | "upload";
+
+function Icon({ name }: { name: IconName }) {
+  const Component = icons[name];
+  return <Component aria-hidden="true" size={16} strokeWidth={2} />;
+}
+
+const icons = {
+  compile: CodeXml,
+  download: Download,
+  entry: LogIn,
+  filePlus: FilePlus,
+  format: AlignLeft,
+  fragment: Split,
+  panelLeft: PanelLeft,
+  panelRight: PanelRight,
+  play: Play,
+  rename: Pencil,
+  share: Share2,
+  moon: Moon,
+  stop: Square,
+  sun: Sun,
+  trash: Trash2,
+  upload: Upload,
+} satisfies Record<IconName, LucideIcon>;

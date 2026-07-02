@@ -13,5 +13,6 @@ memo*.md
 /.pnpm-store
 /.wrangler
 
-.antigravitycli
+.antigravitycli/
+.playwright-mcp/
 /.code-review-graph

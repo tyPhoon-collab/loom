@@ -78,3 +78,6 @@ src
 ## 変更時の確認
 
 - Playground を変更したら最低限 `just playground::test` と `just playground::app-build` を通す。
+- ブラウザ上の挙動確認が必要な場合は Playwright MCP を使い、`just playground::dev` で起動して確認する。
+- 手動 QA では初期 compile、編集、format、diagnostics、share、export、play/stop、mobile layout を必要に応じて確認する。
+- スクリーンショットは一時的な確認証跡として扱う。残す場合は ignore 済みの `.playwright-mcp/screenshots/` に保存し、ユーザー向けの報告でパスを明示する。

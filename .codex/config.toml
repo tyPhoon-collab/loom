@@ -1,33 +1,9 @@
 [mcp_servers.code-review-graph]
 command = "uvx"
 args = ["code-review-graph", "serve"]
+default_tools_approval_mode = "approve"
 
-[mcp_servers.code-review-graph.tools.get_architecture_overview_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.list_graph_stats_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.semantic_search_nodes_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.query_graph_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.list_communities_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.get_impact_radius_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.cross_repo_search_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.get_review_context_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.get_suggested_questions_tool]
-approval_mode = "approve"
-
-[mcp_servers.code-review-graph.tools.get_minimal_context_tool]
-approval_mode = "approve"
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest"]
+default_tools_approval_mode = "approve"

@@ -15,6 +15,7 @@
     "@knadh/oat": "0.6.2",
     "codemirror": "6.0.2",
     "fflate": "0.8.3",
+    "lucide-preact": "^1.23.0",
     "preact": "10.29.3"
   },
   "devDependencies": {

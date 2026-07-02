@@ -1,0 +1,4 @@
+interface:
+  display_name: "Loom UI Icons"
+  short_description: "Use Oat and lucide-preact icons in loom"
+  default_prompt: "Use $add-ui-icons to add or replace icons in loom's Playground UI."
