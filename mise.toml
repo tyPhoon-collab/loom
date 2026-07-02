@@ -1,6 +1,6 @@
 [tools]
 lefthook = "2.1.2"
-just = "1.46.0"
+just = "1.54.0"
 node = "24"
 pnpm = "10"
 

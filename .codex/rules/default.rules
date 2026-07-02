@@ -1,0 +1,94 @@
+# Project-local Codex command rules.
+#
+# Keep this file in .codex/rules/default.rules for commands that are safe in
+# this repository because the repository owns the task definitions and review
+# process. Edit per project as workflows mature.
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    justification = "Staging local repository changes is allowed for this project.",
+    match = [
+        "git add README.md",
+        "git add .",
+        "git add -A",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "allow",
+    justification = "Creating local commits is allowed for this project.",
+    match = [
+        "git commit -m feat: update project rules",
+        "git commit --amend --no-edit",
+    ],
+)
+
+prefix_rule(
+    pattern = ["just"],
+    decision = "allow",
+    justification = "Project just recipes are the reviewed task entrypoint; destructive recipes should use just confirm.",
+    match = [
+        "just",
+        "just check",
+        "just test",
+        "just lint",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "view"],
+    decision = "allow",
+    justification = "Viewing GitHub pull request details is allowed for this project.",
+    match = [
+        "gh pr view",
+        "gh pr view 123",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "status"],
+    decision = "allow",
+    justification = "Checking GitHub pull request status is allowed for this project.",
+    match = [
+        "gh pr status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "checks"],
+    decision = "allow",
+    justification = "Inspecting GitHub pull request checks is allowed for this project.",
+    match = [
+        "gh pr checks",
+        "gh pr checks 123",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "run", "view"],
+    decision = "allow",
+    justification = "Viewing GitHub Actions run details is allowed for this project.",
+    match = [
+        "gh run view 123456789",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "run", "list"],
+    decision = "allow",
+    justification = "Listing GitHub Actions runs is allowed for this project.",
+    match = [
+        "gh run list",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "issue", "view"],
+    decision = "allow",
+    justification = "Viewing GitHub issue details is allowed for this project.",
+    match = [
+        "gh issue view 123",
+    ],
+)

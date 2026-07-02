@@ -28,3 +28,6 @@ approval_mode = "approve"
 
 [mcp_servers.code-review-graph.tools.get_suggested_questions_tool]
 approval_mode = "approve"
+
+[mcp_servers.code-review-graph.tools.get_minimal_context_tool]
+approval_mode = "approve"
