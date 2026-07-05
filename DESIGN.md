@@ -4,7 +4,7 @@ Loom interfaces should feel text-first, quiet, and tool-like. Documentation, Pla
 
 This document is the source of truth for shared visual guidance. Each surface maps these choices into its own implementation:
 
-- docs: VitePress theme variables such as `--vp-*`
+- site: VitePress theme variables such as `--vp-*`
 - Playground: Oat variables and small app CSS
 - Studio: terminal UI styles
 - future native or plugin surfaces: native theme values

@@ -3,10 +3,10 @@ memo*.md
 /examples/internals
 .DS_Store
 
-/docs/node_modules
-/docs/.vitepress/cache
-/docs/.vitepress/.temp
-/docs/.vitepress/dist
+/site/node_modules
+/site/.vitepress/cache
+/site/.vitepress/.temp
+/site/.vitepress/dist
 /apps/playground/node_modules
 /apps/playground/dist
 /apps/playground/src/generated

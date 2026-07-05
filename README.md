@@ -34,9 +34,9 @@ loom save examples/starter/melody-simple.loom
 ## Documentation
 
 - Published docs: https://loom-5ue.pages.dev/
-- Docs source: `docs/` (VitePress)
-- Playback setup: `docs/guide/playback.md`
-- AI-oriented overview: `docs/llms.md`
+- Docs source: `site/` (VitePress)
+- Playback setup: `site/guide/playback.md`
+- AI-oriented overview: `site/llms.md`
 - Some documentation sections are auto-generated from source-of-truth in code/tests.
   - Generate: `cargo xtask gen-docs` (or `just docs::gen`)
   - Verify up-to-date: `cargo xtask check-docs` (or `just docs::check`)
@@ -44,18 +44,20 @@ loom save examples/starter/melody-simple.loom
 ### Run Docs Locally
 
 ```bash
-cd docs
+cd site
 npm install
 npm run docs:dev
 ```
 
 ## Repository Map
 
-- `docs/`: all user-facing documentation
-  - `docs/language/spec.md`: language specification
-  - `docs/reference/formatter.md`: formatter specification
-  - `docs/reference/config.md`: global config reference
-  - `docs/concepts/*`: concept and philosophy
+- `site/`: public user-facing documentation
+  - `site/language/spec.md`: language specification
+  - `site/reference/formatter.md`: formatter specification
+  - `site/reference/config.md`: global config reference
+  - `site/concepts/*`: concept and philosophy
+- `docs/`: internal project documentation
+  - `docs/adr/*`: architecture decision records
 - `examples/`: runnable `.loom` examples
 - `src/`: compiler, parser, runtime, commands
 - `tests/`: integration and snapshot tests
@@ -65,6 +67,7 @@ npm run docs:dev
 To keep the repository root focused and navigable:
 
 - Keep only entrypoint documents at top level (for example `README.md`, `LICENSE`).
-- Keep full user-facing documentation under `docs/`.
-- Avoid duplicating long-form docs between root and `docs/`.
+- Keep full user-facing documentation under `site/`.
+- Keep internal project documentation under `docs/`.
+- Avoid duplicating long-form docs between root, `site/`, and `docs/`.
 - Keep implementation and tests in `src/` and `tests/`.

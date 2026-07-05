@@ -1,19 +1,19 @@
-# Install docs dependencies. You NEED "cd docs && pnpm approve-builds" before this.
+# Install site dependencies. You NEED "cd site && pnpm approve-builds" before this.
 install:
-    pnpm -C docs install
+    pnpm -C site install
 
 # Run docs dev server
 dev:
-    pnpm -C docs docs:dev
+    pnpm -C site docs:dev
 
-# Generate docs from source-of-truth (currently diagnostic codes -> docs/reference/errors.md)
+# Generate site docs from source-of-truth
 gen:
     cargo xtask gen-docs
 
-# Verify generated docs are up-to-date (fails when docs/reference/errors.md needs regeneration)
+# Verify generated site docs are up-to-date
 check:
     cargo xtask check-docs
 
 # Build docs site
 build:
-    pnpm -C docs docs:build
+    pnpm -C site docs:build
