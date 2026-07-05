@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - docs/**
+      - site/**
       - .github/workflows/deploy-docs.yml
   workflow_dispatch:
 
@@ -35,15 +35,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: docs/pnpm-lock.yaml
+          cache-dependency-path: site/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: docs
+        working-directory: site
 
       - name: Build docs
         run: pnpm docs:build
-        working-directory: docs
+        working-directory: site
 
       - name: Deploy to Cloudflare Pages
         id: deploy
@@ -52,4 +52,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: pages deploy docs/.vitepress/dist --project-name=loom
+          command: pages deploy site/.vitepress/dist --project-name=loom
