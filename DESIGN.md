@@ -44,6 +44,12 @@ This document is the source of truth for shared visual guidance. Each surface ma
 - Use a readable monospace font for source, code, diagnostics, and event details.
 - Editor readability is more important than brand expression.
 
+## Brand Assets
+
+- Keep the source app icon at `assets/brand/icon-1024.png`.
+- Treat public favicons and app icons as derived assets for each surface.
+- Keep derived icons visually consistent across site and Playground unless a surface has a specific technical constraint.
+
 ## Playground Guidance
 
 - The first viewport should be the working tool: file tree, editor, diagnostics, and transport.

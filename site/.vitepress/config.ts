@@ -5,6 +5,10 @@ export default defineConfig({
   title: "Loom",
   description: "Text-first MIDI composition DSL",
   lastUpdated: true,
+  head: [
+    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+    ["link", { rel: "alternate icon", href: "/icon.svg", type: "image/svg+xml" }]
+  ],
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
