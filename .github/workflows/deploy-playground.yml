@@ -39,10 +39,15 @@ jobs:
       - name: Setup Rust wasm target
         run: rustup target add wasm32-unknown-unknown
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
       - name: Install Rust tools
-        run: |
-          cargo install just --version 1.54.0 --locked
-          cargo install wasm-pack --version 0.13.1 --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: |
+            just@1.54.0
+            wasm-pack@0.13.1
 
       - name: Install dependencies
         run: npm --prefix apps/playground ci
