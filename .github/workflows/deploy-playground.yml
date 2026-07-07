@@ -1,0 +1,60 @@
+name: Deploy Playground
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/playground/**
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      - playground.just
+      - .github/workflows/deploy-playground.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: cloudflare-pages-playground
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/playground/package-lock.json
+
+      - name: Setup Rust wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install Rust tools
+        run: |
+          cargo install just --version 1.54.0 --locked
+          cargo install wasm-pack --version 0.13.1 --locked
+
+      - name: Install dependencies
+        run: npm --prefix apps/playground ci
+
+      - name: Build Playground
+        run: just playground::build
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy apps/playground/dist --project-name=loom-playground

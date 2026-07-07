@@ -44,6 +44,8 @@ jobs:
       - name: Build docs
         run: pnpm docs:build
         working-directory: site
+        env:
+          LOOM_PLAYGROUND_URL: https://loom-playground.pages.dev/
 
       - name: Deploy to Cloudflare Pages
         id: deploy

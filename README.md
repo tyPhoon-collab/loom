@@ -34,7 +34,9 @@ loom save examples/starter/melody-simple.loom
 ## Documentation
 
 - Published docs: https://loom-5ue.pages.dev/
+- Published Playground: https://loom-playground.pages.dev/
 - Docs source: `site/` (VitePress)
+- Playground source: `apps/playground/` (Vite)
 - Playback setup: `site/guide/playback.md`
 - AI-oriented overview: `site/llms.md`
 - Some documentation sections are auto-generated from source-of-truth in code/tests.
